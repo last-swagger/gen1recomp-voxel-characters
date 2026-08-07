@@ -611,6 +611,80 @@ local function computeMetrics()
     end
   end
 
+  -- Silhouette leak: pixels this mod draws that the original card for the SAME
+  -- frame does not cover. At zero pitch and zero yaw the two silhouettes must
+  -- agree, because the slab is built over the union of every walk frame and
+  -- relies on the shader's alpha discard to clip each frame back down. A face
+  -- whose UV resolves into another frame escapes that clip, and the report from
+  -- the field is "all of Red's sprites appear at once while walking sideways".
+  local flatAt = {}
+  for r, row in ipairs(state.rows) do
+    if row.shape == "flat" then
+      flatAt[row.sprite .. "|" .. row.frame .. "|" .. row.pitchLabel] = r
+    end
+  end
+  if next(flatAt) then
+    print("")
+    print("silhouette against the original card, same frame")
+    print("  leak   drawn where the card is empty; must be 0 at yaw 0 pitch 0")
+    print("  miss   card covers it, this mod does not")
+    for r, row in ipairs(state.rows) do
+      local fr = flatAt[row.sprite .. "|" .. row.frame .. "|" .. row.pitchLabel]
+      if fr and fr ~= r then
+        local yF = (fr - 1) * (cell + labelH) + labelH
+        local yR = (r - 1) * (cell + labelH) + labelH
+        for c, yawDeg in ipairs(state.yaws) do
+          local x0 = (c - 1) * cell
+          local leak, miss, both = 0, 0, 0
+          for y = 0, cell - 1 do
+            for x = 0, cell - 1 do
+              local _, _, _, af = img:getPixel(x0 + x, yF + y)
+              local _, _, _, ar = img:getPixel(x0 + x, yR + y)
+              local inF, inR = af >= 0.5, ar >= 0.5
+              if inR and not inF then leak = leak + 1
+              elseif inF and not inR then miss = miss + 1
+              elseif inF then both = both + 1 end
+            end
+          end
+          local union = leak + miss + both
+          print(string.format(
+            "  %-11s %-9s yaw %2d   leak %5d   miss %5d   IoU %.3f",
+            row.shape, row.pitchLabel, yawDeg, leak, miss,
+            union > 0 and both / union or 0))
+        end
+      end
+    end
+  end
+
+  -- Silhouette of every row against row 1. Two walk frames of the same builder
+  -- must NOT have the same outline: if they do, the shell being drawn is the
+  -- union of every pose rather than the pose being asked for.
+  do
+    local y1 = labelH
+    print("")
+    print("silhouette against row 1")
+    for r = 2, #state.rows do
+      local row = state.rows[r]
+      local yR = (r - 1) * (cell + labelH) + labelH
+      for c, yawDeg in ipairs(state.yaws) do
+        local x0 = (c - 1) * cell
+        local diff, both = 0, 0
+        for y = 0, cell - 1 do
+          for x = 0, cell - 1 do
+            local _, _, _, a1 = img:getPixel(x0 + x, y1 + y)
+            local _, _, _, a2 = img:getPixel(x0 + x, yR + y)
+            local in1, in2 = a1 >= 0.5, a2 >= 0.5
+            if in1 ~= in2 then diff = diff + 1
+            elseif in1 then both = both + 1 end
+          end
+        end
+        print(string.format("  row %d %-11s f%d yaw %2d   differing %5d   IoU %.4f",
+          r, row.shape, row.frame, yawDeg, diff,
+          (diff + both) > 0 and both / (diff + both) or 0))
+      end
+    end
+  end
+
   print("")
   print("provenance at the visible pixel level")
   print("  art%   share of drawn pixels sampling the original sprite art")
