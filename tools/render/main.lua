@@ -45,6 +45,7 @@ local opts = {
   label = "1",
   palette = "obj",
   diff = "0",
+  metrics = "0",
 }
 
 local function parseArgs(argv)
@@ -227,6 +228,79 @@ end
 -- from Lua and cannot silently disagree with a matrix upload convention.
 --------------------------------------------------------------------------
 
+--------------------------------------------------------------------------
+-- provenance
+--
+-- Every visible pixel came from one of five surfaces, and only two of them
+-- carry the artist's pixels. Front and back sample the original sprite; side,
+-- top and bottom are invented by this mod. A metric built on RGB cannot tell
+-- them apart, because all five draw from the same four-tone palette. This
+-- classifies per quad instead.
+--
+-- Classification is GEOMETRIC, from the quad's winding, verified statement by
+-- statement against both builders (main.lua:637-651 for SLAB, :955-978 for
+-- CARVED). Both agree:
+--
+--   +Z front    -Z back    +/-X side    -Y top    +Y bottom
+--
+-- The Y signs read backwards and that is fine: what matters is that they are
+-- consistent and derived from geometry, not from OBJ_SHADE. Per-vertex ambient
+-- occlusion would make the shade channel useless as a label, and AO is the
+-- next thing we want to try.
+--------------------------------------------------------------------------
+
+local KINDS = { "front", "back", "side", "top", "bottom" }
+local KIND_INDEX = {}
+for i, k in ipairs(KINDS) do KIND_INDEX[k] = i end
+
+-- Original art versus surface this mod invented.
+local IS_ART = { front = true, back = true }
+
+-- buildCarvedMesh rotates the whole mesh per role about the vertical axis
+-- (main.lua:920-932): role 1 is a half turn, role 2 a quarter turn. Undoing it
+-- puts every mesh back in one frame of reference before the normal is read.
+local ROLE_TURN = { [0] = 0, [1] = math.pi, [2] = math.pi / 2 }
+
+local function classifyQuad(v1, v2, v3, turn)
+  local e1x, e1y, e1z = v2[1] - v1[1], v2[2] - v1[2], v2[3] - v1[3]
+  local e2x, e2y, e2z = v3[1] - v1[1], v3[2] - v1[2], v3[3] - v1[3]
+  local nx = e1y * e2z - e1z * e2y
+  local ny = e1z * e2x - e1x * e2z
+  local nz = e1x * e2y - e1y * e2x
+  if turn and turn ~= 0 then
+    local c, s = math.cos(-turn), math.sin(-turn)
+    nx, nz = nx * c - nz * s, nx * s + nz * c
+  end
+  local ax, ay, az = math.abs(nx), math.abs(ny), math.abs(nz)
+  if ay >= ax and ay >= az then
+    return ny < 0 and "top" or "bottom"
+  elseif az >= ax then
+    return nz > 0 and "front" or "back"
+  end
+  return "side"
+end
+
+-- Independent second opinion, from the shade constants in main.lua:44. It
+-- cannot separate front from top (both 1.0), so it only ever contradicts the
+-- geometry on the other three. A disagreement means one of the two readings is
+-- stale, which is exactly what should stop a run rather than skew a metric.
+local SHADE_KIND = { [0.68] = "back", [0.78] = "side", [0.55] = "bottom" }
+
+local function classifyMesh(mesh, role)
+  local turn = ROLE_TURN[role or 0] or 0
+  local kinds, counts, conflicts = {}, {}, 0
+  for _, k in ipairs(KINDS) do counts[k] = 0 end
+  for i = 1, #mesh.verts, 4 do
+    local v1, v2, v3 = mesh.verts[i], mesh.verts[i + 1], mesh.verts[i + 2]
+    local kind = classifyQuad(v1, v2, v3, turn)
+    local expected = SHADE_KIND[v1[6]]
+    if expected and expected ~= kind then conflicts = conflicts + 1 end
+    kinds[(i - 1) / 4 + 1] = kind
+    counts[kind] = counts[kind] + 1
+  end
+  return kinds, counts, conflicts
+end
+
 local function bounds(verts)
   local b = {
     minX = math.huge, maxX = -math.huge,
@@ -263,9 +337,15 @@ local function project(verts, cam)
     -- slab. That renders the sprite art at OBJ_SHADE.back (0.68) and reads as
     -- a colour bug in the mod, which is what it looked like until FLAT and
     -- SLAB were put side by side at yaw 0.
+    -- This shader returns clip space untouched, bypassing LOVE's transform, so
+    -- nothing compensates for a canvas rendering bottom up. Without the flip
+    -- the provenance pass is vertically mirrored against the visible one and
+    -- every row is scored against a different row's pixels.
+    local ndcY = 1 - py / cam.height * 2
+    if cam.flipY then ndcY = -ndcY end
     out[i] = {
       px / cam.width * 2 - 1,
-      1 - py / cam.height * 2,
+      ndcY,
       math.max(-0.999, math.min(0.999, -rz2 / cam.depthRange)),
       v[4], v[5], v[6],
     }
@@ -294,9 +374,21 @@ uniform vec3 pal0;
 uniform vec3 pal1;
 uniform vec3 pal2;
 uniform vec3 pal3;
+// When set, vShade carries a surface class instead of a light factor and the
+// pass paints flat identity colours. Alpha discard still runs, so the
+// silhouette of the provenance pass matches the visible one exactly.
+uniform float provenance;
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   vec4 t = Texel(tex, tc);
   if (t.a < 0.5) discard;
+  if (provenance > 0.5) {
+    int k = int(vShade + 0.5);
+    if (k == 1) return vec4(0.0, 1.0, 0.0, 1.0);  // front, original art
+    if (k == 2) return vec4(0.0, 0.5, 0.0, 1.0);  // back, original art
+    if (k == 3) return vec4(1.0, 0.0, 0.0, 1.0);  // side, invented
+    if (k == 4) return vec4(0.0, 0.0, 1.0, 1.0);  // top, invented
+    return vec4(1.0, 1.0, 0.0, 1.0);              // bottom, invented
+  }
   float g = t.r;
   vec3 c = pal3;
   if (g > 0.833) c = pal0;
@@ -350,7 +442,13 @@ function love.load(argv)
     local path = SPRITE_DIR .. sprite .. ".png"
     local ok, data = pcall(loadImageData, path)
     if not ok then return fail("no sprite at " .. path) end
-    local def = { image = path, frames = 6 }
+    -- The engine derives frame count from sheet height, not from a constant
+    -- (src/import/RomExtractor.lua:481, src/render/SpriteRenderer.lua:86).
+    -- Hardcoding 6 turns nurse.png (16x48, three frames) into six 8px frames
+    -- and boulder.png (16x16, one frame) into six 2px ones, which is precisely
+    -- the three-frame carve path this mod added in v1.2.0.
+    local sw, sh = data:getDimensions()
+    local def = { image = path, frames = math.max(1, math.floor(sh / 16)) }
     local texture = love.graphics.newImage(data)
     texture:setFilter("nearest", "nearest")
     for _, frame in ipairs(frames) do
@@ -363,12 +461,26 @@ function love.load(argv)
                                     opts.side_color)
         end
         local sheetW, sheetH = data:getDimensions()
+        -- Only the carved builders rotate per role; buildSlabMesh emits every
+        -- frame in the same frame of reference (main.lua:608-613).
+        local role = (shape == "carved" or shape == "carved_plus")
+          and (frame % 3) or 0
+        local kinds, quadKinds, conflicts
+        if mesh then
+          kinds, quadKinds, conflicts = classifyMesh(mesh, role)
+          if conflicts > 0 then
+            print(string.format(
+              "WARNING %s f%d %s: %d quads where winding and OBJ_SHADE disagree",
+              sprite, frame, shape, conflicts))
+          end
+        end
         for _, pitch in ipairs(pitches) do
           rows[#rows + 1] = {
             sprite = sprite, frame = frame, shape = shape,
             pitch = math.rad(pitch.deg), pitchLabel = pitch.label,
             mesh = mesh, why = why, texture = texture,
             cellW = sheetW, cellH = sheetH / def.frames,
+            kinds = kinds, quadKinds = quadKinds, role = role,
           }
         end
       end
@@ -407,7 +519,7 @@ function love.load(argv)
     #rows * #yaws, quads, width, height))
 end
 
-local function drawCell(row, yaw, x, y, size)
+local function drawCell(row, yaw, x, y, size, asProvenance)
   if not row.mesh then return end
   local b = bounds(row.mesh.verts)
   -- Pivot on each mesh's own bounding box in X and Y, and on z = 0, the plane
@@ -424,11 +536,16 @@ local function drawCell(row, yaw, x, y, size)
     scale = size / VIEW_UNITS,
     screenX = x + size / 2,
     screenY = y + size / 2,
-    width = state.width, height = state.height,
+    width = state.width, height = state.height, flipY = asProvenance,
     -- generous so nothing clips; the depth test only needs ordering
     depthRange = math.max(64, (b.maxY - b.minY) * 2),
   }
   local verts = project(row.mesh.verts, cam)
+  if asProvenance then
+    for i, v in ipairs(verts) do
+      v[6] = KIND_INDEX[row.kinds[math.floor((i - 1) / 4) + 1]]
+    end
+  end
   local mesh = love.graphics.newMesh(
     { { "VertexPosition", "float", 3 },
       { "VertexTexCoord", "float", 2 },
@@ -438,6 +555,90 @@ local function drawCell(row, yaw, x, y, size)
   mesh:setTexture(row.texture)
   love.graphics.draw(mesh)
   mesh:release()
+end
+
+-- Render the same sheet with identity colours instead of art, read it back,
+-- and count. This is the fitness function: a number for how much of what the
+-- player sees is the artist's work and how much is surface this mod made up.
+local function computeMetrics()
+  local w, h = state.width, state.height
+  local colour = love.graphics.newCanvas(w, h)
+  local depth = love.graphics.newCanvas(w, h,
+    { format = "depth24", readable = false })
+  love.graphics.setCanvas({ colour, depthstencil = depth })
+  love.graphics.clear(0, 0, 0, 0, true, true)
+  love.graphics.setDepthMode("less", true)
+  love.graphics.setShader(state.shader)
+  state.shader:send("provenance", 1)
+  local cell, labelH = state.cell, state.labelH
+  for r, row in ipairs(state.rows) do
+    local y = (r - 1) * (cell + labelH) + labelH
+    for c, yawDeg in ipairs(state.yaws) do
+      drawCell(row, math.rad(yawDeg), (c - 1) * cell, y, cell, true)
+    end
+  end
+  state.shader:send("provenance", 0)
+  love.graphics.setShader()
+  love.graphics.setDepthMode("always", false)
+  love.graphics.setCanvas()
+
+  local img = colour:newImageData()
+  local function kindAt(r, g, b, a)
+    if a < 0.5 then return nil end
+    if g > 0.75 and r < 0.25 then return "front" end
+    if g > 0.25 and r < 0.25 and b < 0.25 then return "back" end
+    if r > 0.75 and g > 0.75 then return "bottom" end
+    if r > 0.75 then return "side" end
+    if b > 0.75 then return "top" end
+    return nil
+  end
+
+  if opts.histogram == "1" then
+    local seen = {}
+    for y = 0, h - 1 do
+      for x = 0, w - 1 do
+        local r, g, b, a = img:getPixel(x, y)
+        local key = string.format("%.2f,%.2f,%.2f,%.2f", r, g, b, a)
+        seen[key] = (seen[key] or 0) + 1
+      end
+    end
+    local list = {}
+    for k, v in pairs(seen) do list[#list + 1] = { k, v } end
+    table.sort(list, function(p, q) return p[2] > q[2] end)
+    print("provenance canvas colours:")
+    for i = 1, math.min(#list, 10) do
+      print(string.format("  %s  x%d", list[i][1], list[i][2]))
+    end
+  end
+
+  print("")
+  print("provenance at the visible pixel level")
+  print("  art%   share of drawn pixels sampling the original sprite art")
+  print("  top%   share taken by upward faces, which carry no art at all")
+  for r, row in ipairs(state.rows) do
+    local y0 = (r - 1) * (cell + labelH) + labelH
+    for c, yawDeg in ipairs(state.yaws) do
+      local x0 = (c - 1) * cell
+      local n = {}
+      for _, k in ipairs(KINDS) do n[k] = 0 end
+      local drawn = 0
+      for y = 0, cell - 1 do
+        for x = 0, cell - 1 do
+          local kind = kindAt(img:getPixel(x0 + x, y0 + y))
+          if kind then n[kind] = n[kind] + 1; drawn = drawn + 1 end
+        end
+      end
+      if drawn > 0 then
+        local art = (n.front + n.back) / drawn * 100
+        print(string.format(
+          "  %-11s %-9s yaw %2d   art %5.1f%%   top %5.1f%%   side %5.1f%%   base %5.1f%%",
+          row.shape, row.pitchLabel, yawDeg, art, n.top / drawn * 100,
+          n.side / drawn * 100, n.bottom / drawn * 100))
+      end
+    end
+  end
+  colour:release()
+  depth:release()
 end
 
 function love.draw()
@@ -511,6 +712,7 @@ function love.update()
       img:encode("png", opts.out)
       print("WROTE " .. love.filesystem.getSaveDirectory() .. "/" .. opts.out)
       if opts.diff == "1" and #state.rows > 1 then reportDiff(img) end
+      if opts.metrics == "1" then computeMetrics() end
     end)
   elseif state.frames > 6 then
     love.event.quit()
