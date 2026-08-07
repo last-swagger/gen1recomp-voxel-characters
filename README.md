@@ -28,13 +28,14 @@ appear. It never breaks a game it cannot support.
 
 ## Options
 
-One row, under **OPTIONS**:
+Two rows, under **OPTIONS**:
 
 ```
 VOXEL CHARS:   OFF / 1 / 2 / 3 / 5 / 10
+SIDE COLOR:    BODY / OUTLINE
 ```
 
-The number is slab thickness in voxels. Default is **3**.
+`VOXEL CHARS` controls slab thickness in voxels. Default is **3**.
 
 **OFF** returns the original flat card immediately, no restart. That makes it the
 cleanest way to compare before and after.
@@ -46,6 +47,16 @@ every voxel, which is the fastest way to see what the thickness is doing.
 Thickness `1` through `5` stays inside the depth budget the Voxel Mod calibrated
 for flat cards. `10` is there for open routes but can clip into walls in tight
 interiors, because this mod does not control that budget.
+
+`SIDE COLOR` controls only the new side, top and bottom faces created by the
+extrusion. Default is **BODY**.
+
+**BODY** looks inward from outline pixels and colors those new faces from nearby
+body pixels. This fixes the black side faces that thick outlines produced in
+v1.0.0.
+
+**OUTLINE** keeps the original outline pixels on those new faces. Front and back
+always stay on the original sprite art in both modes.
 
 ## Compatibility
 
@@ -72,6 +83,16 @@ Use `VOXEL CHARS: OFF` instead, which applies on the next frame.
 
 **Depth 10 can clip into walls.** Covered under Options.
 
+**Deep outlines can still show dark side faces.** `SIDE COLOR: BODY` searches up
+to 4 pixels inward. An outline or gradient deeper than that keeps the original
+outline color on the side face.
+
+**Outline detection is a Gen 1 sprite heuristic.** The mod treats the darkest
+luminance on the sheet as the outline tone. That matches the discrete colors of
+the shipped art, but anti-aliased or gradient replacement sprites may not be
+recognized as outline. In that case the face falls back to the v1.0.0 behavior,
+not anything worse.
+
 ## How it works
 
 For mod developers, and for anyone deciding whether to trust this.
@@ -94,6 +115,13 @@ so an animating silhouette cannot leak through what used to be interior. Front,
 back, top and bottom merge into horizontal runs, which takes a typical character
 from about 1,100 quads down to about 440.
 
+For `SIDE COLOR: BODY`, the mod identifies the sheet's outline tone and samples
+nearby body-colored pixels for the new side, top and bottom faces. Horizontal
+side faces search inward per pixel; top and bottom runs move only when the whole
+run is outline and a whole adjacent line is body color, so the run merge cannot
+mix unrelated sprite columns. Front and back never use that correction because
+they are the visible sprite art, not new extrusion faces.
+
 Camera pitch is baked into the geometry as a counter rotation, because the Voxel
 Mod leans character cards back by the camera pitch and a leaning solid would tip
 over. Pitch is quantized into one degree buckets and meshes are kept in a 64
@@ -113,9 +141,9 @@ build. The worst case is flat characters, never a broken game.
 luajit mods/voxel_characters/tests/voxel_chars_test.lua
 ```
 
-38 assertions covering the version guard, the options row and its persistence,
+55 assertions covering the version guard, the options rows and their persistence,
 geometry and vertex format, per-frame clipping, pitch bucketing, cache keying and
-LRU eviction.
+LRU eviction, and side-face color selection.
 
 ## Credits
 

@@ -25,10 +25,15 @@ local Assets = require("src.render.Assets")
 
 local SUPPORTED = ">=1.5.0 <2.0.0"
 local KEY = "depth"
+local SIDE_COLOR_KEY = "side_color"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
+local SIDE_COLOR_VALUES = { "body", "outline" }
+local SIDE_COLOR_LABELS = { "BODY", "OUTLINE" }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
+local DEFAULT_SIDE_COLOR = "body"
+local DEFAULT_SIDE_COLOR_INDEX = 1
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -37,6 +42,10 @@ local SIDE_INSET = 0.03
 local RUN_UV_INSET = 0.05
 local PITCH_BUCKET = math.pi / 180
 local MAX_MESHES = 64
+-- DECISAO: quatro pixels cobre os contornos grossos de sprites Gen 1 sem
+-- deixar uma busca em arte customizada atravessar para outra parte do corpo.
+local BODY_SEARCH_LIMIT = 4
+local LUMA_EPSILON = 0.00001
 
 mod.options:define({
   {
@@ -50,6 +59,16 @@ mod.options:define({
     default = 3,
     help = "Extrudes overworld character sprites. Depth 1-5 stays inside the voxel pull budget; 10 may clip into walls.",
   },
+  {
+    key = SIDE_COLOR_KEY,
+    type = "choice",
+    label = "SIDE COLOR",
+    choices = {
+      { "BODY", "body" }, { "OUTLINE", "outline" },
+    },
+    default = DEFAULT_SIDE_COLOR,
+    help = "Colors new side, top, and bottom faces from body pixels or keeps the original outline pixels.",
+  },
 })
 
 local SpriteBillboards, Voxel3D, ImageCache
@@ -58,6 +77,7 @@ local originalMesh
 local meshes, masks = {}, {}
 local meshOrder = {}
 local depthValue
+local sideColorValue
 local optionsRegistered = false
 
 local function indexOf(value)
@@ -67,10 +87,23 @@ local function indexOf(value)
   return DEFAULT_INDEX
 end
 
+local function sideColorIndexOf(value)
+  for i, v in ipairs(SIDE_COLOR_VALUES) do
+    if v == value then return i end
+  end
+  return DEFAULT_SIDE_COLOR_INDEX
+end
+
 local function readDepth()
   local ok, value = pcall(mod.options.get, mod.options, KEY)
   if ok then return VALUES[indexOf(value)] end
   return DEFAULT_DEPTH
+end
+
+local function readSideColor()
+  local ok, value = pcall(mod.options.get, mod.options, SIDE_COLOR_KEY)
+  if ok then return SIDE_COLOR_VALUES[sideColorIndexOf(value)] end
+  return DEFAULT_SIDE_COLOR
 end
 
 local function releaseMesh(mesh)
@@ -94,30 +127,38 @@ local function setDepth(value)
   return depthValue
 end
 
+local function setSideColor(value)
+  local nextValue = SIDE_COLOR_VALUES[sideColorIndexOf(value)]
+  if sideColorValue ~= nextValue then clearMeshCache() end
+  sideColorValue = nextValue
+  return sideColorValue
+end
+
 setDepth(readDepth())
+setSideColor(readSideColor())
 Assets.register(clearCache)
 
-local function writeOption(game, value)
+local function writeOption(game, key, value)
   local id = mod.id
   local opts = game and game.save and game.save.options
   if opts then
     opts.modOptions = opts.modOptions or {}
     opts.modOptions[id] = opts.modOptions[id] or {}
-    opts.modOptions[id][KEY] = value
+    opts.modOptions[id][key] = value
   end
   local loader = game and game.mods
   if loader then
     loader.modOptions = loader.modOptions or {}
     loader.modOptions[id] = loader.modOptions[id] or {}
-    loader.modOptions[id][KEY] = value
+    loader.modOptions[id][key] = value
   end
   if loader and loader.events then
     loader.events:emit("mod.options_changed",
-      { mod = id, key = KEY, value = value })
+      { mod = id, key = key, value = value })
   end
 end
 
-local function row()
+local function depthRow()
   return {
     id = mod.id .. ":" .. KEY,
     label = "VOXEL CHARS",
@@ -126,7 +167,24 @@ local function row()
       local i = indexOf(depthValue or readDepth())
       i = ((i + (dir or 1) - 1) % #VALUES) + 1
       local value = setDepth(VALUES[i])
-      writeOption(game, value)
+      writeOption(game, KEY, value)
+      return true
+    end,
+  }
+end
+
+local function sideColorRow()
+  return {
+    id = mod.id .. ":" .. SIDE_COLOR_KEY,
+    label = "SIDE COLOR",
+    value = function()
+      return SIDE_COLOR_LABELS[sideColorIndexOf(sideColorValue or readSideColor())]
+    end,
+    step = function(game, dir)
+      local i = sideColorIndexOf(sideColorValue or readSideColor())
+      i = ((i + (dir or 1) - 1) % #SIDE_COLOR_VALUES) + 1
+      local value = setSideColor(SIDE_COLOR_VALUES[i])
+      writeOption(game, SIDE_COLOR_KEY, value)
       return true
     end,
   }
@@ -138,13 +196,16 @@ local function registerOptionsRows()
   mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     local out = next(game, rows)
     if type(out) ~= "table" then return out end
-    out[#out + 1] = row()
+    out[#out + 1] = depthRow()
+    out[#out + 1] = sideColorRow()
     return out
   end)
 
   mod.events:on("mod.options_changed", function(payload)
     if payload and payload.mod == mod.id and payload.key == KEY then
       setDepth(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == SIDE_COLOR_KEY then
+      setSideColor(payload.value)
     end
   end)
 end
@@ -216,9 +277,14 @@ local function frameOrigin(layout, frame)
   return col * w, row * h
 end
 
-local function alphaAt(data, x, y)
-  local ok, _, _, _, a = pcall(data.getPixel, data, x, y)
-  return ok and (a or 0) >= 0.5
+local function pixelAt(data, x, y)
+  local ok, r, g, b, a = pcall(data.getPixel, data, x, y)
+  if not ok then return nil end
+  return r or 0, g or 0, b or 0, a or 0
+end
+
+local function luminance(r, g, b)
+  return (r or 0) * 0.2126 + (g or 0) * 0.7152 + (b or 0) * 0.0722
 end
 
 local function maskFor(def)
@@ -235,14 +301,18 @@ local function maskFor(def)
   if masks[key] ~= nil then return masks[key] or nil end
 
   local mask = {}
+  local outlineLuma
   local minX, maxX, minY, maxY = layout.w, -1, layout.h, -1
   for f = 0, frames - 1 do
     local fx, fy = frameOrigin(layout, f)
     if fx + layout.w <= sheetW and fy + layout.h <= sheetH then
       for ly = 0, layout.h - 1 do
         for lx = 0, layout.w - 1 do
-          if alphaAt(data, fx + lx, fy + ly) then
+          local r, g, b, a = pixelAt(data, fx + lx, fy + ly)
+          if r and (a or 0) >= 0.5 then
             mask[ly * layout.w + lx] = true
+            local luma = luminance(r, g, b)
+            if not outlineLuma or luma < outlineLuma then outlineLuma = luma end
             if lx < minX then minX = lx end
             if lx > maxX then maxX = lx end
             if ly < minY then minY = ly end
@@ -262,6 +332,7 @@ local function maskFor(def)
     mask = mask, minX = minX, maxX = maxX, minY = minY, maxY = maxY,
     sheetW = sheetW, sheetH = sheetH, frames = frames,
     cellW = layout.w, cellH = layout.h, columns = layout.columns,
+    data = data, outlineLuma = outlineLuma,
   }
   masks[key] = out
   return out
@@ -326,7 +397,7 @@ local function rememberMesh(key, mesh)
   end
 end
 
-local function buildMesh(def, frame, depth, correction, m)
+local function buildMesh(def, frame, depth, correction, m, sideColor)
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -348,9 +419,35 @@ local function buildMesh(def, frame, depth, correction, m)
     return (fx + lx + 0.5) / m.sheetW, (fy + ly + 0.5) / m.sheetH
   end
 
+  local function texel(lx, ly)
+    if lx < 0 or lx >= m.cellW or ly < 0 or ly >= m.cellH then return false end
+    local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
+    if not r or (a or 0) < 0.5 then return false end
+    local outline = m.outlineLuma
+      and math.abs(luminance(r, g, b) - m.outlineLuma) <= LUMA_EPSILON
+    return true, outline
+  end
+
+  local function bodyTexel(lx, ly, dx, dy)
+    if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly end
+    local opaque, outline = texel(lx, ly)
+    if not (opaque and outline) then return lx, ly end
+    for step = 1, BODY_SEARCH_LIMIT do
+      local bx, by = lx + dx * step, ly + dy * step
+      local bodyOpaque, bodyOutline = texel(bx, by)
+      if bodyOpaque and not bodyOutline then return bx, by end
+    end
+    return lx, ly
+  end
+
   local function sameUv(lx, ly)
     local u, v = uv(lx, ly)
     return { u, v, u, v, u, v, u, v }
+  end
+
+  local function sideUv(lx, ly, dx)
+    local bx, by = bodyTexel(lx, ly, dx, 0)
+    return sameUv(bx, by)
   end
 
   local function rectUv(lx, ly, lx2, order)
@@ -364,6 +461,27 @@ local function buildMesh(def, frame, depth, correction, m)
       return { u0, v0, u1, v0, u1, v1, u0, v1 }
     end
     return { u0, v1, u1, v1, u1, v0, u0, v0 }
+  end
+
+  local function bodyRectUv(lx, ly, lx2, order, dy)
+    if sideColor ~= DEFAULT_SIDE_COLOR then return rectUv(lx, ly, lx2, order) end
+    for sx = lx, lx2 do
+      local opaque, outline = texel(sx, ly)
+      if not (opaque and outline) then return rectUv(lx, ly, lx2, order) end
+    end
+    for step = 1, BODY_SEARCH_LIMIT do
+      local by = ly + dy * step
+      local ok = true
+      for sx = lx, lx2 do
+        local opaque, outline = texel(sx, by)
+        if not (opaque and not outline) then
+          ok = false
+          break
+        end
+      end
+      if ok then return rectUv(lx, by, lx2, order) end
+    end
+    return rectUv(lx, ly, lx2, order)
   end
 
   local function p(x, y, z)
@@ -386,7 +504,13 @@ local function buildMesh(def, frame, depth, correction, m)
   -- silhueta animada depende disso. Frente, tras, topo e base viram runs
   -- horizontais com UV retangular e inset de 0,05 texel; no red.png isso
   -- reduz a uniao de 189 pixels de 1.134 quads para 442 sem sair da celula
-  -- do frame que o alpha discard recorta.
+  -- do frame que o alpha discard recorta. A comunidade mediu que 34/34
+  -- pixels de silhueta lateral de red.png vinham no tom mais escuro, mas
+  -- um passo para dentro so 16/34 ainda eram contorno. Por isso BODY pinta
+  -- faces novas com texel interno, enquanto frente e tras continuam sendo
+  -- a arte original. Topo/base so deslocam o UV quando o run inteiro e
+  -- contorno e a mesma linha interna inteira tem corpo; se misturar tons,
+  -- preservar o run atual vale mais que quebrar o merge.
   for ly = m.minY, m.maxY do
     local lx = m.minX
     while lx <= m.maxX do
@@ -403,20 +527,19 @@ local function buildMesh(def, frame, depth, correction, m)
              OBJ_SHADE.back)
         quad(p(x, y + 1 - SIDE_INSET, z0), p(x + w, y + 1 - SIDE_INSET, z0),
              p(x + w, y + 1 - SIDE_INSET, z1), p(x, y + 1 - SIDE_INSET, z1),
-             rectUv(lx, ly, lx2, "top"), OBJ_SHADE.top)
+             bodyRectUv(lx, ly, lx2, "top", 1), OBJ_SHADE.top)
         quad(p(x, y + SIDE_INSET, z1), p(x + w, y + SIDE_INSET, z1),
              p(x + w, y + SIDE_INSET, z0), p(x, y + SIDE_INSET, z0),
-             rectUv(lx, ly, lx2), OBJ_SHADE.bottom)
+             bodyRectUv(lx, ly, lx2, nil, -1), OBJ_SHADE.bottom)
 
         for sx = lx, lx2 do
           local px, sy = sx - m.minX, lowY - ly
-          local uv4 = sameUv(sx, ly)
           quad(p(px + SIDE_INSET, sy, z0), p(px + SIDE_INSET, sy, z1),
                p(px + SIDE_INSET, sy + 1, z1), p(px + SIDE_INSET, sy + 1, z0),
-               uv4, OBJ_SHADE.side)
+               sideUv(sx, ly, 1), OBJ_SHADE.side)
           quad(p(px + 1 - SIDE_INSET, sy, z1), p(px + 1 - SIDE_INSET, sy, z0),
                p(px + 1 - SIDE_INSET, sy + 1, z0), p(px + 1 - SIDE_INSET, sy + 1, z1),
-               uv4, OBJ_SHADE.side)
+               sideUv(sx, ly, -1), OBJ_SHADE.side)
         end
         lx = lx2 + 1
       else
@@ -428,12 +551,13 @@ local function buildMesh(def, frame, depth, correction, m)
   return Voxel3D.newMesh(verts, idx)
 end
 
-local function cacheKey(def, frame, depth, correction, layout)
+local function cacheKey(def, frame, depth, correction, layout, sideColor)
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
     tostring(frame or 0),
     tostring(depth),
+    tostring(sideColor or ""),
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -444,14 +568,15 @@ end
 local function voxelMesh(def, frame)
   local depth = depthValue or readDepth()
   if depth == "off" then return originalMesh(def, frame) end
+  local sideColor = sideColorValue or readSideColor()
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then return originalMesh(def, frame) end
-  local key = cacheKey(def, frame, depth, correction, m)
+  local key = cacheKey(def, frame, depth, correction, m, sideColor)
   if meshes[key] ~= nil then
     touchMeshKey(key)
   else
-    local ok, mesh = pcall(buildMesh, def, frame, depth, correction, m)
+    local ok, mesh = pcall(buildMesh, def, frame, depth, correction, m, sideColor)
     rememberMesh(key, (ok and mesh) or false)
   end
   return meshes[key] or originalMesh(def, frame)

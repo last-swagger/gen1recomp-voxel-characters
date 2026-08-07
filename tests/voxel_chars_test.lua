@@ -13,10 +13,67 @@ local function fakeImage(pixels, w, h)
   return {
     getDimensions = function() return w, h end,
     getPixel = function(_, x, y)
-      local a = pixels[y * w + x] or 0
-      return 1, 1, 1, a
+      local p = pixels[y * w + x]
+      if type(p) == "table" then
+        return p[1] or p.r or 0, p[2] or p.g or 0,
+               p[3] or p.b or 0, p[4] or p.a or 1
+      end
+      return 1, 1, 1, p or 0
     end,
   }
+end
+
+local function rgba(r, g, b, a)
+  return { r, g, b, a or 1 }
+end
+
+local function close(a, b)
+  return math.abs(a - b) < 0.0001
+end
+
+local function quadIndex(mesh, pred)
+  for i = 1, #mesh.verts, 4 do
+    if pred(i) then return i end
+  end
+end
+
+local function allQuad(mesh, i, pred)
+  for j = i, i + 3 do
+    if not pred(mesh.verts[j]) then return false end
+  end
+  return true
+end
+
+local function quadUvBounds(mesh, i)
+  local minU, maxU, minV, maxV = 1, 0, 1, 0
+  for j = i, i + 3 do
+    minU = math.min(minU, mesh.verts[j][4])
+    maxU = math.max(maxU, mesh.verts[j][4])
+    minV = math.min(minV, mesh.verts[j][5])
+    maxV = math.max(maxV, mesh.verts[j][5])
+  end
+  return minU, maxU, minV, maxV
+end
+
+local function setSideColorWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 40 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "sideColorValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra sideColorValue em voxelMesh")
 end
 
 local function fakeMesh(verts, map)
@@ -171,8 +228,9 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 2, "hook anexa a row do voxel characters")
+  eq(#rows, 3, "hook anexa as rows do voxel characters")
   local option = rows[2]
+  eq(rows[3].label, "SIDE COLOR", "hook anexa a row de cor lateral")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -365,6 +423,182 @@ do
     end
   end
   check(foundTop, "topo existe mesmo quando a frame atual remove o pixel acima")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.80, 0.80, 0.80, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 1)
+  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local q = quadIndex(got, function(i)
+    return allQuad(got, i, function(v)
+      return close(v[1], 0.03) and close(v[6], 0.78)
+    end)
+  end)
+  check(q ~= nil, "BODY encontra a face lateral da borda")
+  check(q and allQuad(got, q, function(v) return close(v[4], 0.75) end),
+        "BODY usa o UV da coluna clara na face lateral")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.80, 0.80, 0.80, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 1)
+  loadWith(makeMod(handle, { depth = 2, side_color = "outline" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local q = quadIndex(got, function(i)
+    return allQuad(got, i, function(v)
+      return close(v[1], 0.03) and close(v[6], 0.78)
+    end)
+  end)
+  check(q ~= nil, "OUTLINE encontra a face lateral da borda")
+  check(q and allQuad(got, q, function(v) return close(v[4], 0.25) end),
+        "OUTLINE preserva o UV da borda na face lateral")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.20, 0.20, 0.20, 1),
+    [2] = rgba(0.80, 0.80, 0.80, 1),
+    [3] = rgba(0.80, 0.80, 0.80, 1),
+  }
+  local expectedMinU, expectedMaxU = 0.025, 0.975
+  local expectedMinV, expectedMaxV = 0.025, 0.475
+  for _, mode in ipairs({ "body", "outline" }) do
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
+    loadWith(makeMod(handle, { depth = 2, side_color = mode }))
+    local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    local q = quadIndex(got, function(i)
+      return allQuad(got, i, function(v)
+        return close(v[3], 0) and close(v[6], 1.0)
+      end)
+    end)
+    local minU, maxU, minV, maxV = 0, 0, 0, 0
+    if q then minU, maxU, minV, maxV = quadUvBounds(got, q) end
+    check(q and close(minU, expectedMinU) and close(maxU, expectedMaxU)
+          and close(minV, expectedMinV) and close(maxV, expectedMaxV),
+          "frente usa o UV original no modo " .. mode)
+  end
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.20, 0.20, 0.20, 1),
+    [2] = rgba(0.80, 0.80, 0.80, 1),
+    [3] = rgba(0.80, 0.80, 0.80, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
+  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local q = quadIndex(got, function(i)
+    return allQuad(got, i, function(v)
+      return close(v[2], 1.97) and close(v[6], 1.0)
+    end)
+  end)
+  local minU, maxU, minV, maxV = 0, 0, 0, 0
+  if q then minU, maxU, minV, maxV = quadUvBounds(got, q) end
+  check(q and close(minV, 0.525) and close(maxV, 0.975),
+        "topo com run inteiro em contorno usa UV da linha de corpo abaixo")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.80, 0.80, 0.80, 1),
+    [1] = rgba(0.80, 0.80, 0.80, 1),
+    [2] = rgba(0.20, 0.20, 0.20, 1),
+    [3] = rgba(0.20, 0.20, 0.20, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
+  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local q = quadIndex(got, function(i)
+    return allQuad(got, i, function(v)
+      return close(v[2], 0.03) and close(v[6], 0.55)
+    end)
+  end)
+  local minU, maxU, minV, maxV = 0, 0, 0, 0
+  if q then minU, maxU, minV, maxV = quadUvBounds(got, q) end
+  check(q and close(minV, 0.025) and close(maxV, 0.475),
+        "base com run inteiro em contorno usa UV da linha de corpo acima")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.20, 0.20, 0.20, 1),
+    [2] = rgba(0.80, 0.80, 0.80, 1),
+    [3] = rgba(0.20, 0.20, 0.20, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
+  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local q = quadIndex(got, function(i)
+    return allQuad(got, i, function(v)
+      return close(v[2], 1.97) and close(v[6], 1.0)
+    end)
+  end)
+  local minU, maxU, minV, maxV = 0, 0, 0, 0
+  if q then minU, maxU, minV, maxV = quadUvBounds(got, q) end
+  check(q and close(minV, 0.025) and close(maxV, 0.475),
+        "topo com corpo parcial na linha candidata preserva o UV original")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.40, 0.40, 0.40, 1),
+    [1] = rgba(0.40, 0.40, 0.40, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 1)
+  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local q = quadIndex(got, function(i)
+    return allQuad(got, i, function(v)
+      return close(v[1], 0.03) and close(v[6], 0.78)
+    end)
+  end)
+  check(q ~= nil, "folha de um tom so encontra a face lateral")
+  check(q and allQuad(got, q, function(v) return close(v[4], 0.25) end),
+        "folha de um tom so falha a busca e preserva o UV proprio")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.80, 0.80, 0.80, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 1)
+  local mod = loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  local def = { image = "sheet.png", frames = 1 }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  mod._events["mod.options_changed"]({ mod = mod.id, key = "side_color",
+                                        value = "outline" })
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  check(a ~= b, "trocar SIDE COLOR nao serve a malha do outro modo")
+  check(a.released and modules.Voxel3D.created == 2,
+        "trocar SIDE COLOR limpa o cache de malhas")
+end
+
+do
+  local pixels = {
+    [0] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.80, 0.80, 0.80, 1),
+  }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 1)
+  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  local def = { image = "sheet.png", frames = 1 }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setSideColorWithoutClearing(modules, "outline")
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  check(a ~= b, "cacheKey separa SIDE COLOR mesmo sem limpar o cache")
+  eq(modules.Voxel3D.created, 2,
+     "cacheKey cria uma entrada propria para cada SIDE COLOR")
 end
 
 T.finish("voxel_chars_test")
