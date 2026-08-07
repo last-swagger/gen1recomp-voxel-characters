@@ -27,8 +27,8 @@ local SUPPORTED = ">=1.5.0 <2.0.0"
 local KEY = "depth"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
-local DEFAULT_DEPTH = 2
-local DEFAULT_INDEX = 3
+local DEFAULT_DEPTH = 3
+local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -47,7 +47,7 @@ mod.options:define({
       { "OFF", "off" }, { "1", 1 }, { "2", 2 },
       { "3", 3 }, { "5", 5 }, { "10", 10 },
     },
-    default = 2,
+    default = 3,
     help = "Extrudes overworld character sprites. Depth 1-5 stays inside the voxel pull budget; 10 may clip into walls.",
   },
 })

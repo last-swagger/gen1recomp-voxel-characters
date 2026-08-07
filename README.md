@@ -34,7 +34,7 @@ One row, under **OPTIONS**:
 VOXEL CHARS:   OFF / 1 / 2 / 3 / 5 / 10
 ```
 
-The number is slab thickness in voxels. Default is **2**.
+The number is slab thickness in voxels. Default is **3**.
 
 **OFF** returns the original flat card immediately, no restart. That makes it the
 cleanest way to compare before and after.
