@@ -192,7 +192,7 @@ build. The worst case is flat characters, never a broken game.
 luajit mods/voxel_characters/tests/voxel_chars_test.lua
 ```
 
-93 assertions covering the version guard, the options rows and their
+96 assertions covering the version guard, the options rows and their
 persistence, slab geometry and vertex format, carved visual-hull surface faces,
 per-frame silhouette projection, absolute role position, depth-axis orientation,
 three-frame carve sheets, carve fallback, pitch bucketing, cache keying and LRU

@@ -6,6 +6,18 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
+## [1.2.2] - 2026-08-07
+
+### Fixed
+
+- **Stable side, top and bottom colouring in SLAB.** SLAB now resolves new side,
+  top and bottom face colours from fixed role reference frames before falling
+  back to the current pose, matching the CARVED stability rule while preserving
+  SLAB's rectangular run UVs.
+
+  Reported by **Kim**, who found the remaining cap flicker in the default SLAB
+  mode after v1.2.1. **Pikon** had confirmed the same symptom in v1.2.0.
+
 ## [1.2.1] - 2026-08-07
 
 ### Added

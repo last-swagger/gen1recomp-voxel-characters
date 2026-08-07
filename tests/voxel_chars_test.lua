@@ -776,6 +776,72 @@ do
 end
 
 do
+  local cellW, cellH = 3, 4
+  local sheetW = cellW * 6
+  local pixels = {}
+  for _, frame in ipairs({ 0, 1, 2 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 0, rgba(0.05, 0.05, 0.05, 1))
+    paint(pixels, sheetW, cellW, frame, 1, 1, rgba(0.80, 0.10, 0.10, 1))
+    paint(pixels, sheetW, cellW, frame, 1, 2, rgba(0.05, 0.05, 0.05, 1))
+  end
+  for _, frame in ipairs({ 3, 4, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 1, rgba(0.05, 0.05, 0.05, 1))
+    paint(pixels, sheetW, cellW, frame, 1, 2, rgba(0.80, 0.10, 0.10, 1))
+    paint(pixels, sheetW, cellW, frame, 1, 3, rgba(0.05, 0.05, 0.05, 1))
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", side_color = "body" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local topU0, topV0 = horizontalFaceUvAt(stand, 1.0, true)
+  local topU1, topV1 = horizontalFaceUvAt(walk, 1.0, true)
+  check(topU0 and topU1 and close(topU0, topU1) and close(topV0, topV1),
+        "face de topo SLAB nao muda classificacao de cor entre frames")
+end
+
+do
+  local cellW, cellH = 1, 4
+  local sheetW = cellW * 6
+  local pixels = {}
+  for _, frame in ipairs({ 0, 1, 2 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, rgba(0.80, 0.10, 0.10, 1))
+    paint(pixels, sheetW, cellW, frame, 0, 2, rgba(0.05, 0.05, 0.05, 1))
+  end
+  for _, frame in ipairs({ 3, 4, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 2, rgba(0.80, 0.10, 0.10, 1))
+    paint(pixels, sheetW, cellW, frame, 0, 3, rgba(0.05, 0.05, 0.05, 1))
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", side_color = "body" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local baseU0, baseV0 = horizontalFaceUvAt(stand, 0.55, false)
+  local baseU1, baseV1 = horizontalFaceUvAt(walk, 0.55, false)
+  check(baseU0 and baseU1 and close(baseU0, baseU1) and close(baseV0, baseV1),
+        "face de base SLAB nao muda classificacao de cor entre frames")
+end
+
+do
+  local cellW, cellH = 2, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  paint(pixels, sheetW, cellW, 0, 0, 0, rgba(0.05, 0.05, 0.05, 1))
+  paint(pixels, sheetW, cellW, 0, 1, 0, rgba(0.80, 0.10, 0.10, 1))
+  paint(pixels, sheetW, cellW, 3, 0, 0, rgba(0.05, 0.05, 0.05, 1))
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", side_color = "body" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local sideU0, sideV0 = sideFaceUvAt(stand, 0.03, 0.03, 0, 1)
+  local sideU1, sideV1 = sideFaceUvAt(walk, 0.03, 0.03, 0, 1)
+  check(sideU0 and sideU1 and close(sideU0, sideU1) and close(sideV0, sideV1),
+        "face lateral SLAB nao muda classificacao de cor entre frames")
+end
+
+do
   local cellW, cellH = 2, 2
   local sheetW = cellW * 6
   local pixels = {}

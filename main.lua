@@ -456,6 +456,45 @@ local function rememberMesh(key, mesh)
   end
 end
 
+local function frameTexel(m, frame, lx, ly)
+  if lx < 0 or lx >= m.cellW or ly < 0 or ly >= m.cellH then return false end
+  frame = tonumber(frame) or 0
+  if frame < 0 or frame >= m.frames then return false end
+  local fx, fy = frameOrigin(m, frame)
+  if fx + m.cellW > m.sheetW or fy + m.cellH > m.sheetH then return false end
+  local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
+  if not r or (a or 0) < 0.5 then return false end
+  local outline = m.outlineLuma
+    and math.abs(luminance(r, g, b) - m.outlineLuma) <= LUMA_EPSILON
+  return true, outline
+end
+
+local function roleForFrame(frame, frames)
+  frame = tonumber(frame) or 0
+  if frame < 0 or frame >= frames then frame = 0 end
+  if frame > 5 then frame = frame % 3 end
+  return frame % 3
+end
+
+local function referenceFramesForRole(frame, frames, role)
+  role = role or roleForFrame(frame, frames)
+  if frames >= 6 then return role, role + 3 end
+  if frames >= 3 then return role, nil end
+  return tonumber(frame) or 0, nil
+end
+
+local function bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
+  if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly end
+  local opaque, outline = frameTexel(m, frameIndex, lx, ly)
+  if not (opaque and outline) then return lx, ly end
+  for step = 1, BODY_SEARCH_LIMIT do
+    local bx, by = lx + dx * step, ly + dy * step
+    local bodyOpaque, bodyOutline = frameTexel(m, frameIndex, bx, by)
+    if bodyOpaque and not bodyOutline then return bx, by end
+  end
+  return lx, ly
+end
+
 local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
   m = m or maskFor(def)
   if not m then return nil end
@@ -463,6 +502,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
   if frame < 0 or frame >= m.frames then frame = 0 end
   local fx, fy = frameOrigin(m, frame)
   if fx + m.cellW > m.sheetW or fy + m.cellH > m.sheetH then return nil end
+  local refFrameA, refFrameB = referenceFramesForRole(frame, m.frames)
 
   local z0, z1 = -depth, 0
   local baseY, lowY = 0, m.maxY
@@ -478,25 +518,8 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
     return (fx + lx + 0.5) / m.sheetW, (fy + ly + 0.5) / m.sheetH
   end
 
-  local function texel(lx, ly)
-    if lx < 0 or lx >= m.cellW or ly < 0 or ly >= m.cellH then return false end
-    local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
-    if not r or (a or 0) < 0.5 then return false end
-    local outline = m.outlineLuma
-      and math.abs(luminance(r, g, b) - m.outlineLuma) <= LUMA_EPSILON
-    return true, outline
-  end
-
   local function bodyTexel(lx, ly, dx, dy)
-    if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly end
-    local opaque, outline = texel(lx, ly)
-    if not (opaque and outline) then return lx, ly end
-    for step = 1, BODY_SEARCH_LIMIT do
-      local bx, by = lx + dx * step, ly + dy * step
-      local bodyOpaque, bodyOutline = texel(bx, by)
-      if bodyOpaque and not bodyOutline then return bx, by end
-    end
-    return lx, ly
+    return bodyTexelInFrame(m, frame, lx, ly, dx, dy, sideColor)
   end
 
   local function sameUv(lx, ly)
@@ -504,16 +527,31 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
     return { u, v, u, v, u, v, u, v }
   end
 
-  local function sideUv(lx, ly, dx)
-    local bx, by = bodyTexel(lx, ly, dx, 0)
-    return sameUv(bx, by)
+  local function sameFrameUv(frameIndex, lx, ly)
+    local ffx, ffy = frameOrigin(m, frameIndex)
+    local u = (ffx + lx + 0.5) / m.sheetW
+    local v = (ffy + ly + 0.5) / m.sheetH
+    return { u, v, u, v, u, v, u, v }
   end
 
-  local function rectUv(lx, ly, lx2, order)
-    local u0 = (fx + lx + RUN_UV_INSET) / m.sheetW
-    local u1 = (fx + lx2 + 1 - RUN_UV_INSET) / m.sheetW
-    local v0 = (fy + ly + RUN_UV_INSET) / m.sheetH
-    local v1 = (fy + ly + 1 - RUN_UV_INSET) / m.sheetH
+  local function sideUv(lx, ly, dx)
+    local function tryFrame(frameIndex)
+      if not frameIndex then return nil end
+      local bx, by = bodyTexelInFrame(m, frameIndex, lx, ly, dx, 0, sideColor)
+      if frameTexel(m, frameIndex, bx, by) then
+        return sameFrameUv(frameIndex, bx, by)
+      end
+    end
+    return tryFrame(refFrameA) or tryFrame(refFrameB)
+      or sameUv(bodyTexel(lx, ly, dx, 0))
+  end
+
+  local function rectFrameUv(frameIndex, lx, ly, lx2, order)
+    local ffx, ffy = frameOrigin(m, frameIndex)
+    local u0 = (ffx + lx + RUN_UV_INSET) / m.sheetW
+    local u1 = (ffx + lx2 + 1 - RUN_UV_INSET) / m.sheetW
+    local v0 = (ffy + ly + RUN_UV_INSET) / m.sheetH
+    local v1 = (ffy + ly + 1 - RUN_UV_INSET) / m.sheetH
     if order == "back" then
       return { u1, v1, u0, v1, u0, v0, u1, v0 }
     elseif order == "top" then
@@ -522,26 +560,50 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
     return { u0, v1, u1, v1, u1, v0, u0, v0 }
   end
 
-  local function bodyRectUv(lx, ly, lx2, order, dy)
-    if sideColor ~= DEFAULT_SIDE_COLOR then return rectUv(lx, ly, lx2, order) end
+  local function rectUv(lx, ly, lx2, order)
+    return rectFrameUv(frame, lx, ly, lx2, order)
+  end
+
+  local function bodyRectLine(frameIndex, lx, ly, lx2, dy)
+    local allOutline = true
     for sx = lx, lx2 do
-      local opaque, outline = texel(sx, ly)
-      if not (opaque and outline) then return rectUv(lx, ly, lx2, order) end
+      local opaque, outline = frameTexel(m, frameIndex, sx, ly)
+      if not opaque then return nil end
+      if not outline then allOutline = false end
     end
+    if sideColor ~= DEFAULT_SIDE_COLOR or not allOutline then return ly end
     for step = 1, BODY_SEARCH_LIMIT do
       local by = ly + dy * step
       local ok = true
       for sx = lx, lx2 do
-        local opaque, outline = texel(sx, by)
+        local opaque, outline = frameTexel(m, frameIndex, sx, by)
         if not (opaque and not outline) then
           ok = false
           break
         end
       end
-      if ok then return rectUv(lx, by, lx2, order) end
+      if ok then return by end
     end
-    return rectUv(lx, ly, lx2, order)
+    return ly
   end
+
+  local function bodyRectUv(lx, ly, lx2, order, dy)
+    local function tryFrame(frameIndex)
+      if not frameIndex then return nil end
+      local by = bodyRectLine(frameIndex, lx, ly, lx2, dy)
+      if by then return rectFrameUv(frameIndex, lx, by, lx2, order) end
+    end
+    return tryFrame(refFrameA) or tryFrame(refFrameB)
+      or rectUv(lx, ly, lx2, order)
+  end
+
+  -- DECISAO: SLAB tambem precisa fixar a classificacao de cor das faces novas
+  -- por role, nao pelo frame corrente. O bug medido no red.png vinha de usar
+  -- a caminhada diretamente: 49/180 posicoes de face de topo alternavam entre
+  -- parado e andando, 14 delas na regiao do bone. A causa direta e a linha 0
+  -- do frame 3 ficar vazia porque o sprite desce uma linha inteira. Topo/base
+  -- usam runs retangulares, entao so trocamos para a referencia quando a linha
+  -- inteira esta opaca; laterais usam o mesmo texel fixo por pixel.
 
   local function p(x, y, z)
     -- A matriz do Dramatic Shape inclina o card no X, pivotando nos pes.
@@ -567,9 +629,10 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
   -- pixels de silhueta lateral de red.png vinham no tom mais escuro, mas
   -- um passo para dentro so 16/34 ainda eram contorno. Por isso BODY pinta
   -- faces novas com texel interno, enquanto frente e tras continuam sendo
-  -- a arte original. Topo/base so deslocam o UV quando o run inteiro e
+  -- a arte original. Topo/base so deslocavam o UV quando o run inteiro e
   -- contorno e a mesma linha interna inteira tem corpo; se misturar tons,
-  -- preservar o run atual vale mais que quebrar o merge.
+  -- preservar o run vale mais que quebrar o merge. A partir da v1.2.2, essa
+  -- decisao roda em frames de referencia fixos para o SLAB nao piscar.
   for ly = m.minY, m.maxY do
     local lx = m.minX
     while lx <= m.maxX do
@@ -608,19 +671,6 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
   end
 
   return Voxel3D.newMesh(verts, idx)
-end
-
-local function frameTexel(m, frame, lx, ly)
-  if lx < 0 or lx >= m.cellW or ly < 0 or ly >= m.cellH then return false end
-  frame = tonumber(frame) or 0
-  if frame < 0 or frame >= m.frames then return false end
-  local fx, fy = frameOrigin(m, frame)
-  if fx + m.cellW > m.sheetW or fy + m.cellH > m.sheetH then return false end
-  local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
-  if not r or (a or 0) < 0.5 then return false end
-  local outline = m.outlineLuma
-    and math.abs(luminance(r, g, b) - m.outlineLuma) <= LUMA_EPSILON
-  return true, outline
 end
 
 local function frameBounds(m, frame)
@@ -673,8 +723,8 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   if not (frontBounds and backBounds and sideBounds) then return nil end
   local widthFrame = pose.role == 1 and pose.back or pose.front
   local widthBounds = pose.role == 1 and backBounds or frontBounds
-  local widthFrameA = pose.role == 1 and 1 or 0
-  local widthFrameB = (m.frames >= 6) and (widthFrameA + 3) or nil
+  local widthFrameA, widthFrameB = referenceFramesForRole(frame, m.frames,
+    pose.role == 1 and 1 or 0)
 
   local verts, idx = {}, {}
   local pitchC, pitchS = math.cos(correction or 0), math.sin(correction or 0)
@@ -822,19 +872,10 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   end
 
   local function bodyTexel(frameIndex, lx, ly, dx, dy)
-    if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly end
-    local opaque, outline = frameTexel(m, frameIndex, lx, ly)
-    if not (opaque and outline) then return lx, ly end
-    for step = 1, BODY_SEARCH_LIMIT do
-      local bx, by = lx + dx * step, ly + dy * step
-      local bodyOpaque, bodyOutline = frameTexel(m, frameIndex, bx, by)
-      if bodyOpaque and not bodyOutline then return bx, by end
-    end
-    return lx, ly
+    return bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
   end
 
-  local sideFrameA = m.frames >= 6 and 2 or pose.side
-  local sideFrameB = m.frames >= 6 and 5 or nil
+  local sideFrameA, sideFrameB = referenceFramesForRole(frame, m.frames, 2)
 
   local function sideUv(sx, ly)
     local middle = (sideBounds.minX + sideBounds.maxX) / 2
