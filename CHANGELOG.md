@@ -6,6 +6,60 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
+## [1.4.1] - 2026-08-07
+
+### Added
+
+- **`TOP EDGE: OFF / ON`.** When enabled, exposed SLAB top faces use shade
+  `1.00 * 0.82`, giving hats and hair a darker false top-down edge. Default is
+  OFF because this intentionally stops those character top faces from matching
+  the host world shade `+Y up = 1.00`.
+
+  Suggested by **Jirai Gumo**, who called out the top of Red's hat as a place
+  where a second dark outline could help the layered character models read from
+  above.
+
+### Fixed
+
+- **Voxel Characters now finds the active fork host.** The bootstrap accepts
+  `BATTLE_ART_VOXEL_FORK` from absol89's Battle Art Voxel Fork as the reference
+  host, while keeping `DRAMATIC_SHAPE` as the legacy fallback. If both host ids
+  are installed and supported, the fork is chosen. The mod now checks each host
+  for both `exports.lib` and the supported version range before choosing it, so
+  an out-of-range fork no longer blocks a valid legacy host from loading. If no
+  usable host exists, the warning says what it found and why each candidate was
+  rejected.
+
+- **The fork id is now an optional dependency too.** This gives the loader the
+  same soft ordering edge for `BATTLE_ART_VOXEL_FORK` that it already had for
+  `DRAMATIC_SHAPE`, so Voxel Characters does not run before a fork-only install
+  has exported its API.
+
+- **The fork requirement is documented as `>=1.7.0 <2.0.0`.** That is the real
+  supported range in code. The fork tags are not monotonic semver by release
+  date: `1.7.6` is the newest by date, while `v1.68` parses as `1.68.0` and
+  compares higher, so both are intentionally accepted.
+
+  Reported by **Colonel_Aureliano**, who isolated this through a clean reinstall
+  after props voxelized correctly but NPCs stayed flat and the options had no
+  visible effect.
+
+- **SLAB no longer emits hidden top, bottom and side faces inside the body.**
+  `buildSlabMesh` now emits a top face only when the pixel above is transparent,
+  a bottom face only when the pixel below is transparent, a left side face only
+  when the pixel to the left is transparent, and a right side face only when the
+  pixel to the right is transparent. The old `0.03` SLAB face inset is now zero
+  because those same-plane internal faces are no longer emitted. On `red.png`
+  frame 0, top and bottom faces drop from 176 each to 16 each, `side_e` and
+  `side_w` drop from 176 each to 17 each, and total quads drop from 742 to 104.
+
+  The defect existed since v1.0.0. v1.4.0 did not create it; v1.4.0 changed
+  those contour faces to body color, which removed the visual camouflage from
+  hidden faces that had been present all along.
+
+  Reported by **absol**, who described voxel flicker and grid-like gaps visible
+  through Red's face.
+
 ## [1.4.0] - 2026-08-07
 
 ### Added

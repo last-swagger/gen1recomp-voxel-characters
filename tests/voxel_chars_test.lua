@@ -3,8 +3,19 @@ love = require("tests.love_stub")
 
 local T = require("tests.harness")
 local check, eq = T.check, T.eq
+local Json = require("src.link.Json")
 local MAIN_PATH = os.getenv("VOXEL_CHARS_MAIN")
   or "mods/voxel_characters/main.lua"
+local MANIFEST_PATH = "mods/voxel_characters/manifest.json"
+
+local function readJson(path)
+  local f = assert(io.open(path, "rb"))
+  local body = f:read("*a")
+  f:close()
+  local doc, err = Json.decode(body)
+  assert(doc, tostring(err))
+  return doc
+end
 
 local function resetLoaded()
   package.loaded["src.render.Assets"] = nil
@@ -83,6 +94,15 @@ local function uvSignature(mesh)
   local out = {}
   for i, v in ipairs(mesh.verts) do
     out[i] = ("%.4f,%.4f"):format(v[4], v[5])
+  end
+  return table.concat(out, ";")
+end
+
+local function vertexSignature(mesh)
+  local out = {}
+  for i, v in ipairs(mesh.verts) do
+    out[i] = ("%.4f,%.4f,%.4f,%.4f,%.4f,%.4f"):format(
+      v[1], v[2], v[3], v[4], v[5], v[6])
   end
   return table.concat(out, ";")
 end
@@ -192,6 +212,42 @@ local function horizontalFaceUvInBounds(mesh, shade, minX, maxX, minY, maxY)
       return mesh.verts[i][4], mesh.verts[i][5]
     end
   end
+end
+
+local function countHorizontalFacesAtY(mesh, shade, y)
+  local count = 0
+  for i = 1, #mesh.verts, 4 do
+    local b = quadBoundsAt(mesh, i)
+    if close(b.minY, y) and close(b.maxY, y) and b.maxZ > b.minZ
+        and allQuad(mesh, i, function(v) return close(v[6], shade) end) then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+local function countSideFaces(mesh)
+  local count = 0
+  for i = 1, #mesh.verts, 4 do
+    local b = quadBoundsAt(mesh, i)
+    if close(b.minX, b.maxX) and b.maxZ > b.minZ
+        and allQuad(mesh, i, function(v) return close(v[6], 0.78) end) then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+local function countSideFacesAtX(mesh, x)
+  local count = 0
+  for i = 1, #mesh.verts, 4 do
+    local b = quadBoundsAt(mesh, i)
+    if close(b.minX, x) and close(b.maxX, x) and b.maxZ > b.minZ
+        and allQuad(mesh, i, function(v) return close(v[6], 0.78) end) then
+      count = count + 1
+    end
+  end
+  return count
 end
 
 local function frontFaceZAt(mesh, minX, maxX, minY, maxY)
@@ -319,6 +375,27 @@ local function setBlinkWithoutClearing(modules, value)
   return check(false, "teste encontra blinkValue em voxelMesh")
 end
 
+local function setTopEdgeWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 80 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "topEdgeValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra topEdgeValue em voxelMesh")
+end
+
 local function blinkHashName(name)
   local h = 5381
   name = tostring(name or "")
@@ -376,7 +453,7 @@ end
 -- FirstPerson.cardBlend(); omitFirstPerson tira o modulo do namespace, para
 -- provar a versao do host onde FirstPerson nem existe.
 local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
-                                cardBlend, omitFirstPerson)
+                               cardBlend, omitFirstPerson, hostId)
   local modules = {}
   local V = {}
   local original = function(def, frame)
@@ -429,7 +506,11 @@ local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
     end
     return modules[name]
   end
-  return { id = "DRAMATIC_SHAPE", version = version, exports = { lib = V } }, modules, original
+  return {
+    id = hostId or "DRAMATIC_SHAPE",
+    version = version,
+    exports = { lib = V },
+  }, modules, original
 end
 
 local function makeMod(handle, stored)
@@ -462,8 +543,14 @@ local function makeMod(handle, stored)
   function mod.events:on(name, fn)
     events[name] = fn
   end
+  local hosts = {}
+  if handle and handle.exports then
+    hosts[handle.id or "DRAMATIC_SHAPE"] = handle
+  elseif handle then
+    hosts = handle
+  end
   function mod.find(id)
-    if id == "DRAMATIC_SHAPE" then return handle end
+    return hosts[id]
   end
   mod._rows, mod._events, mod._logs = rows, events, logs
   return mod
@@ -477,6 +564,14 @@ local function loadWith(mod)
 end
 
 do
+  local manifest = readJson(MANIFEST_PATH)
+  local seen = {}
+  for _, id in ipairs(manifest.optional_dependencies or {}) do seen[id] = true end
+  check(seen.BATTLE_ART_VOXEL_FORK and seen.DRAMATIC_SHAPE,
+        "optional_dependencies lista os dois ids")
+end
+
+do
   local pixels = {}
   pixels[0] = 1
   local handle, modules, original = makeVoxelHandle("2.0.0", pixels, 16, 16)
@@ -484,11 +579,103 @@ do
   local SpriteBillboards = handle.exports.lib.require("SpriteBillboards")
   eq(SpriteBillboards.mesh, original, "versao fora da faixa preserva original")
   eq(mod._rows["ui.options.rows"], nil, "row nao aparece sem patch suportado")
+  check(mod._logs.warn[1]
+        and mod._logs.warn[1]:find("outside supported range", 1, true),
+        "versao fora da faixa avisa no log")
 end
 
 do
   local mod = loadWith(makeMod(nil))
   eq(mod._rows["ui.options.rows"], nil, "row nao aparece sem Dramatic Shape")
+  check(mod._logs.warn[1]
+        and mod._logs.warn[1]:find("BATTLE_ART_VOXEL_FORK", 1, true)
+        and mod._logs.warn[1]:find("DRAMATIC_SHAPE", 1, true),
+        "sem host avisa quais ids foram procurados")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local fork, _, forkOriginal =
+    makeVoxelHandle("1.3.1", pixels, 16, 16, nil, nil, nil, nil,
+      "BATTLE_ART_VOXEL_FORK")
+  local dramatic, dramaticModules, dramaticOriginal =
+    makeVoxelHandle("1.6.0", pixels, 16, 16)
+  loadWith(makeMod({
+    BATTLE_ART_VOXEL_FORK = fork,
+    DRAMATIC_SHAPE = dramatic,
+  }))
+  local forkSprite = fork.exports.lib.require("SpriteBillboards")
+  check(dramaticModules.SpriteBillboards.mesh ~= dramaticOriginal
+        and forkSprite.mesh == forkOriginal,
+        "fork fora da faixa e legado valido: o legado e usado")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local fork = makeVoxelHandle("1.3.1", pixels, 16, 16, nil, nil, nil, nil,
+    "BATTLE_ART_VOXEL_FORK")
+  local dramatic = makeVoxelHandle("2.0.0", pixels, 16, 16)
+  local mod = loadWith(makeMod({
+    BATTLE_ART_VOXEL_FORK = fork,
+    DRAMATIC_SHAPE = dramatic,
+  }))
+  local warn = mod._logs.warn[1] or ""
+  check(warn:find("BATTLE_ART_VOXEL_FORK", 1, true)
+        and warn:find("found 1.3.1", 1, true)
+        and warn:find(">=1.7.0 <2.0.0", 1, true)
+        and warn:find("DRAMATIC_SHAPE", 1, true)
+        and warn:find("found 2.0.0", 1, true)
+        and warn:find(">=1.5.0 <2.0.0", 1, true)
+        and warn:find("outside supported range", 1, true),
+        "nenhum host valido: o log diz o que achou e por que rejeitou")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle))
+  check(modules.SpriteBillboards.mesh ~= original, "host DRAMATIC_SHAPE e aceito")
+  check(mod._logs.info[1]
+        and mod._logs.info[1]:find("Dramatic Shape 1.6.0", 1, true),
+        "host DRAMATIC_SHAPE encontrado e logado")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("1.7.6", pixels, 16, 16,
+    nil, nil, nil, nil, "BATTLE_ART_VOXEL_FORK")
+  local mod = loadWith(makeMod(handle))
+  check(modules.SpriteBillboards.mesh ~= original,
+        "host BATTLE_ART_VOXEL_FORK e aceito")
+  check(mod._logs.info[1]
+        and mod._logs.info[1]:find("Battle Art Voxel Fork 1.7.6", 1, true),
+        "host BATTLE_ART_VOXEL_FORK encontrado e logado")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local dramatic, dramaticModules, dramaticOriginal =
+    makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local fork, forkModules, forkOriginal =
+    makeVoxelHandle("1.7.6", pixels, 16, 16, nil, nil, nil, nil,
+      "BATTLE_ART_VOXEL_FORK")
+  local mod = loadWith(makeMod({
+    DRAMATIC_SHAPE = dramatic,
+    BATTLE_ART_VOXEL_FORK = fork,
+  }))
+  local dramaticSprite = dramatic.exports.lib.require("SpriteBillboards")
+  eq(dramaticSprite.mesh, dramaticOriginal,
+    "com dois hosts, DRAMATIC_SHAPE fica sem patch")
+  check(forkModules.SpriteBillboards.mesh ~= forkOriginal,
+        "com dois hosts, BATTLE_ART_VOXEL_FORK tem precedencia")
+  check(mod._logs.info[1]
+        and mod._logs.info[1]:find("BATTLE_ART_VOXEL_FORK", 1, true),
+        "com dois hosts, o fork escolhido e logado")
 end
 
 do
@@ -528,12 +715,13 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 6, "hook anexa as rows do voxel characters")
+  eq(#rows, 7, "hook anexa as rows do voxel characters")
   local option = rows[2]
   eq(rows[3].label, "SIDE COLOR", "hook anexa a row de cor lateral")
   eq(rows[4].label, "SHAPE", "hook anexa a row de shape")
   eq(rows[5].label, "GROUND SHADE", "hook anexa a row de ground shade")
   eq(rows[6].label, "BLINK", "hook anexa a row de blink")
+  eq(rows[7].label, "TOP EDGE", "hook anexa a row de top edge")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -547,6 +735,38 @@ do
   eq(emitted[1].payload.value, "off", "evento carrega o valor novo")
   local other = mod._rows["ui.options.rows"](function() return "vanilla" end, game, {})
   eq(other, "vanilla", "hook preserva retorno nao tabela do next")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 1 }))
+  local emitted = {}
+  local game = {
+    save = { options = {} },
+    mods = {
+      modOptions = {},
+      events = {
+        emit = function(_, name, payload)
+          emitted[#emitted + 1] = { name = name, payload = payload }
+          if mod._events[name] then mod._events[name](payload) end
+        end,
+      },
+    },
+  }
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
+  local option = rows[6]
+  eq(option.label, "TOP EDGE", "row de TOP EDGE fica depois de BLINK")
+  eq(option.value(), "OFF", "TOP EDGE default e OFF")
+  check(option.step(game, 1), "step de TOP EDGE informa mudanca")
+  eq(option.value(), "ON", "TOP EDGE alterna para ON")
+  eq(game.save.options.modOptions.voxel_characters.top_edge, "on",
+     "TOP EDGE persiste no save")
+  eq(game.mods.modOptions.voxel_characters.top_edge, "on",
+     "TOP EDGE persiste no loader")
+  eq(emitted[1].payload.value, "on", "TOP EDGE emite o valor novo")
 end
 
 do
@@ -725,7 +945,7 @@ do
         and got.verts[j][5] <= maxV + 0.0001
       shadeTop = shadeTop and math.abs(got.verts[j][6] - 1.0) < 0.0001
     end
-    if sameY and frameUv and shadeTop and math.abs(y - 0.97) < 0.0001 then
+    if sameY and frameUv and shadeTop and math.abs(y - 1) < 0.0001 then
       foundTop = true
     end
   end
@@ -742,7 +962,7 @@ do
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local q = quadIndex(got, function(i)
     return allQuad(got, i, function(v)
-      return close(v[1], 0.03) and close(v[6], 0.78)
+      return close(v[1], 0) and close(v[6], 0.78)
     end)
   end)
   check(q ~= nil, "BODY encontra a face lateral da borda")
@@ -760,7 +980,7 @@ do
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local q = quadIndex(got, function(i)
     return allQuad(got, i, function(v)
-      return close(v[1], 0.03) and close(v[6], 0.78)
+      return close(v[1], 0) and close(v[6], 0.78)
     end)
   end)
   check(q ~= nil, "OUTLINE encontra a face lateral da borda")
@@ -804,7 +1024,7 @@ do
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
   loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
-  local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 1.97, 1.97)
+  local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 2, 2)
   check(u and close(u, 0.25) and close(v, 0.75),
         "face de topo SLAB busca corpo na vertical quando o run mistura tons")
 end
@@ -819,9 +1039,91 @@ do
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
   loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
-  local u, v = horizontalFaceUvInBounds(got, 0.55, 0, 1, 0.03, 0.03)
+  local u, v = horizontalFaceUvInBounds(got, 0.55, 0, 1, 0, 0)
   check(u and close(u, 0.25) and close(v, 0.25),
         "face de base SLAB busca corpo para cima")
+end
+
+do
+  local cellW, cellH = 2, 2
+  local pixels = {}
+  for ly = 0, cellH - 1 do
+    for lx = 0, cellW - 1 do paint(pixels, cellW, cellW, 0, lx, ly, 1) end
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  eq(countHorizontalFacesAtY(got, 1.0, 2), 2,
+     "face de topo SLAB so aparece onde o pixel acima esta vazio")
+  eq(countHorizontalFacesAtY(got, 1.0, 1), 0,
+     "face de topo SLAB nao aparece dentro do corpo")
+end
+
+do
+  local cellW, cellH = 2, 2
+  local pixels = {}
+  for ly = 0, cellH - 1 do
+    for lx = 0, cellW - 1 do paint(pixels, cellW, cellW, 0, lx, ly, 1) end
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  eq(countHorizontalFacesAtY(got, 0.55, 0), 2,
+     "face de base SLAB so aparece onde o pixel abaixo esta vazio")
+  eq(countHorizontalFacesAtY(got, 0.55, 1), 0,
+     "face de base SLAB nao aparece dentro do corpo")
+end
+
+do
+  local cellW, cellH = 1, 2
+  local pixels = { [0] = 1, [1] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  eq(countHorizontalFacesAtY(got, 1.0, 1), 0,
+     "SLAB nao emite faces coplanares dentro do corpo")
+  eq(countHorizontalFacesAtY(got, 0.55, 1), 0,
+     "SLAB nao emite bases coplanares dentro do corpo")
+end
+
+do
+  local cellW, cellH = 3, 1
+  local pixels = { [0] = 1, [1] = 1, [2] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  eq(countSideFaces(got), 2,
+     "face lateral SLAB so aparece onde o pixel ao lado esta vazio")
+  eq(countSideFacesAtX(got, 0), 1,
+     "face lateral SLAB emite exatamente a borda esquerda exposta")
+  eq(countSideFacesAtX(got, 3), 1,
+     "face lateral SLAB emite exatamente a borda direita exposta")
+  eq(quadCount(got), 10,
+     "run horizontal SLAB de tres pixels tem contagem exata de quads")
+end
+
+do
+  local cellW, cellH = 3, 1
+  local pixels = { [0] = 1, [1] = 1, [2] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  eq(countSideFacesAtX(got, 1), 0,
+     "SLAB nao emite laterais coplanares dentro de um run")
+  eq(countSideFacesAtX(got, 2), 0,
+     "SLAB nao emite a segunda lateral coplanar dentro de um run")
+end
+
+do
+  local pixels = { [0] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 1, 1)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  check(countSideFacesAtX(got, 0) == 1 and countSideFacesAtX(got, 1) == 1,
+        "SIDE_INSET zero deixa as laterais SLAB no limite do voxel")
+  check(countHorizontalFacesAtY(got, 1.0, 1) == 1
+        and countHorizontalFacesAtY(got, 0.55, 0) == 1,
+        "SIDE_INSET zero deixa topo e base SLAB no limite do voxel")
 end
 
 do
@@ -837,7 +1139,7 @@ do
   local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
   loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
-  local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 5.97, 5.97)
+  local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 6, 6)
   check(u and close(u, 0.5) and close(v, 0.5 / cellH),
         "face de topo SLAB preserva o contorno quando nao ha corpo em 4 pixels")
 end
@@ -852,7 +1154,7 @@ do
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local q = quadIndex(got, function(i)
     return allQuad(got, i, function(v)
-      return close(v[1], 0.03) and close(v[6], 0.78)
+      return close(v[1], 0) and close(v[6], 0.78)
     end)
   end)
   check(q ~= nil, "folha de um tom so encontra a face lateral")
@@ -880,15 +1182,46 @@ do
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local left = quadIndex(got, function(i)
     local b = quadBoundsAt(got, i)
-    return close(b.minX, 0.03) and close(b.maxX, 0.03)
+    return close(b.minX, 0) and close(b.maxX, 0)
       and allQuad(got, i, function(v) return close(v[6], 0.78) end)
   end)
   local right = quadIndex(got, function(i)
     local b = quadBoundsAt(got, i)
-    return close(b.minX, 0.97) and close(b.maxX, 0.97)
+    return close(b.minX, 1) and close(b.maxX, 1)
       and allQuad(got, i, function(v) return close(v[6], 0.78) end)
   end)
   check(left ~= nil and right ~= nil, "shade lateral SLAB permanece simetrico")
+end
+
+do
+  local pixels = { [0] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 1, 1)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", top_edge = "on" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local onlyTop = true
+  for i = 1, #got.verts, 4 do
+    local b = quadBoundsAt(got, i)
+    for j = i, i + 3 do
+      if close(got.verts[j][6], 0.82) then
+        onlyTop = onlyTop and close(b.minY, 1) and close(b.maxY, 1)
+          and b.maxZ > b.minZ
+      end
+    end
+  end
+  check(onlyTop and countHorizontalFacesAtY(got, 0.82, 1) == 1,
+        "TOP EDGE ligado escurece so a face de topo")
+end
+
+do
+  local pixels = { [0] = 1 }
+  local handleA, modulesA = makeVoxelHandle("1.6.0", pixels, 1, 1)
+  loadWith(makeMod(handleA, { depth = 2, shape = "slab" }))
+  local defaultMesh = modulesA.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local handleB, modulesB = makeVoxelHandle("1.6.0", pixels, 1, 1)
+  loadWith(makeMod(handleB, { depth = 2, shape = "slab", top_edge = "off" }))
+  local offMesh = modulesB.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  eq(vertexSignature(offMesh), vertexSignature(defaultMesh),
+     "TOP EDGE desligado nao muda nenhum vertice")
 end
 
 do
@@ -990,8 +1323,8 @@ do
   local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
   local stand = modules.SpriteBillboards.mesh(def, 0)
   local walk = modules.SpriteBillboards.mesh(def, 3)
-  local sideU0, sideV0 = sideFaceUvAt(stand, 0.03, 0.03, 0, 1)
-  local sideU1, sideV1 = sideFaceUvAt(walk, 0.03, 0.03, 0, 1)
+  local sideU0, sideV0 = sideFaceUvAt(stand, 0, 0, 0, 1)
+  local sideU1, sideV1 = sideFaceUvAt(walk, 0, 0, 0, 1)
   check(sideU0 and sideU1 and close(sideU0, sideU1) and close(sideV0, sideV1),
         "face lateral SLAB nao muda classificacao de cor entre frames")
 end
@@ -1382,6 +1715,38 @@ do
 end
 
 do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", top_edge = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setTopEdgeWithoutClearing(modules, "on")
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  check(a ~= b, "cacheKey separa TOP EDGE mesmo sem limpar o cache")
+  eq(modules.Voxel3D.created, 2,
+     "cacheKey cria uma entrada propria para cada TOP EDGE")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved", top_edge = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setTopEdgeWithoutClearing(modules, "on")
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  eq(a, b, "cacheKey ignora TOP EDGE quando SHAPE e CARVED")
+  eq(modules.Voxel3D.created, 1,
+     "CARVED nao duplica malha identica ao trocar TOP EDGE")
+end
+
+do
   local cellW, cellH = 1, 7
   local pixels = {}
   for ly = 0, cellH - 1 do paint(pixels, cellW, cellW, 0, 0, ly, 1) end
@@ -1637,8 +2002,8 @@ do
   check(frontFaceZAt(f0, 1, 2, 0, 1) == nil,
         "geometria SLAB nao usa o frame errado no lugar do frame corrente (frame 0 nao tem o pixel do frame 3)")
 
-  local sideAtF0 = sideFaceUvAt(f0, 0.03, 0.03, 0, 1)
-  local sideAtF3 = sideFaceUvAt(f3, 0.03, 0.03, 0, 1)
+  local sideAtF0 = sideFaceUvAt(f0, 0, 0, 0, 1)
+  local sideAtF3 = sideFaceUvAt(f3, 0, 0, 0, 1)
   check(sideAtF0 ~= nil,
         "face lateral SLAB some quando o pixel some no frame (existe enquanto o pixel existe)")
   check(sideAtF3 == nil,
@@ -1699,7 +2064,7 @@ do
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1,
                                               frameWidth = cellW,
                                               frameHeight = cellH }, 0)
-  eq(quadCount(got), 10,
+  eq(quadCount(got), 8,
      "face lateral SLAB mescla verticalmente quando o UV coincide")
 end
 
@@ -1711,7 +2076,7 @@ do
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1,
                                               frameWidth = cellW,
                                               frameHeight = cellH }, 0)
-  eq(quadCount(got), 12,
+  eq(quadCount(got), 10,
      "face lateral SLAB nao mescla quando o UV difere")
 end
 

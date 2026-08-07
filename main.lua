@@ -23,12 +23,24 @@ local mod = ...
 local Semver = require("src.mods.Semver")
 local Assets = require("src.render.Assets")
 
-local SUPPORTED = ">=1.5.0 <2.0.0"
+local HOSTS = {
+  {
+    id = "BATTLE_ART_VOXEL_FORK",
+    name = "Battle Art Voxel Fork",
+    supported = ">=1.7.0 <2.0.0",
+  },
+  {
+    id = "DRAMATIC_SHAPE",
+    name = "Dramatic Shape",
+    supported = ">=1.5.0 <2.0.0",
+  },
+}
 local KEY = "depth"
 local SIDE_COLOR_KEY = "side_color"
 local SHAPE_KEY = "shape"
 local GROUND_SHADE_KEY = "ground_shade"
 local BLINK_KEY = "blink"
+local TOP_EDGE_KEY = "top_edge"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
 local SIDE_COLOR_VALUES = { "body", "outline" }
@@ -39,6 +51,8 @@ local GROUND_SHADE_VALUES = { "off", "on" }
 local GROUND_SHADE_LABELS = { "OFF", "ON" }
 local BLINK_VALUES = { "off", "on" }
 local BLINK_LABELS = { "OFF", "ON" }
+local TOP_EDGE_VALUES = { "off", "on" }
+local TOP_EDGE_LABELS = { "OFF", "ON" }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 local DEFAULT_SIDE_COLOR = "body"
@@ -49,6 +63,8 @@ local DEFAULT_GROUND_SHADE = "off"
 local DEFAULT_GROUND_SHADE_INDEX = 1
 local DEFAULT_BLINK = "off"
 local DEFAULT_BLINK_INDEX = 1
+local DEFAULT_TOP_EDGE = "off"
+local DEFAULT_TOP_EDGE_INDEX = 1
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -58,7 +74,10 @@ local DEFAULT_BLINK_INDEX = 1
 -- (VoxelScene.lua:234-241, 287-295). Como o shade ja vem assado no vertice,
 -- valores diferentes para leste/oeste trocariam de lado em folhas espelhadas.
 local OBJ_SHADE = { front = 0.90, back = 0.68, side = 0.78, top = 1.0, bottom = 0.55 }
-local SIDE_INSET = 0.03
+local TOP_EDGE_SHADE = 0.82
+-- Faces SLAB expostas ficam no limite real do pixel. O inset antigo escondia
+-- z-fighting entre faces internas que agora nao sao mais emitidas.
+local SIDE_INSET = 0
 local RUN_UV_INSET = 0.05
 local PITCH_BUCKET = math.pi / 180
 local MAX_MESHES = 64
@@ -183,6 +202,16 @@ mod.options:define({
     default = DEFAULT_BLINK,
     help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
   },
+  {
+    key = TOP_EDGE_KEY,
+    type = "choice",
+    label = "TOP EDGE",
+    choices = {
+      { "OFF", "off" }, { "ON", "on" },
+    },
+    default = DEFAULT_TOP_EDGE,
+    help = "Darkens only exposed SLAB top faces for a false top-down edge.",
+  },
 })
 
 local SpriteBillboards, Voxel3D, ImageCache
@@ -195,6 +224,7 @@ local sideColorValue
 local shapeValue
 local groundShadeValue
 local blinkValue
+local topEdgeValue
 local optionsRegistered = false
 local meshBlink = setmetatable({}, { __mode = "k" })
 local blinkVertexWarned = false
@@ -234,6 +264,13 @@ local function blinkIndexOf(value)
   return DEFAULT_BLINK_INDEX
 end
 
+local function topEdgeIndexOf(value)
+  for i, v in ipairs(TOP_EDGE_VALUES) do
+    if v == value then return i end
+  end
+  return DEFAULT_TOP_EDGE_INDEX
+end
+
 local function readDepth()
   local ok, value = pcall(mod.options.get, mod.options, KEY)
   if ok then return VALUES[indexOf(value)] end
@@ -262,6 +299,12 @@ local function readBlink()
   local ok, value = pcall(mod.options.get, mod.options, BLINK_KEY)
   if ok then return BLINK_VALUES[blinkIndexOf(value)] end
   return DEFAULT_BLINK
+end
+
+local function readTopEdge()
+  local ok, value = pcall(mod.options.get, mod.options, TOP_EDGE_KEY)
+  if ok then return TOP_EDGE_VALUES[topEdgeIndexOf(value)] end
+  return DEFAULT_TOP_EDGE
 end
 
 local function releaseMesh(mesh)
@@ -311,11 +354,19 @@ local function setBlink(value)
   return blinkValue
 end
 
+local function setTopEdge(value)
+  local nextValue = TOP_EDGE_VALUES[topEdgeIndexOf(value)]
+  if topEdgeValue ~= nextValue then clearMeshCache() end
+  topEdgeValue = nextValue
+  return topEdgeValue
+end
+
 setDepth(readDepth())
 setSideColor(readSideColor())
 setShape(readShape())
 setGroundShade(readGroundShade())
 setBlink(readBlink())
+setTopEdge(readTopEdge())
 Assets.register(clearCache)
 
 local function writeOption(game, key, value)
@@ -421,6 +472,23 @@ local function blinkRow()
   }
 end
 
+local function topEdgeRow()
+  return {
+    id = mod.id .. ":" .. TOP_EDGE_KEY,
+    label = "TOP EDGE",
+    value = function()
+      return TOP_EDGE_LABELS[topEdgeIndexOf(topEdgeValue or readTopEdge())]
+    end,
+    step = function(game, dir)
+      local i = topEdgeIndexOf(topEdgeValue or readTopEdge())
+      i = ((i + (dir or 1) - 1) % #TOP_EDGE_VALUES) + 1
+      local value = setTopEdge(TOP_EDGE_VALUES[i])
+      writeOption(game, TOP_EDGE_KEY, value)
+      return true
+    end,
+  }
+end
+
 local function registerOptionsRows()
   if optionsRegistered then return end
   optionsRegistered = true
@@ -432,6 +500,7 @@ local function registerOptionsRows()
     out[#out + 1] = shapeRow()
     out[#out + 1] = groundShadeRow()
     out[#out + 1] = blinkRow()
+    out[#out + 1] = topEdgeRow()
     return out
   end)
 
@@ -446,6 +515,8 @@ local function registerOptionsRows()
       setGroundShade(payload.value)
     elseif payload and payload.mod == mod.id and payload.key == BLINK_KEY then
       setBlink(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == TOP_EDGE_KEY then
+      setTopEdge(payload.value)
     end
   end)
 end
@@ -767,7 +838,7 @@ local function shadeAtHeight(shade, y, groundShade)
 end
 
 local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
-                             groundShade, baseName)
+                             groundShade, baseName, topEdge)
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -812,6 +883,11 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
 
   local function bodyTexel(lx, ly, dx, dy)
     return bodyTexelInFrame(m, frame, lx, ly, dx, dy, sideColor)
+  end
+
+  local function topShade()
+    if topEdge == "on" then return OBJ_SHADE.top * TOP_EDGE_SHADE end
+    return OBJ_SHADE.top
   end
 
   local function sameUv(lx, ly)
@@ -1045,20 +1121,30 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
              p(x + w, y + 1, z0), rectUv(lx, ly, lx2, "back"),
              OBJ_SHADE.back)
         for sx = lx, lx2 do
-          quad(p(sx, y + 1 - SIDE_INSET, z0),
-               p(sx + 1, y + 1 - SIDE_INSET, z0),
-               p(sx + 1, y + 1 - SIDE_INSET, z1),
-               p(sx, y + 1 - SIDE_INSET, z1),
-               verticalUv(sx, ly, 1), OBJ_SHADE.top)
-          quad(p(sx, y + SIDE_INSET, z1),
-               p(sx + 1, y + SIDE_INSET, z1),
-               p(sx + 1, y + SIDE_INSET, z0),
-               p(sx, y + SIDE_INSET, z0),
-               verticalUv(sx, ly, -1), OBJ_SHADE.bottom)
-          -- CORRECAO defeito 2 (SLAB, v1.3.0): mesma correcao da run acima,
-          -- por pixel: sx puro, nao sx - m.minX.
-          addSideRun(sx, ly, "left", sideUv(sx, ly, 1))
-          addSideRun(sx, ly, "right", sideUv(sx, ly, -1))
+          if not at(sx, ly - 1) then
+            quad(p(sx, y + 1 - SIDE_INSET, z0),
+                 p(sx + 1, y + 1 - SIDE_INSET, z0),
+                 p(sx + 1, y + 1 - SIDE_INSET, z1),
+                 p(sx, y + 1 - SIDE_INSET, z1),
+                 verticalUv(sx, ly, 1), topShade())
+          end
+          if not at(sx, ly + 1) then
+            quad(p(sx, y + SIDE_INSET, z1),
+                 p(sx + 1, y + SIDE_INSET, z1),
+                 p(sx + 1, y + SIDE_INSET, z0),
+                 p(sx, y + SIDE_INSET, z0),
+                 verticalUv(sx, ly, -1), OBJ_SHADE.bottom)
+          end
+          -- CORRECAO v1.4.1: laterais tambem precisam ser faces expostas.
+          -- Dentro de um run horizontal, a lateral esquerda de uma coluna e
+          -- coplanar com a direita da coluna vizinha; com inset, isso ainda
+          -- abria vao entre colunas. Emitimos so o contorno da silhueta.
+          if not at(sx - 1, ly) then
+            addSideRun(sx, ly, "left", sideUv(sx, ly, 1))
+          end
+          if not at(sx + 1, ly) then
+            addSideRun(sx, ly, "right", sideUv(sx, ly, -1))
+          end
         end
         lx = lx2 + 1
       else
@@ -1408,20 +1494,21 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
 end
 
 local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape,
-                                 groundShade, baseName)
+                                 groundShade, baseName, topEdge)
   if shape == "carved" or shape == "carved_plus" then
     local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m,
       sideColor, shape, groundShade)
     if ok and mesh then return mesh end
   end
   return buildSlabMesh(def, frame, depth, correction, m, sideColor, groundShade,
-    baseName)
+    baseName, topEdge)
 end
 
 local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
-                        groundShade)
+                        groundShade, topEdge)
   local depthPart = (shape == "carved" or shape == "carved_plus") and "art"
     or tostring(depth)
+  local topEdgePart = shape == "slab" and tostring(topEdge or "") or ""
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
@@ -1430,6 +1517,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
     tostring(sideColor or ""),
     tostring(shape or ""),
     tostring(groundShade or ""),
+    topEdgePart,
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -1468,17 +1556,18 @@ local function voxelMesh(def, frame)
   local sideColor = sideColorValue or readSideColor()
   local shape = shapeValue or readShape()
   local groundShade = groundShadeValue or readGroundShade()
+  local topEdge = topEdgeValue or readTopEdge()
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then return originalMesh(def, frame) end
   local baseName = spriteBaseName(def and def.image)
   local key = cacheKey(def, frame, depth, correction, m, sideColor, shape,
-    groundShade)
+    groundShade, topEdge)
   if meshes[key] ~= nil then
     touchMeshKey(key)
   else
     local ok, mesh = pcall(buildSelectedMesh, def, frame, depth, correction,
-      m, sideColor, shape, groundShade, baseName)
+      m, sideColor, shape, groundShade, baseName, topEdge)
     rememberMesh(key, (ok and mesh) or false)
   end
   local mesh = meshes[key]
@@ -1489,7 +1578,8 @@ local function voxelMesh(def, frame)
   return originalMesh(def, frame)
 end
 
-local function patch(handle)
+local function patch(host)
+  local handle = host.handle
   local V = handle.exports.lib
   Voxel3D = V.require("Voxel3D")
   ImageCache = V.require("ImageCache")
@@ -1509,20 +1599,54 @@ local function patch(handle)
     return originalMesh(def, frame)
   end
   registerOptionsRows()
-  mod.log:info("patched Dramatic Shape character billboards")
+  mod.log:info("patched %s character billboards", host.name)
 end
 
-local handle = mod.find("DRAMATIC_SHAPE")
-if not (handle and handle.exports and handle.exports.lib) then return end
+local function hostIds()
+  local ids = {}
+  for i, host in ipairs(HOSTS) do ids[i] = host.id end
+  return table.concat(ids, ", ")
+end
 
-local okVersion, why = Semver.satisfies(handle.version, SUPPORTED)
-if not okVersion then
-  mod.log:warn("Dramatic Shape %s is outside supported range %s: %s",
-    tostring(handle.version), SUPPORTED, tostring(why or "not supported"))
+local function findHost()
+  local rejected = {}
+  for _, host in ipairs(HOSTS) do
+    local handle = mod.find(host.id)
+    if not handle then
+      rejected[#rejected + 1] = host.id .. ": not found"
+    elseif not (handle.exports and handle.exports.lib) then
+      rejected[#rejected + 1] = ("%s: found %s but exports.lib is missing")
+        :format(host.id, tostring(handle.version))
+    else
+      local okVersion, why = Semver.satisfies(handle.version, host.supported)
+      if okVersion then
+        return {
+          id = host.id,
+          name = host.name,
+          supported = host.supported,
+          handle = handle,
+        }
+      end
+      rejected[#rejected + 1] =
+        ("%s: found %s outside supported range %s (%s)")
+        :format(host.id, tostring(handle.version), host.supported,
+          tostring(why or "version does not satisfy range"))
+    end
+  end
+  return nil, table.concat(rejected, "; ")
+end
+
+local host, hostRejects = findHost()
+if not host then
+  mod.log:warn("could not find usable Voxel Characters host; checked %s: %s",
+    hostIds(), hostRejects)
   return
 end
 
-local ok, err = pcall(patch, handle)
+local handle = host.handle
+mod.log:info("found %s %s (%s)", host.name, tostring(handle.version), host.id)
+
+local ok, err = pcall(patch, host)
 if not ok then
-  mod.log:warn("could not patch Dramatic Shape character billboards: %s", tostring(err))
+  mod.log:warn("could not patch %s character billboards: %s", host.name, tostring(err))
 end

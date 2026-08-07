@@ -1,8 +1,8 @@
 # Voxel Characters
 
 Gives the overworld cast real thickness when the
-[Dramatic Shape Voxel Mod](https://github.com/DramaticShape/DramaticShapeVoxelMod)
-is running.
+[Battle Art Voxel Fork](https://github.com/absol89/DramaticShapeVoxelMod)
+or legacy Dramatic Shape Voxel Mod is running.
 
 The voxel world is 3D, but every person in it is a flat sprite card. This mod
 extrudes those sprites into voxel slabs built from their own pixels, so the cast
@@ -20,15 +20,21 @@ turning it off restores the original card on the next frame.
 ## Requirements
 
 - gen1recomp `0.1.51` or newer
-- Dramatic Shape Voxel Mod `1.5.0` through `1.x`
+- Battle Art Voxel Fork `>=1.7.0 <2.0.0`, mod id `BATTLE_ART_VOXEL_FORK`
+- Legacy Dramatic Shape Voxel Mod `1.5.0` through `1.x`, mod id
+  `DRAMATIC_SHAPE`
 
-Without the Voxel Mod installed, or with a version outside that range, this mod
-loads, logs one line, and does nothing at all. The options row does not even
-appear. It never breaks a game it cannot support.
+The fork is the reference host and is preferred if both host ids are installed.
+Its tags are not monotonic semver by release date: `1.7.6` is the newest by
+date, while `v1.68` parses as `1.68.0` and compares higher, so both are inside
+the supported fork range.
+Without a supported host installed, or with a version outside the host's range,
+this mod loads, logs one line, and does nothing at all. The options row does
+not even appear. It never breaks a game it cannot support.
 
 ## Options
 
-Five rows, under **OPTIONS**:
+Six rows, under **OPTIONS**:
 
 ```
 VOXEL CHARS:   OFF / 1 / 2 / 3 / 5 / 10
@@ -36,6 +42,7 @@ SIDE COLOR:    BODY / OUTLINE
 SHAPE:         SLAB / CARVED / CARVED+
 GROUND SHADE:  OFF / ON
 BLINK:         OFF / ON
+TOP EDGE:      OFF / ON
 ```
 
 `VOXEL CHARS` controls slab thickness in voxels. Default is **3**.
@@ -95,10 +102,18 @@ the standing front SLAB frame, with a verified eye entry and a safe nearby body
 texel. Walking frames, sheets with no entry, object sheets, and eyes that cannot
 find body color within 4 pixels stay open.
 
-The carved modes do not merge horizontal runs yet. On `red.png` frame 3, **SLAB**
-builds 652 quads, **CARVED** builds 1,044 and **CARVED+** builds 1,018. The
-unconditional eye split adds 542 quads across the 303 measured SLAB meshes,
-0.27%, so it is not tied to the `BLINK` option.
+`TOP EDGE` darkens only exposed **SLAB** top faces. Default is **OFF**. When
+enabled, those faces use shade `0.82` instead of the host-matching `1.00`, which
+can read as a false top-down edge on hats and hair. The trade-off is deliberate:
+with it ON, the character's upward faces no longer match a world wall using
+`+Y up = 1.00`.
+
+The carved modes do not merge horizontal runs yet. On `red.png` frame 0, **SLAB**
+now builds 104 quads: the exposed top and bottom faces are 16 quads each instead
+of 176 each, and the `side_e` and `side_w` faces are 17 quads each instead of
+176 each. On `red.png` frame 3, **CARVED** builds 1,044 and **CARVED+** builds
+1,018. The unconditional eye split adds 542 quads across the 303 measured SLAB
+meshes, 0.27%, so it is not tied to the `BLINK` option.
 
 ## Compatibility
 
@@ -154,13 +169,14 @@ sheet will close their eyes at the same time.
 
 For mod developers, and for anyone deciding whether to trust this.
 
-The Voxel Mod exports its internal namespace, and its own test drivers use that
-door (`tests/bike_shop_shots.lua`). This mod goes in the same way:
+The host Voxel Mod exports its internal namespace, and its own test drivers use
+that door (`tests/bike_shop_shots.lua`). This mod goes in the same way:
 
 ```lua
-mod.find("DRAMATIC_SHAPE").exports.lib   -- the V namespace
-  → V.require("SpriteBillboards")        -- the cached module table
-  → replace the .mesh field              -- VoxelScene calls it by field
+local host = first host whose exports.lib and version range are supported
+host.exports.lib                         -- the V namespace
+  → V.require("SpriteBillboards")         -- the cached module table
+  → replace the .mesh field               -- VoxelScene calls it by field
 ```
 
 `shadowQuad` and `invalidate` are left alone. `shadowQuad` in particular must not
@@ -205,8 +221,11 @@ intentional contour-versus-volume trade-off described above.
 For `SIDE COLOR: BODY`, the mod identifies the sheet's outline tone and samples
 nearby body-colored pixels for the new side, top and bottom faces. Horizontal
 side faces search inward per pixel. Top and bottom faces search vertically per
-pixel, up to the same 4 pixel limit. Front and back never use that correction
-because they are the visible sprite art, not new extrusion faces.
+pixel, up to the same 4 pixel limit. SLAB emits side, top and bottom faces only
+where the adjacent sprite cell is transparent, so stacked or adjacent pixels do
+not create hidden faces inside the body. Those exposed faces sit on the exact
+pixel boundary. Front and back never use that correction because they are the
+visible sprite art, not new extrusion faces.
 
 The baked face shade values match the host world mesh:
 
@@ -217,6 +236,8 @@ side:   0.78
 top:    1.00
 bottom: 0.55
 ```
+
+With `TOP EDGE: ON`, exposed SLAB top faces use `1.00 * 0.82`.
 
 The two side directions intentionally share one value. The host mirrors sprite
 cards after asking `SpriteBillboards.mesh(def, frame)` for geometry, so a mesh
@@ -249,17 +270,19 @@ build. The worst case is flat characters, never a broken game.
 luajit mods/voxel_characters/tests/voxel_chars_test.lua
 ```
 
-148 assertions covering the version guard, the options rows and their
-persistence, slab geometry and vertex format, carved visual-hull surface faces,
-per-frame silhouette projection, absolute role position, depth-axis orientation,
-three-frame carve sheets, carve fallback, pitch bucketing, cache keying and LRU
-eviction, side-face, top-face and bottom-face color selection, three-view
-carving, face shade values, ground contact shading, CARVED+ relief direction and
+190 assertions covering host detection, version guards, the options rows and
+their persistence, slab geometry and vertex format, carved visual-hull surface
+faces, per-frame silhouette projection, absolute role position, depth-axis
+orientation, three-frame carve sheets, carve fallback, pitch bucketing, cache
+keying and LRU eviction, side-face, top-face and bottom-face color selection,
+three-view carving, face shade values, ground contact shading, top-edge shading,
+hidden SLAB top and bottom face culling, CARVED+ relief direction and
 thin-sprite depth limits.
 
 ## Credits
 
-Built on the Dramatic Shape Voxel Mod by DramaticShape, and on
+Built on the Battle Art Voxel Fork by absol89, the legacy Dramatic Shape Voxel
+Mod by DramaticShape, and
 [gen1recomp](https://github.com/bryanthaboi/gen1recomp) by bryanthaboi.
 
 The per-pixel voxelization follows the approach their own `Structures.lua` already
