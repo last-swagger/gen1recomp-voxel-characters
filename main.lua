@@ -31,8 +31,8 @@ local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
 local SIDE_COLOR_VALUES = { "body", "outline" }
 local SIDE_COLOR_LABELS = { "BODY", "OUTLINE" }
-local SHAPE_VALUES = { "slab", "carved" }
-local SHAPE_LABELS = { "SLAB", "CARVED" }
+local SHAPE_VALUES = { "slab", "carved", "carved_plus" }
+local SHAPE_LABELS = { "SLAB", "CARVED", "CARVED+" }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 local DEFAULT_SIDE_COLOR = "body"
@@ -51,6 +51,7 @@ local MAX_MESHES = 64
 -- deixar uma busca em arte customizada atravessar para outra parte do corpo.
 local BODY_SEARCH_LIMIT = 4
 local LUMA_EPSILON = 0.00001
+local CARVED_PLUS_RECESS_STEPS = 2
 
 mod.options:define({
   {
@@ -80,9 +81,10 @@ mod.options:define({
     label = "SHAPE",
     choices = {
       { "SLAB", "slab" }, { "CARVED", "carved" },
+      { "CARVED+", "carved_plus" },
     },
     default = DEFAULT_SHAPE,
-    help = "SLAB keeps the v1.1.0 extrusion. CARVED builds experimental visual-hull volume from front and side views.",
+    help = "SLAB keeps the v1.1.0 extrusion. CARVED builds visual-hull volume from three views. CARVED+ adds tone relief.",
   },
 })
 
@@ -658,11 +660,12 @@ local function carvedFrames(frame, frames)
   }
 end
 
-local function buildCarvedMesh(def, frame, depth, correction, m, sideColor)
+local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shape)
   m = m or maskFor(def)
   if not (m and m.frames >= 3) then return nil end
   local pose = carvedFrames(frame, m.frames)
   if pose.back >= m.frames or pose.side >= m.frames then return nil end
+  local carvedPlus = shape == "carved_plus"
 
   local frontBounds = frameBounds(m, pose.front)
   local backBounds = frameBounds(m, pose.back)
@@ -670,12 +673,90 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor)
   if not (frontBounds and backBounds and sideBounds) then return nil end
   local widthFrame = pose.role == 1 and pose.back or pose.front
   local widthBounds = pose.role == 1 and backBounds or frontBounds
+  local widthFrameA = pose.role == 1 and 1 or 0
+  local widthFrameB = (m.frames >= 6) and (widthFrameA + 3) or nil
 
   local verts, idx = {}, {}
   local pitchC, pitchS = math.cos(correction or 0), math.sin(correction or 0)
   local lowY = m.maxY
   local depthPixels = sideBounds.maxX - sideBounds.minX + 1
   local widthPixels = m.maxX - m.minX + 1
+  local frontBackMinX = math.min(frontBounds.minX, backBounds.minX)
+  local frontBackMaxX = math.max(frontBounds.maxX, backBounds.maxX)
+  local frontFrameA = 0
+  local frontFrameB = m.frames >= 6 and 3 or nil
+  local sideLineRecess = {}
+
+  local function mirrorX(lx)
+    return frontBackMinX + frontBackMaxX - lx
+  end
+
+  local function frontXFor(lx)
+    return pose.role == 1 and mirrorX(lx) or lx
+  end
+
+  local function backXFor(lx)
+    return pose.role == 1 and lx or mirrorX(lx)
+  end
+
+  local function frameLuma(frameIndex, lx, ly)
+    if not frameIndex then return nil end
+    if lx < 0 or lx >= m.cellW or ly < 0 or ly >= m.cellH then return nil end
+    if frameIndex < 0 or frameIndex >= m.frames then return nil end
+    local fx, fy = frameOrigin(m, frameIndex)
+    local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
+    if not r or (a or 0) < 0.5 then return nil end
+    return luminance(r, g, b)
+  end
+
+  local function maxRecessForLine(ly)
+    if sideLineRecess[ly] ~= nil then return sideLineRecess[ly] end
+    local farthest = -1
+    for sx = sideBounds.minX, sideBounds.maxX do
+      if frameTexel(m, pose.side, sx, ly) then
+        farthest = math.max(farthest, sx - sideBounds.minX)
+      end
+    end
+    local limit = math.max(0, math.min(CARVED_PLUS_RECESS_STEPS, farthest))
+    sideLineRecess[ly] = limit
+    return limit
+  end
+
+  local reliefMinLuma, reliefMaxLuma
+  if carvedPlus then
+    if m.reliefScanned then
+      reliefMinLuma, reliefMaxLuma = m.reliefMinLuma, m.reliefMaxLuma
+    else
+      local function scanReliefFrame(frameIndex)
+        if not frameIndex then return end
+        for ly = 0, m.cellH - 1 do
+          for lx = 0, m.cellW - 1 do
+            local luma = frameLuma(frameIndex, lx, ly)
+            if luma and not (m.outlineLuma
+                and math.abs(luma - m.outlineLuma) <= LUMA_EPSILON) then
+              reliefMinLuma = reliefMinLuma and math.min(reliefMinLuma, luma) or luma
+              reliefMaxLuma = reliefMaxLuma and math.max(reliefMaxLuma, luma) or luma
+            end
+          end
+        end
+      end
+      scanReliefFrame(frontFrameA)
+      scanReliefFrame(frontFrameB)
+      if not reliefMinLuma then
+        for ly = 0, m.cellH - 1 do
+          for lx = 0, m.cellW - 1 do
+            local luma = frameLuma(frontFrameA, lx, ly) or frameLuma(frontFrameB, lx, ly)
+            if luma then
+              reliefMinLuma = reliefMinLuma and math.min(reliefMinLuma, luma) or luma
+              reliefMaxLuma = reliefMaxLuma and math.max(reliefMaxLuma, luma) or luma
+            end
+          end
+        end
+      end
+      m.reliefScanned = true
+      m.reliefMinLuma, m.reliefMaxLuma = reliefMinLuma, reliefMaxLuma
+    end
+  end
 
   -- DECISAO: o frame lateral 2 e o personagem olhando para a esquerda.
   -- Nas folhas Gen 1 essa borda esquerda e o rosto. Por isso a coluna
@@ -684,12 +765,44 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor)
   -- tronco medido e 14 colunas de frente e 11 de lado; a caixa opaca completa
   -- da lateral tem 13 colunas por incluir pixels fora do tronco. Em ambos os
   -- casos, profundidade vem da arte, nao do slider de slab.
+  --
+  -- DECISAO: v1.2.1 acrescenta a silhueta de costas na intersecao. Como frente
+  -- e costas sao vistas opostas, a coluna X da vista traseira entra espelhada;
+  -- sem esse espelho o casco perde quase tudo em sprites assimetricos. O eixo
+  -- vem so do par frente/costas, nao do bbox global da folha: Kim mediu 12/40
+  -- folhas de 6 frames em que a vista lateral alarga o bbox global
+  -- (biker 0..15 contra frente 1..14; bird 0..15 contra 2..13;
+  -- brunette_girl e cooltrainer_f 1..15 contra 2..13). Usar esse global
+  -- cortava 3% a 8% dos voxels legitimos em 7/8 sprites auditados.
+  --
+  -- DECISAO: CARVED+ recua a superficie frontal por tom em so 2 passos. red.png
+  -- tem 3 tons opacos de corpo alem do contorno; mais degraus so fingiriam uma
+  -- precisao que a arte nao tem. A mesma arte usa tom para contorno e volume:
+  -- onde o artista escureceu so para separar bone da testa, o relevo vira sulco.
+  -- Por isso e um degrau proprio, nao o default. O recuo tambem e limitado pela
+  -- profundidade real de cada linha lateral: sempre sobra pelo menos uma camada,
+  -- porque sprite fino de mod externo nao pode virar um buraco atravessando o
+  -- personagem.
   local function solid(lx, ly, sx)
     if lx < widthBounds.minX or lx > widthBounds.maxX then return false end
     if ly < widthBounds.minY or ly > widthBounds.maxY then return false end
     if sx < sideBounds.minX or sx > sideBounds.maxX then return false end
-    return frameTexel(m, widthFrame, lx, ly)
-       and frameTexel(m, pose.side, sx, ly)
+    local frontX = frontXFor(lx)
+    if not frameTexel(m, pose.front, frontX, ly) then return false end
+    if not frameTexel(m, pose.back, backXFor(lx), ly) then return false end
+    if not frameTexel(m, pose.side, sx, ly) then return false end
+    if carvedPlus and reliefMinLuma and reliefMaxLuma
+        and reliefMaxLuma > reliefMinLuma + LUMA_EPSILON then
+      local luma = frameLuma(frontFrameA, frontX, ly)
+        or frameLuma(frontFrameB, frontX, ly)
+      if luma then
+        local dark = (reliefMaxLuma - luma) / (reliefMaxLuma - reliefMinLuma)
+        local recess = math.max(0, math.min(maxRecessForLine(ly),
+          math.floor(dark * CARVED_PLUS_RECESS_STEPS + 0.5)))
+        if (sx - sideBounds.minX) < recess then return false end
+      end
+    end
+    return true
   end
 
   local function uvFor(frameIndex, lx, ly)
@@ -745,8 +858,23 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor)
   end
 
   local function topUv(lx, ly, dy)
-    local bx, by = bodyTexel(widthFrame, lx, ly, 0, dy)
-    return sameUv(widthFrame, bx, by)
+    -- DECISAO: topo/base precisam de classificacao fixa como as laterais.
+    -- O bug medido no red.png vinha de usar o frame corrente: 49/180 posicoes
+    -- de face de topo alternavam parado/andando, 14 delas nas 6 linhas de cima
+    -- do bone. A causa direta e a linha 0 existir no frame 0
+    -- (".....######.....") e sumir no frame 3, porque o sprite inteiro desce uma
+    -- linha ao andar. Tentar a vista de referencia e so cair para a caminhada
+    -- quando ha opacidade fixa a cor da face no mesmo texel logico.
+    local function tryFrame(frameIndex)
+      if not frameIndex then return nil end
+      local bx, by = bodyTexel(frameIndex, lx, ly, 0, dy)
+      if frameTexel(m, frameIndex, bx, by) then
+        return sameUv(frameIndex, bx, by)
+      end
+    end
+    local uv = tryFrame(widthFrameA) or tryFrame(widthFrameB)
+    if uv then return uv end
+    return sameUv(widthFrame, lx, ly)
   end
 
   local function p(x, y, z)
@@ -817,15 +945,17 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor)
 end
 
 local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape)
-  if shape == "carved" then
-    local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m, sideColor)
+  if shape == "carved" or shape == "carved_plus" then
+    local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m,
+      sideColor, shape)
     if ok and mesh then return mesh end
   end
   return buildSlabMesh(def, frame, depth, correction, m, sideColor)
 end
 
 local function cacheKey(def, frame, depth, correction, layout, sideColor, shape)
-  local depthPart = shape == "carved" and "art" or tostring(depth)
+  local depthPart = (shape == "carved" or shape == "carved_plus") and "art"
+    or tostring(depth)
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),

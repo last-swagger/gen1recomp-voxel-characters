@@ -33,7 +33,7 @@ Three rows, under **OPTIONS**:
 ```
 VOXEL CHARS:   OFF / 1 / 2 / 3 / 5 / 10
 SIDE COLOR:    BODY / OUTLINE
-SHAPE:         SLAB / CARVED
+SHAPE:         SLAB / CARVED / CARVED+
 ```
 
 `VOXEL CHARS` controls slab thickness in voxels. Default is **3**.
@@ -62,12 +62,28 @@ always stay on the original sprite art in both modes.
 `SHAPE` selects the geometry builder. Default is **SLAB**, which is the v1.1.0
 behavior: the current sprite silhouette is extruded to the selected fixed depth.
 
-**CARVED** is experimental in v1.2.0. It builds a visual hull from each
-character sheet's front and side views. The side view controls real depth, so a
-wide character gets a deeper body than a narrow one. The depth number above is
-still used by **SLAB**; **CARVED** derives its depth from the art. It also does
-not merge horizontal runs yet: on `red.png`, **SLAB** builds 442 quads while
-**CARVED** builds about 1,090.
+**CARVED** builds a visual hull from each character sheet's front, back and side
+views. The side view controls real depth, so a wide character gets a deeper body
+than a narrow one. The depth number above is still used by **SLAB**; **CARVED**
+derives its depth from the art.
+
+CARVED is rough, and testers have said so. A visual hull keeps the outer
+silhouette and flattens everything inside it, so surface detail that is not part
+of the outline reads as lost compared to SLAB. That is a property of the method,
+not a bug to be tuned out, and it is why the default is still SLAB. CARVED+ below
+is the first attempt at putting some of that detail back.
+
+**CARVED+** starts from **CARVED** and adds tone relief on the front surface. It
+uses two recess steps: `red.png` has three opaque body tones beyond the outline,
+so more steps would overfit the pixel art. This can read as extra volume around
+the waist, neck and arms, but it can also cut grooves where the original artist
+darkened pixels only to separate shapes, such as the cap from the forehead. That
+is why it is a separate step and not the default. The recess is capped by the
+side-view depth so at least one voxel layer remains, including very thin custom
+sprite sheets.
+
+The carved modes do not merge horizontal runs yet. On `red.png` frame 3, **SLAB**
+builds 442 quads, **CARVED** builds 1,044 and **CARVED+** builds 1,018.
 
 ## Compatibility
 
@@ -104,10 +120,11 @@ the shipped art, but anti-aliased or gradient replacement sprites may not be
 recognized as outline. In that case the face falls back to the v1.0.0 behavior,
 not anything worse.
 
-**CARVED cannot reproduce concavity.** A visual hull is the intersection of two
+**CARVED cannot reproduce concavity.** A visual hull is the intersection of
 silhouettes, not a full model. If a cap brim exists only in the front view, the
 hull has no separate side-depth evidence for that recess, so the brim volume can
-continue through the back.
+continue through the back. **CARVED+** tries to carve some of that interior space
+from tone, but tone is ambiguous in Gen 1 art: it marks both contour and volume.
 
 **CARVED needs three views.** Sheets with front, back and side frames can be
 carved, including stationary three-frame NPC sheets. One-frame sheets still fall
@@ -135,13 +152,19 @@ emitted per pixel so an animating silhouette cannot leak through what used to be
 interior. Front, back, top and bottom merge into horizontal runs, which takes a
 typical character from about 1,100 quads down to about 440.
 
-In **CARVED**, each pose uses the front frame and the side frame as orthographic
-silhouettes. A voxel is solid only when both its front-view pixel and its
-side-view depth pixel are opaque, and only surface faces are emitted. The side
-frame in Gen 1 art is the character facing left; this mod treats the leftmost
-opaque side column as the body's front and maps later columns toward the back.
-Meshes are rotated per requested frame so the camera still sees the same
-silhouette that the old flat card showed for that frame.
+In **CARVED**, each pose uses the front, back and side frames as orthographic
+silhouettes. A voxel is solid only when all three views agree. The back view is
+mirrored on X before the intersection because it is the opposite view of the same
+body. The side frame in Gen 1 art is the character facing left; this mod treats
+the leftmost opaque side column as the body's front and maps later columns
+toward the back. Meshes are rotated per requested frame so the camera still sees
+the same silhouette that the old flat card showed for that frame.
+
+In **CARVED+**, the front tone then recedes that front surface by up to two voxel
+columns. Light pixels stay at the hull surface; darker body pixels step inward.
+The outline tone is not used to calibrate the range, but outline-dark pixels can
+still receive the deepest recess after the body range is known, which is the
+intentional contour-versus-volume trade-off described above.
 
 For `SIDE COLOR: BODY`, the mod identifies the sheet's outline tone and samples
 nearby body-colored pixels for the new side, top and bottom faces. Horizontal
@@ -169,11 +192,12 @@ build. The worst case is flat characters, never a broken game.
 luajit mods/voxel_characters/tests/voxel_chars_test.lua
 ```
 
-77 assertions covering the version guard, the options rows and their
+93 assertions covering the version guard, the options rows and their
 persistence, slab geometry and vertex format, carved visual-hull surface faces,
 per-frame silhouette projection, absolute role position, depth-axis orientation,
 three-frame carve sheets, carve fallback, pitch bucketing, cache keying and LRU
-eviction, and side-face color selection.
+eviction, side-face, top-face and bottom-face color selection, three-view
+carving, CARVED+ relief direction and thin-sprite depth limits.
 
 ## Credits
 
