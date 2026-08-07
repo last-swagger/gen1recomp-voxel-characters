@@ -1,0 +1,19 @@
+{
+  "id": "voxel_characters",
+  "name": "Voxel Characters",
+  "version": "1.0.0",
+  "api": 2,
+  "entry": "main.lua",
+  "game_version": "0.0.0-dev || >=0.1.51 <2.0.0",
+  "profile": "content",
+  "category": "GRAPHICS",
+  "priority": 150,
+  "dependencies": [],
+  "optional_dependencies": ["DRAMATIC_SHAPE"],
+  "conflicts": [],
+  "permissions": [
+    "engine_internals"
+  ],
+  "affects_link": false,
+  "description": "Extrudes overworld character sprites into voxel-thick slabs when Dramatic Shape Voxel Mod is active."
+}
