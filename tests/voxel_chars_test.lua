@@ -276,10 +276,18 @@ local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean)
           { "VertexTexCoord", "float", 2 },
           { "VertexShade", "float", 1 },
         },
+        -- Statement per statement as in Voxel3D.lua:412-420. Packed into two
+        -- multiple assignments this leaves holes (1 2 3 nil nil nil 7 ...),
+        -- because `#map` resolves before the assignments land. Nothing here
+        -- asserts on the map, so the stub was quietly building a corrupt one.
         pushQuad = function(map, n)
           local b = n * 4
-          map[#map + 1], map[#map + 2], map[#map + 3] = b + 1, b + 2, b + 3
-          map[#map + 4], map[#map + 5], map[#map + 6] = b + 1, b + 3, b + 4
+          map[#map + 1] = b + 1
+          map[#map + 1] = b + 2
+          map[#map + 1] = b + 3
+          map[#map + 1] = b + 1
+          map[#map + 1] = b + 3
+          map[#map + 1] = b + 4
         end,
         newMesh = function(verts, map)
           if #verts == 0 then return nil end
