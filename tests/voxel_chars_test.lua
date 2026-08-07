@@ -23,6 +23,10 @@ local function fakeImage(pixels, w, h)
   }
 end
 
+local function paint(pixels, sheetW, cellW, frame, lx, ly, value)
+  pixels[ly * sheetW + frame * cellW + lx] = value or 1
+end
+
 local function rgba(r, g, b, a)
   return { r, g, b, a or 1 }
 end
@@ -55,6 +59,126 @@ local function quadUvBounds(mesh, i)
   return minU, maxU, minV, maxV
 end
 
+local function quadCount(mesh)
+  return math.floor(#mesh.verts / 4)
+end
+
+local function quadBoundsAt(mesh, i)
+  local b = {
+    minX = math.huge, maxX = -math.huge,
+    minY = math.huge, maxY = -math.huge,
+    minZ = math.huge, maxZ = -math.huge,
+  }
+  for j = i, i + 3 do
+    local v = mesh.verts[j]
+    b.minX, b.maxX = math.min(b.minX, v[1]), math.max(b.maxX, v[1])
+    b.minY, b.maxY = math.min(b.minY, v[2]), math.max(b.maxY, v[2])
+    b.minZ, b.maxZ = math.min(b.minZ, v[3]), math.max(b.maxZ, v[3])
+  end
+  return b
+end
+
+local function projectedCells(mesh, ax, ay, pred)
+  ax, ay = ax or 1, ay or 2
+  local cells = {}
+  for i = 1, #mesh.verts, 4 do
+    if not (pred and not pred(i)) then
+      local minA, maxA = math.huge, -math.huge
+      local minB, maxB = math.huge, -math.huge
+      for j = i, i + 3 do
+        local v = mesh.verts[j]
+        minA, maxA = math.min(minA, v[ax]), math.max(maxA, v[ax])
+        minB, maxB = math.min(minB, v[ay]), math.max(maxB, v[ay])
+      end
+      local a0 = math.floor(minA + 0.0001)
+      local a1 = math.ceil(maxA - 0.0001) - 1
+      local b0 = math.floor(minB + 0.0001)
+      local b1 = math.ceil(maxB - 0.0001) - 1
+      for b = b0, b1 do
+        for a = a0, a1 do
+          cells[#cells + 1] = { a = a, b = b }
+        end
+      end
+    end
+  end
+  local out, seen = {}, {}
+  for _, cell in ipairs(cells) do
+    local key = cell.a .. "," .. cell.b
+    seen[key] = true
+  end
+  for key in pairs(seen) do out[#out + 1] = key end
+  table.sort(out)
+  return table.concat(out, ";")
+end
+
+local function expectedCells(pixels, sheetW, cellW, cellH, frame)
+  local cells, maxY = {}, nil
+  for ly = 0, cellH - 1 do
+    for lx = 0, cellW - 1 do
+      if pixels[ly * sheetW + frame * cellW + lx] then
+        cells[#cells + 1] = { x = lx, y = ly }
+        maxY = maxY and math.max(maxY, ly) or ly
+      end
+    end
+  end
+  local out = {}
+  for _, cell in ipairs(cells) do
+    out[#out + 1] = cell.x .. "," .. (maxY - cell.y)
+  end
+  table.sort(out)
+  return table.concat(out, ";")
+end
+
+local function meshBounds(mesh)
+  local b = {
+    minX = math.huge, maxX = -math.huge,
+    minY = math.huge, maxY = -math.huge,
+    minZ = math.huge, maxZ = -math.huge,
+  }
+  for _, v in ipairs(mesh.verts) do
+    b.minX, b.maxX = math.min(b.minX, v[1]), math.max(b.maxX, v[1])
+    b.minY, b.maxY = math.min(b.minY, v[2]), math.max(b.maxY, v[2])
+    b.minZ, b.maxZ = math.min(b.minZ, v[3]), math.max(b.maxZ, v[3])
+  end
+  return b
+end
+
+local function sameRange(a0, a1, b0, b1)
+  return close(a0, b0) and close(a1, b1)
+end
+
+local function sideFaceUvAt(mesh, minX, maxX, minY, maxY)
+  for i = 1, #mesh.verts, 4 do
+    local bx = quadBoundsAt(mesh, i)
+    if close(bx.minX, minX) and close(bx.maxX, maxX)
+        and close(bx.minY, minY) and close(bx.maxY, maxY)
+        and allQuad(mesh, i, function(v) return close(v[6], 0.78) end) then
+      return mesh.verts[i][4], mesh.verts[i][5]
+    end
+  end
+end
+
+local function setDepthWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper para depth")
+  for i = 1, 40 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "depthValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra depthValue em voxelMesh")
+end
+
 local function setSideColorWithoutClearing(modules, value)
   local wrapper = modules.SpriteBillboards.mesh
   local voxelMesh
@@ -74,6 +198,27 @@ local function setSideColorWithoutClearing(modules, value)
     end
   end
   return check(false, "teste encontra sideColorValue em voxelMesh")
+end
+
+local function setShapeWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 40 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "shapeValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra shapeValue em voxelMesh")
 end
 
 local function fakeMesh(verts, map)
@@ -228,9 +373,10 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 3, "hook anexa as rows do voxel characters")
+  eq(#rows, 4, "hook anexa as rows do voxel characters")
   local option = rows[2]
   eq(rows[3].label, "SIDE COLOR", "hook anexa a row de cor lateral")
+  eq(rows[4].label, "SHAPE", "hook anexa a row de shape")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -599,6 +745,209 @@ do
   check(a ~= b, "cacheKey separa SIDE COLOR mesmo sem limpar o cache")
   eq(modules.Voxel3D.created, 2,
      "cacheKey cria uma entrada propria para cada SIDE COLOR")
+end
+
+do
+  local cellW, cellH = 2, 2
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    for ly = 0, cellH - 1 do
+      for lx = 0, cellW - 1 do
+        paint(pixels, sheetW, cellW, frame, lx, ly, 1)
+      end
+    end
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 0)
+  eq(quadCount(got), 24,
+     "CARVED em cubo 2x2x2 emite so as faces de superficie")
+end
+
+do
+  local cellW, cellH = 4, 4
+  local sheetW = cellW * 6
+  local pixels = {}
+  for _, frame in ipairs({ 0, 3 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, 1)
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+    paint(pixels, sheetW, cellW, frame, 2, 1, 1)
+    paint(pixels, sheetW, cellW, frame, 1, 2, 1)
+    paint(pixels, sheetW, cellW, frame, 2, 2, 1)
+    paint(pixels, sheetW, cellW, frame, 0, 3, 1)
+  end
+  for _, frame in ipairs({ 1, 4 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, 1)
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+    paint(pixels, sheetW, cellW, frame, 1, 2, 1)
+    paint(pixels, sheetW, cellW, frame, 2, 2, 1)
+    paint(pixels, sheetW, cellW, frame, 2, 3, 1)
+  end
+  for _, frame in ipairs({ 2, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, 1)
+    paint(pixels, sheetW, cellW, frame, 0, 2, 1)
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+    paint(pixels, sheetW, cellW, frame, 2, 2, 1)
+    paint(pixels, sheetW, cellW, frame, 2, 3, 1)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local front = modules.SpriteBillboards.mesh(def, 0)
+  local back = modules.SpriteBillboards.mesh(def, 1)
+  local side = modules.SpriteBillboards.mesh(def, 2)
+  local frontPlane = function(mesh)
+    return function(i)
+      local b = quadBoundsAt(mesh, i)
+      return close(b.minZ, 0) and close(b.maxZ, 0)
+        and allQuad(mesh, i, function(v) return close(v[6], 1.0) end)
+    end
+  end
+  local backPlane = function(i)
+    local b = quadBoundsAt(back, i)
+    return close(b.minZ, 0) and close(b.maxZ, 0)
+      and allQuad(back, i, function(v) return close(v[6], 0.68) end)
+  end
+  eq(projectedCells(front, 1, 2, frontPlane(front)),
+     "0,2;1,1;1,2;2,1;2,2",
+     "silhueta CARVED de frente bate em posicao absoluta com frame 0")
+  eq(projectedCells(back, 1, 2, backPlane), "0,0;0,1;1,1",
+     "silhueta CARVED de costas fica espelhada em posicao absoluta")
+  eq(projectedCells(side),
+     "0,1;0,2;1,2;2,0;2,1",
+     "silhueta CARVED lateral bate em posicao absoluta com frame 2")
+  check(projectedCells(side) ~= projectedCells(front, 1, 2, frontPlane(front)),
+        "frame lateral com rotacao zerada quebraria a silhueta")
+  eq(projectedCells(side, 1, 3), "0,-1;0,-2;0,-3;1,-1;1,-2;1,-3;2,-1;2,-2;2,-3",
+        "eixo de profundidade preserva a frente na esquerda do frame lateral")
+  local fb, bb, sb = meshBounds(front), meshBounds(back), meshBounds(side)
+  check(sameRange(fb.minY, fb.maxY, bb.minY, bb.maxY)
+        and sameRange(fb.minY, fb.maxY, sb.minY, sb.maxY),
+        "roles CARVED ocupam a mesma faixa absoluta de Y sem pitch")
+  check(sb.maxZ <= 0 and sb.minZ < sb.maxZ,
+        "role lateral mantem profundidade em Z nao positivo")
+end
+
+do
+  local cellW, cellH = 3, 3
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    for ly = 0, cellH - 1 do
+      for lx = 0, cellW - 1 do
+        paint(pixels, sheetW, cellW, frame, lx, ly, 1)
+      end
+    end
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH, 0)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local front = meshBounds(modules.SpriteBillboards.mesh(def, 0))
+  local back = meshBounds(modules.SpriteBillboards.mesh(def, 1))
+  local side = meshBounds(modules.SpriteBillboards.mesh(def, 2))
+  check(sameRange(front.minY, front.maxY, back.minY, back.maxY)
+        and sameRange(front.minY, front.maxY, side.minY, side.maxY),
+        "roles CARVED ocupam a mesma faixa absoluta de Y com pitch")
+end
+
+do
+  local cellW, cellH = 2, 2
+  local sheetW = cellW * 3
+  local pixels = {}
+  for frame = 0, 2 do
+    for ly = 0, cellH - 1 do
+      for lx = 0, cellW - 1 do
+        paint(pixels, sheetW, cellW, frame, lx, ly, 1)
+      end
+    end
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 3,
+                                              frameWidth = cellW }, 0)
+  eq(quadCount(got), 24, "CARVED aceita folha parada de tres frames")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  check(got and not got.original, "CARVED sem tres vistas degrada para laje")
+  eq(quadCount(got), 6, "fallback de CARVED sem tres vistas preserva o slab")
+end
+
+do
+  local cellW, cellH = 3, 2
+  local sheetW = cellW * 6
+  local pixels = {}
+  for _, frame in ipairs({ 0, 1, 3, 4 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, 1)
+  end
+  paint(pixels, sheetW, cellW, 2, 0, 1, rgba(0.20, 0.20, 0.20, 1))
+  paint(pixels, sheetW, cellW, 2, 1, 1, rgba(0.80, 0.80, 0.80, 1))
+  paint(pixels, sheetW, cellW, 5, 0, 1, rgba(0.20, 0.20, 0.20, 1))
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved", side_color = "body" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 2)
+  local walk = modules.SpriteBillboards.mesh(def, 5)
+  local u0, v0 = sideFaceUvAt(stand, 0, 1, 0, 1)
+  local u1, v1 = sideFaceUvAt(walk, 0, 1, 0, 1)
+  check(u0 and u1 and close(u0, u1) and close(v0, v1),
+        "face lateral CARVED nao muda classificacao de cor entre frames")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  local mod = loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  mod._events["mod.options_changed"]({ mod = mod.id, key = "shape",
+                                        value = "carved" })
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  check(a ~= b, "trocar SHAPE nao serve a malha do outro modo")
+  check(a.released and modules.Voxel3D.created == 2,
+        "trocar SHAPE limpa o cache de malhas")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setShapeWithoutClearing(modules, "carved")
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  check(a ~= b, "cacheKey separa SHAPE mesmo sem limpar o cache")
+  eq(modules.Voxel3D.created, 2,
+     "cacheKey cria uma entrada propria para cada SHAPE")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setDepthWithoutClearing(modules, 5)
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  eq(a, b, "cacheKey ignora DEPTH quando SHAPE e CARVED")
+  eq(modules.Voxel3D.created, 1,
+     "CARVED nao duplica malha identica ao trocar DEPTH")
 end
 
 T.finish("voxel_chars_test")

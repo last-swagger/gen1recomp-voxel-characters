@@ -28,11 +28,12 @@ appear. It never breaks a game it cannot support.
 
 ## Options
 
-Two rows, under **OPTIONS**:
+Three rows, under **OPTIONS**:
 
 ```
 VOXEL CHARS:   OFF / 1 / 2 / 3 / 5 / 10
 SIDE COLOR:    BODY / OUTLINE
+SHAPE:         SLAB / CARVED
 ```
 
 `VOXEL CHARS` controls slab thickness in voxels. Default is **3**.
@@ -57,6 +58,16 @@ v1.0.0.
 
 **OUTLINE** keeps the original outline pixels on those new faces. Front and back
 always stay on the original sprite art in both modes.
+
+`SHAPE` selects the geometry builder. Default is **SLAB**, which is the v1.1.0
+behavior: the current sprite silhouette is extruded to the selected fixed depth.
+
+**CARVED** is experimental in v1.2.0. It builds a visual hull from each
+character sheet's front and side views. The side view controls real depth, so a
+wide character gets a deeper body than a narrow one. The depth number above is
+still used by **SLAB**; **CARVED** derives its depth from the art. It also does
+not merge horizontal runs yet: on `red.png`, **SLAB** builds 442 quads while
+**CARVED** builds about 1,090.
 
 ## Compatibility
 
@@ -93,6 +104,15 @@ the shipped art, but anti-aliased or gradient replacement sprites may not be
 recognized as outline. In that case the face falls back to the v1.0.0 behavior,
 not anything worse.
 
+**CARVED cannot reproduce concavity.** A visual hull is the intersection of two
+silhouettes, not a full model. If a cap brim exists only in the front view, the
+hull has no separate side-depth evidence for that recess, so the brim volume can
+continue through the back.
+
+**CARVED needs three views.** Sheets with front, back and side frames can be
+carved, including stationary three-frame NPC sheets. One-frame sheets still fall
+back to **SLAB** because the mod has no side or back silhouette to intersect.
+
 ## How it works
 
 For mod developers, and for anyone deciding whether to trust this.
@@ -109,11 +129,19 @@ mod.find("DRAMATIC_SHAPE").exports.lib   -- the V namespace
 `shadowQuad` and `invalidate` are left alone. `shadowQuad` in particular must not
 be replaced: it feeds the inverted-depth silhouette described above.
 
-The mesh is built over the union of every walk frame, with each frame clipped in
-texture space by the shader's own alpha discard. Side walls are emitted per pixel
-so an animating silhouette cannot leak through what used to be interior. Front,
-back, top and bottom merge into horizontal runs, which takes a typical character
-from about 1,100 quads down to about 440.
+In **SLAB**, the mesh is built over the union of every walk frame, with each
+frame clipped in texture space by the shader's own alpha discard. Side walls are
+emitted per pixel so an animating silhouette cannot leak through what used to be
+interior. Front, back, top and bottom merge into horizontal runs, which takes a
+typical character from about 1,100 quads down to about 440.
+
+In **CARVED**, each pose uses the front frame and the side frame as orthographic
+silhouettes. A voxel is solid only when both its front-view pixel and its
+side-view depth pixel are opaque, and only surface faces are emitted. The side
+frame in Gen 1 art is the character facing left; this mod treats the leftmost
+opaque side column as the body's front and maps later columns toward the back.
+Meshes are rotated per requested frame so the camera still sees the same
+silhouette that the old flat card showed for that frame.
 
 For `SIDE COLOR: BODY`, the mod identifies the sheet's outline tone and samples
 nearby body-colored pixels for the new side, top and bottom faces. Horizontal
@@ -141,9 +169,11 @@ build. The worst case is flat characters, never a broken game.
 luajit mods/voxel_characters/tests/voxel_chars_test.lua
 ```
 
-55 assertions covering the version guard, the options rows and their persistence,
-geometry and vertex format, per-frame clipping, pitch bucketing, cache keying and
-LRU eviction, and side-face color selection.
+77 assertions covering the version guard, the options rows and their
+persistence, slab geometry and vertex format, carved visual-hull surface faces,
+per-frame silhouette projection, absolute role position, depth-axis orientation,
+three-frame carve sheets, carve fallback, pitch bucketing, cache keying and LRU
+eviction, and side-face color selection.
 
 ## Credits
 

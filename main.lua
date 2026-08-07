@@ -26,14 +26,19 @@ local Assets = require("src.render.Assets")
 local SUPPORTED = ">=1.5.0 <2.0.0"
 local KEY = "depth"
 local SIDE_COLOR_KEY = "side_color"
+local SHAPE_KEY = "shape"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
 local SIDE_COLOR_VALUES = { "body", "outline" }
 local SIDE_COLOR_LABELS = { "BODY", "OUTLINE" }
+local SHAPE_VALUES = { "slab", "carved" }
+local SHAPE_LABELS = { "SLAB", "CARVED" }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 local DEFAULT_SIDE_COLOR = "body"
 local DEFAULT_SIDE_COLOR_INDEX = 1
+local DEFAULT_SHAPE = "slab"
+local DEFAULT_SHAPE_INDEX = 1
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -69,6 +74,16 @@ mod.options:define({
     default = DEFAULT_SIDE_COLOR,
     help = "Colors new side, top, and bottom faces from body pixels or keeps the original outline pixels.",
   },
+  {
+    key = SHAPE_KEY,
+    type = "choice",
+    label = "SHAPE",
+    choices = {
+      { "SLAB", "slab" }, { "CARVED", "carved" },
+    },
+    default = DEFAULT_SHAPE,
+    help = "SLAB keeps the v1.1.0 extrusion. CARVED builds experimental visual-hull volume from front and side views.",
+  },
 })
 
 local SpriteBillboards, Voxel3D, ImageCache
@@ -78,6 +93,7 @@ local meshes, masks = {}, {}
 local meshOrder = {}
 local depthValue
 local sideColorValue
+local shapeValue
 local optionsRegistered = false
 
 local function indexOf(value)
@@ -94,6 +110,13 @@ local function sideColorIndexOf(value)
   return DEFAULT_SIDE_COLOR_INDEX
 end
 
+local function shapeIndexOf(value)
+  for i, v in ipairs(SHAPE_VALUES) do
+    if v == value then return i end
+  end
+  return DEFAULT_SHAPE_INDEX
+end
+
 local function readDepth()
   local ok, value = pcall(mod.options.get, mod.options, KEY)
   if ok then return VALUES[indexOf(value)] end
@@ -104,6 +127,12 @@ local function readSideColor()
   local ok, value = pcall(mod.options.get, mod.options, SIDE_COLOR_KEY)
   if ok then return SIDE_COLOR_VALUES[sideColorIndexOf(value)] end
   return DEFAULT_SIDE_COLOR
+end
+
+local function readShape()
+  local ok, value = pcall(mod.options.get, mod.options, SHAPE_KEY)
+  if ok then return SHAPE_VALUES[shapeIndexOf(value)] end
+  return DEFAULT_SHAPE
 end
 
 local function releaseMesh(mesh)
@@ -134,8 +163,16 @@ local function setSideColor(value)
   return sideColorValue
 end
 
+local function setShape(value)
+  local nextValue = SHAPE_VALUES[shapeIndexOf(value)]
+  if shapeValue ~= nextValue then clearMeshCache() end
+  shapeValue = nextValue
+  return shapeValue
+end
+
 setDepth(readDepth())
 setSideColor(readSideColor())
+setShape(readShape())
 Assets.register(clearCache)
 
 local function writeOption(game, key, value)
@@ -190,6 +227,23 @@ local function sideColorRow()
   }
 end
 
+local function shapeRow()
+  return {
+    id = mod.id .. ":" .. SHAPE_KEY,
+    label = "SHAPE",
+    value = function()
+      return SHAPE_LABELS[shapeIndexOf(shapeValue or readShape())]
+    end,
+    step = function(game, dir)
+      local i = shapeIndexOf(shapeValue or readShape())
+      i = ((i + (dir or 1) - 1) % #SHAPE_VALUES) + 1
+      local value = setShape(SHAPE_VALUES[i])
+      writeOption(game, SHAPE_KEY, value)
+      return true
+    end,
+  }
+end
+
 local function registerOptionsRows()
   if optionsRegistered then return end
   optionsRegistered = true
@@ -198,6 +252,7 @@ local function registerOptionsRows()
     if type(out) ~= "table" then return out end
     out[#out + 1] = depthRow()
     out[#out + 1] = sideColorRow()
+    out[#out + 1] = shapeRow()
     return out
   end)
 
@@ -206,6 +261,8 @@ local function registerOptionsRows()
       setDepth(payload.value)
     elseif payload and payload.mod == mod.id and payload.key == SIDE_COLOR_KEY then
       setSideColor(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == SHAPE_KEY then
+      setShape(payload.value)
     end
   end)
 end
@@ -397,7 +454,7 @@ local function rememberMesh(key, mesh)
   end
 end
 
-local function buildMesh(def, frame, depth, correction, m, sideColor)
+local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -551,13 +608,231 @@ local function buildMesh(def, frame, depth, correction, m, sideColor)
   return Voxel3D.newMesh(verts, idx)
 end
 
-local function cacheKey(def, frame, depth, correction, layout, sideColor)
+local function frameTexel(m, frame, lx, ly)
+  if lx < 0 or lx >= m.cellW or ly < 0 or ly >= m.cellH then return false end
+  frame = tonumber(frame) or 0
+  if frame < 0 or frame >= m.frames then return false end
+  local fx, fy = frameOrigin(m, frame)
+  if fx + m.cellW > m.sheetW or fy + m.cellH > m.sheetH then return false end
+  local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
+  if not r or (a or 0) < 0.5 then return false end
+  local outline = m.outlineLuma
+    and math.abs(luminance(r, g, b) - m.outlineLuma) <= LUMA_EPSILON
+  return true, outline
+end
+
+local function frameBounds(m, frame)
+  if frame < 0 or frame >= m.frames then return nil end
+  local minX, maxX, minY, maxY = m.cellW, -1, m.cellH, -1
+  for ly = 0, m.cellH - 1 do
+    for lx = 0, m.cellW - 1 do
+      if frameTexel(m, frame, lx, ly) then
+        if lx < minX then minX = lx end
+        if lx > maxX then maxX = lx end
+        if ly < minY then minY = ly end
+        if ly > maxY then maxY = ly end
+      end
+    end
+  end
+  if maxX < minX or maxY < minY then return nil end
+  return { minX = minX, maxX = maxX, minY = minY, maxY = maxY }
+end
+
+local function carvedFrames(frame, frames)
+  frame = tonumber(frame) or 0
+  if frame < 0 or frame >= frames then frame = 0 end
+  -- DECISAO: sprites Gen 1 usam buckets de tres vistas:
+  -- parado down/up/left e, quando existe, andando down/up/left. A auditoria
+  -- contou 20/73 sprites com so tres frames; eles tem as tres vistas completas
+  -- e devem usar CARVED. Frames acima de 5 caem explicitamente no bucket de
+  -- tres para nao transformar frame futuro em role silenciosamente invalido.
+  local bucketFrame = frame
+  if bucketFrame > 5 then bucketFrame = bucketFrame % 3 end
+  local pose = (bucketFrame >= 3 and frames >= 6) and 3 or 0
+  local role = bucketFrame - pose
+  return {
+    front = pose,
+    back = pose + 1,
+    side = pose + 2,
+    role = role,
+  }
+end
+
+local function buildCarvedMesh(def, frame, depth, correction, m, sideColor)
+  m = m or maskFor(def)
+  if not (m and m.frames >= 3) then return nil end
+  local pose = carvedFrames(frame, m.frames)
+  if pose.back >= m.frames or pose.side >= m.frames then return nil end
+
+  local frontBounds = frameBounds(m, pose.front)
+  local backBounds = frameBounds(m, pose.back)
+  local sideBounds = frameBounds(m, pose.side)
+  if not (frontBounds and backBounds and sideBounds) then return nil end
+  local widthFrame = pose.role == 1 and pose.back or pose.front
+  local widthBounds = pose.role == 1 and backBounds or frontBounds
+
+  local verts, idx = {}, {}
+  local pitchC, pitchS = math.cos(correction or 0), math.sin(correction or 0)
+  local lowY = m.maxY
+  local depthPixels = sideBounds.maxX - sideBounds.minX + 1
+  local widthPixels = m.maxX - m.minX + 1
+
+  -- DECISAO: o frame lateral 2 e o personagem olhando para a esquerda.
+  -- Nas folhas Gen 1 essa borda esquerda e o rosto. Por isso a coluna
+  -- opaca mais a esquerda da vista lateral fica em z = 0, e as colunas
+  -- seguintes caminham para z negativo, em direcao a nuca. No red.png o
+  -- tronco medido e 14 colunas de frente e 11 de lado; a caixa opaca completa
+  -- da lateral tem 13 colunas por incluir pixels fora do tronco. Em ambos os
+  -- casos, profundidade vem da arte, nao do slider de slab.
+  local function solid(lx, ly, sx)
+    if lx < widthBounds.minX or lx > widthBounds.maxX then return false end
+    if ly < widthBounds.minY or ly > widthBounds.maxY then return false end
+    if sx < sideBounds.minX or sx > sideBounds.maxX then return false end
+    return frameTexel(m, widthFrame, lx, ly)
+       and frameTexel(m, pose.side, sx, ly)
+  end
+
+  local function uvFor(frameIndex, lx, ly)
+    local fx, fy = frameOrigin(m, frameIndex)
+    return (fx + lx + 0.5) / m.sheetW, (fy + ly + 0.5) / m.sheetH
+  end
+
+  local function sameUv(frameIndex, lx, ly)
+    local u, v = uvFor(frameIndex, lx, ly)
+    return { u, v, u, v, u, v, u, v }
+  end
+
+  local function opaqueFrame(preferred, fallback, lx, ly)
+    if frameTexel(m, preferred, lx, ly) then return preferred end
+    if fallback and frameTexel(m, fallback, lx, ly) then return fallback end
+    return preferred
+  end
+
+  local function bodyTexel(frameIndex, lx, ly, dx, dy)
+    if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly end
+    local opaque, outline = frameTexel(m, frameIndex, lx, ly)
+    if not (opaque and outline) then return lx, ly end
+    for step = 1, BODY_SEARCH_LIMIT do
+      local bx, by = lx + dx * step, ly + dy * step
+      local bodyOpaque, bodyOutline = frameTexel(m, frameIndex, bx, by)
+      if bodyOpaque and not bodyOutline then return bx, by end
+    end
+    return lx, ly
+  end
+
+  local sideFrameA = m.frames >= 6 and 2 or pose.side
+  local sideFrameB = m.frames >= 6 and 5 or nil
+
+  local function sideUv(sx, ly)
+    local middle = (sideBounds.minX + sideBounds.maxX) / 2
+    local dx = sx <= middle and 1 or -1
+    -- DECISAO: a casca lateral tem que ter classificacao estavel entre
+    -- frames. No red.png, 161/378 posicoes laterais alternavam corpo/contorno
+    -- porque a malha vinha da silhueta combinada, mas a busca de cor olhava
+    -- so o frame corrente. Procuramos uma vez entre as vistas laterais da
+    -- folha e fixamos o primeiro texel opaco encontrado; assim caminhar nao
+    -- troca vermelho por preto na mesma posicao da face.
+    local function tryFrame(sideFrame)
+      if not sideFrame then return nil end
+      local bx, by = bodyTexel(sideFrame, sx, ly, dx, 0)
+      if frameTexel(m, sideFrame, bx, by) then
+        return sameUv(sideFrame, bx, by)
+      end
+    end
+    local uv = tryFrame(sideFrameA) or tryFrame(sideFrameB)
+    if uv then return uv end
+    return sameUv(pose.side, sx, ly)
+  end
+
+  local function topUv(lx, ly, dy)
+    local bx, by = bodyTexel(widthFrame, lx, ly, 0, dy)
+    return sameUv(widthFrame, bx, by)
+  end
+
+  local function p(x, y, z)
+    local ox, oz = x, z
+    if pose.role == 1 then
+      ox, oz = widthPixels - x, -depthPixels - z
+    elseif pose.role == 2 then
+      -- DECISAO: o role lateral tambem precisa compensar o pivo. Sem isso,
+      -- red.png medido no main.lua real ia de Y [0, 13] na frente para
+      -- Y [-14, 0] de lado: o z positivo entrava na contra-rotacao do lean
+      -- como deslocamento vertical e metade das direcoes afundava no chao.
+      -- A compensacao mantem o volume em z nao positivo, como frente e costas.
+      ox, oz = -z, x - widthPixels
+    end
+    return { ox, y * pitchC - oz * pitchS, y * pitchS + oz * pitchC }
+  end
+
+  local function quad(c1, c2, c3, c4, uv4, shade)
+    local n = #verts / 4
+    verts[#verts + 1] = { c1[1], c1[2], c1[3], uv4[1], uv4[2], shade }
+    verts[#verts + 1] = { c2[1], c2[2], c2[3], uv4[3], uv4[4], shade }
+    verts[#verts + 1] = { c3[1], c3[2], c3[3], uv4[5], uv4[6], shade }
+    verts[#verts + 1] = { c4[1], c4[2], c4[3], uv4[7], uv4[8], shade }
+    Voxel3D.pushQuad(idx, n)
+  end
+
+  for ly = m.minY, m.maxY do
+    for lx = widthBounds.minX, widthBounds.maxX do
+      for sx = sideBounds.minX, sideBounds.maxX do
+        if solid(lx, ly, sx) then
+          local x0, x1 = lx - m.minX, lx - m.minX + 1
+          local y0, y1 = lowY - ly, lowY - ly + 1
+          local z0 = -(sx - sideBounds.minX)
+          local z1 = z0 - 1
+
+          if not solid(lx, ly, sx - 1) then
+            quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y1, z0),
+                 p(x0, y1, z0), sameUv(opaqueFrame(pose.front, widthFrame, lx, ly), lx, ly),
+                 OBJ_SHADE.front)
+          end
+          if not solid(lx, ly, sx + 1) then
+            quad(p(x1, y0, z1), p(x0, y0, z1), p(x0, y1, z1),
+                 p(x1, y1, z1), sameUv(opaqueFrame(pose.back, widthFrame, lx, ly), lx, ly),
+                 OBJ_SHADE.back)
+          end
+          if not solid(lx - 1, ly, sx) then
+            quad(p(x0, y0, z1), p(x0, y0, z0), p(x0, y1, z0),
+                 p(x0, y1, z1), sideUv(sx, ly), OBJ_SHADE.side)
+          end
+          if not solid(lx + 1, ly, sx) then
+            quad(p(x1, y0, z0), p(x1, y0, z1), p(x1, y1, z1),
+                 p(x1, y1, z0), sideUv(sx, ly), OBJ_SHADE.side)
+          end
+          if not solid(lx, ly - 1, sx) then
+            quad(p(x0, y1, z1), p(x1, y1, z1), p(x1, y1, z0),
+                 p(x0, y1, z0), topUv(lx, ly, 1), OBJ_SHADE.top)
+          end
+          if not solid(lx, ly + 1, sx) then
+            quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y0, z1),
+                 p(x0, y0, z1), topUv(lx, ly, -1), OBJ_SHADE.bottom)
+          end
+        end
+      end
+    end
+  end
+
+  return Voxel3D.newMesh(verts, idx)
+end
+
+local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape)
+  if shape == "carved" then
+    local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m, sideColor)
+    if ok and mesh then return mesh end
+  end
+  return buildSlabMesh(def, frame, depth, correction, m, sideColor)
+end
+
+local function cacheKey(def, frame, depth, correction, layout, sideColor, shape)
+  local depthPart = shape == "carved" and "art" or tostring(depth)
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
     tostring(frame or 0),
-    tostring(depth),
+    depthPart,
     tostring(sideColor or ""),
+    tostring(shape or ""),
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -569,14 +844,16 @@ local function voxelMesh(def, frame)
   local depth = depthValue or readDepth()
   if depth == "off" then return originalMesh(def, frame) end
   local sideColor = sideColorValue or readSideColor()
+  local shape = shapeValue or readShape()
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then return originalMesh(def, frame) end
-  local key = cacheKey(def, frame, depth, correction, m, sideColor)
+  local key = cacheKey(def, frame, depth, correction, m, sideColor, shape)
   if meshes[key] ~= nil then
     touchMeshKey(key)
   else
-    local ok, mesh = pcall(buildMesh, def, frame, depth, correction, m, sideColor)
+    local ok, mesh = pcall(buildSelectedMesh, def, frame, depth, correction,
+      m, sideColor, shape)
     rememberMesh(key, (ok and mesh) or false)
   end
   return meshes[key] or originalMesh(def, frame)
