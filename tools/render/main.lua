@@ -19,6 +19,8 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local ROOT = "./"
 local MAIN_PATH = ROOT .. "mods/voxel_characters/main.lua"
 local SPRITE_DIR = "assets/generated/sprites/"
+-- Sobrescrito por `spritedir=`, para uma folha candidata poder ser renderizada
+-- lado a lado com a original sem escrever nada no cache do jogador.
 
 --------------------------------------------------------------------------
 -- arguments
@@ -46,6 +48,18 @@ local opts = {
   palette = "obj",
   diff = "0",
   metrics = "0",
+  ao = "0",
+  recess = "",
+  outline = "back",
+  depthmap = "",
+  shade = "",
+  spritedir = "",
+  aostrength = "",
+  ground = "",
+  blink = "",
+  blinktime = "",
+  blinkscan = "",
+  selftest = "",
 }
 
 local function parseArgs(argv)
@@ -128,6 +142,24 @@ local function makeVoxelHandle(imageData)
           return {
             verts = copy,
             map = mapCopy,
+            -- O mod aplica a piscada com pcall(mesh.setVertex, ...). Sem
+            -- este metodo no stub a chamada falha em silencio e o harness
+            -- nunca ve piscada nenhuma, o que parece o recurso nao funcionar.
+            -- Duas formas, como o Mesh do LOVE: uma tabela de atributos, ou
+            -- os atributos soltos. O mod tenta a forma de tabela primeiro e
+            -- so cai para a solta se ela falhar, entao um stub que aceita
+            -- qualquer coisa guarda a TABELA dentro do vertice e o erro
+            -- aparece longe daqui, em quem faz aritmetica com a posicao.
+            setVertex = function(self, i, a, b, c, d, e, f)
+              if type(i) ~= "number" or i < 1 or i > #self.verts then
+                error("setVertex: indice fora da faixa", 0)
+              end
+              if type(a) == "table" then
+                self.verts[i] = { a[1], a[2], a[3], a[4], a[5], a[6] }
+              else
+                self.verts[i] = { a, b, c, d, e, f }
+              end
+            end,
             setVertexMap = function(self, m) self.map = m end,
             setTexture = function(self, tex) self.texture = tex end,
             release = function(self) self.released = true end,
@@ -209,11 +241,41 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
   local handle = makeVoxelHandle(imageData)
   local mod = makeMod(handle, {
     depth = depth, shape = shape, side_color = sideColor,
+    ground_shade = opts.ground ~= "" and opts.ground or nil,
+    blink = opts.blink ~= "" and "on" or nil,
   })
   local chunk = assert(loadfile(MAIN_PATH))
   chunk(mod)
   local SpriteBillboards = handle.exports.lib.require("SpriteBillboards")
+  local mesh
   local mesh = SpriteBillboards.mesh(def, frame)
+
+  -- Procura o instante em que a piscada fecha, sem replicar a formula de fase
+  -- do mod, o que seria testar a implementacao contra ela mesma. A malha e
+  -- cacheada e mutada no lugar, entao rechamar com outro relogio e barato.
+  if opts.blinkscan == "1" and mesh and mesh.verts then
+    local realTime = love.timer.getTime
+    local function uvSig(mm)
+      local t = {}
+      for i = 1, #mm.verts do
+        local v = mm.verts[i]
+        t[i] = string.format("%.5f_%.5f", v[4] or -1, v[5] or -1)
+      end
+      return table.concat(t, "|")
+    end
+    love.timer.getTime = function() return 0 end
+    local open = uvSig(SpriteBillboards.mesh(def, frame))
+    local hit
+    for step = 1, 1000 do
+      local t = step * 0.01
+      love.timer.getTime = function() return t end
+      if uvSig(SpriteBillboards.mesh(def, frame)) ~= open then hit = t break end
+    end
+    love.timer.getTime = realTime
+    print(hit and string.format("BLINKSCAN fecha em t=%.2f s", hit)
+               or "BLINKSCAN nao fecha em 10 s")
+  end
+
   if mesh and mesh.original then
     return nil, "fell back to the flat card"
   end
@@ -249,7 +311,16 @@ end
 -- next thing we want to try.
 --------------------------------------------------------------------------
 
-local KINDS = { "front", "back", "side", "top", "bottom" }
+local KINDS = { "front", "back", "side", "top", "bottom", "side_e", "side_w" }
+-- Proveniencia so distingue arte de superficie inventada, entao os dois lados
+-- contam como um. A separacao existe para o sombreamento, nao para a metrica.
+local PROV_KIND = { side_e = "side", side_w = "side" }
+-- Voxel3D.FACE_SHADE do host, o valor que cada face do MUNDO recebe.
+local HOST_SHADE = {
+  front = 0.90, back = 0.68, top = 1.00, bottom = 0.55,
+  side_e = 0.84, side_w = 0.72,
+}
+local SHADE_OVERRIDE = nil
 local KIND_INDEX = {}
 for i, k in ipairs(KINDS) do KIND_INDEX[k] = i end
 
@@ -277,7 +348,10 @@ local function classifyQuad(v1, v2, v3, turn)
   elseif az >= ax then
     return nz > 0 and "front" or "back"
   end
-  return "side"
+  -- Leste e oeste separados. O mod hoje pinta os dois com um valor so, e o
+  -- mundo em volta usa 0.84 contra 0.72: a luz do host vem do sudeste e as
+  -- duas faces de um bloco nao recebem igual.
+  return nx > 0 and "side_e" or "side_w"
 end
 
 -- Independent second opinion, from the shade constants in main.lua:44. It
@@ -299,6 +373,334 @@ local function classifyMesh(mesh, role)
     counts[kind] = counts[kind] + 1
   end
   return kinds, counts, conflicts
+end
+
+--------------------------------------------------------------------------
+-- ambient occlusion, as a question rather than a feature
+--
+-- The Voxel Mod already bakes per-vertex AO into every surface of the world
+-- (ChunkMesher.lua:260-340) and our characters are the only thing in the
+-- diorama without it: five flat constants against a world with a dark seam in
+-- every corner. This computes the same thing for a slab so the answer can be
+-- looked at before any of it is proposed for the mod itself.
+--
+-- Constants and the corner rule are the host's, not invented here. The rule
+-- that matters is the last clause: a diagonal wedged behind both of its edges
+-- adds nothing, because the corner is already as enclosed as it can get, and
+-- counting it again is what turns an ordinary inside corner black.
+--------------------------------------------------------------------------
+
+-- Varrido por `aostrength=`. O valor 2.4 e o do host para o MUNDO, onde as
+-- superficies sao grandes e as quinas raras. Um personagem de 16 pixels tem
+-- outra escala de detalhe, e nao ha razao para a mesma forca servir aos dois.
+local AO_STRENGTH = 2.4
+local AO_STEP = 0.09 * AO_STRENGTH
+local AO_GROUND = 0.12 * AO_STRENGTH
+local function setAoStrength(v)
+  AO_STRENGTH = v
+  AO_STEP = 0.09 * v
+  AO_GROUND = 0.12 * v
+end
+local AO_RISE = 6
+local AO_FLOOR = 0.25
+
+-- Occupancy of a SLAB, rebuilt from the sheet rather than from the mesh: the
+-- mesh only carries exposed faces, and AO needs to know about the voxels that
+-- are NOT exposed, which are exactly the ones doing the occluding.
+local function slabOccupancy(data, frames, frame, cellW, cellH, depth)
+  local sheetW, sheetH = data:getDimensions()
+  local fy = frame * cellH
+  local opaque = {}
+  for ly = 0, cellH - 1 do
+    for lx = 0, cellW - 1 do
+      local ok, _, _, _, a = pcall(data.getPixel, data, lx, fy + ly)
+      opaque[ly * cellW + lx] = ok and (a or 0) >= 0.5
+    end
+  end
+  local cellBottom = cellH - 1
+  -- Takes a voxel CENTRE in mesh space and answers whether it is solid.
+  return function(cx, cy, cz)
+    local lx = math.floor(cx)
+    local ly = cellBottom - math.floor(cy)
+    local k = math.floor(-cz)
+    if k < 0 or k >= depth then return false end
+    if lx < 0 or lx >= cellW or ly < 0 or ly >= cellH then return false end
+    return opaque[ly * cellW + lx] or false
+  end
+end
+
+local function normalise(x, y, z)
+  local n = math.sqrt(x * x + y * y + z * z)
+  if n < 1e-9 then return 0, 0, 0 end
+  return x / n, y / n, z / n
+end
+
+-- One quad's four AO factors, in its own vertex order.
+local function quadAO(verts, i, solid)
+  local v1, v2, v3 = verts[i], verts[i + 1], verts[i + 2]
+  local e1x, e1y, e1z = v2[1] - v1[1], v2[2] - v1[2], v2[3] - v1[3]
+  local e2x, e2y, e2z = v3[1] - v1[1], v3[2] - v1[2], v3[3] - v1[3]
+  local nx, ny, nz = normalise(
+    e1y * e2z - e1z * e2y, e1z * e2x - e1x * e2z, e1x * e2y - e1y * e2x)
+
+  -- Which way is out? Ask the geometry instead of trusting winding: sample the
+  -- voxel on each side of the face centre and step away from the solid one.
+  local cx, cy, cz = 0, 0, 0
+  for j = i, i + 3 do
+    cx, cy, cz = cx + verts[j][1] / 4, cy + verts[j][2] / 4, cz + verts[j][3] / 4
+  end
+  if solid(cx + nx * 0.5, cy + ny * 0.5, cz + nz * 0.5) then
+    nx, ny, nz = -nx, -ny, -nz
+  end
+
+  local out = {}
+  for j = 0, 3 do
+    local v = verts[i + j]
+    local prev = verts[i + (j + 3) % 4]
+    local nxt = verts[i + (j + 1) % 4]
+    local a1x, a1y, a1z = normalise(prev[1] - v[1], prev[2] - v[2], prev[3] - v[3])
+    local a2x, a2y, a2z = normalise(nxt[1] - v[1], nxt[2] - v[2], nxt[3] - v[3])
+    -- Outward from the face, and away from the quad's interior: the two edge
+    -- neighbours and the diagonal between them.
+    local ox, oy, oz = v[1] + nx * 0.5, v[2] + ny * 0.5, v[3] + nz * 0.5
+    local a = solid(ox - a1x * 0.5, oy - a1y * 0.5, oz - a1z * 0.5)
+    local b = solid(ox - a2x * 0.5, oy - a2y * 0.5, oz - a2z * 0.5)
+    local d = solid(ox - (a1x + a2x) * 0.5, oy - (a1y + a2y) * 0.5,
+                    oz - (a1z + a2z) * 0.5)
+    local k = 0
+    if a then k = k + 1 end
+    if b then k = k + 1 end
+    if d and not (a and b) then k = k + 1 end
+    local f = math.max(AO_FLOOR, 1 - AO_STEP * k)
+    -- Ground contact: the floor blocks half the sky, so the closer a vertex
+    -- sits to it the less ambient light reaches it. This is what plants a
+    -- character on the ground instead of leaving it pasted over the top.
+    if v[2] < AO_RISE then
+      local t = v[2] / AO_RISE
+      f = f * (1 - AO_GROUND * (1 - t))
+    end
+    out[j + 1] = f
+  end
+  return out
+end
+
+-- PROTOTIPO: laje esculpida, fora do mod.
+--
+-- Testa uma hipotese medida: AO nao rende quase nada numa laje porque uma
+-- extrusao nao tem concavidade em profundidade, e um casco visual nao pode ter
+-- nenhuma, porque interseccao de silhuetas e convexa naquele eixo. Se a
+-- hipotese estiver certa, dar RELEVO A SUPERFICIE FRONTAL deve fazer o mesmo
+-- AO, com as mesmas constantes, saltar aos olhos.
+--
+-- Duas fontes de profundidade, nenhuma confiavel sozinha:
+--
+--   VISTA LATERAL  informacao ortografica real, mas usada como escala metrica
+--                  da um cubo de 13 voxels num sprite de 16 de largura. Aqui
+--                  ela entra como TETO por linha, nao como medida.
+--   TOM            cobre cada pixel, mas em arte Gen 1 marca contorno E
+--                  volume, e o proprio README deste mod ja avisa disso. Aqui
+--                  ele so DISTRIBUI o teto que a vista lateral concedeu.
+--
+-- `mode` escolhe como o contorno e tratado: "naive" deixa o tom mandar, e o
+-- contorno, por ser o tom mais escuro, recua ao maximo. "contour" reconhece
+-- que o contorno e borda de silhueta, nao fundo de vale, e da a ele o recuo
+-- do vizinho interno. A diferenca entre os dois e a ambiguidade do tom,
+-- isolada e desenhavel.
+local RECESS_MAX = 3
+local BUDGET_MIN, BUDGET_MAX = 2, 6
+-- Varridos por argumento para a amplitude do relevo poder ser procurada em vez
+-- de escolhida: `recess=N` e `outline=front|back`.
+local RECESS_OVERRIDE, OUTLINE_FRONT = nil, false
+-- Mapa de profundidade externo: uma tabela 16x16 de inteiros, -1 para
+-- transparente, produzida por um agente que olhou o sprite. Substitui o tom
+-- como fonte de recuo. O tom cobre cada pixel mas confunde contorno com
+-- volume; a pergunta que isto testa e se um agente separa os dois melhor.
+local DEPTH_MAP = nil
+
+local function sculptMesh(data, frames, frame, mode)
+  local sheetW, sheetH = data:getDimensions()
+  local cellW, cellH = sheetW, sheetH / frames
+  local function texel(f, lx, ly)
+    if lx < 0 or lx >= cellW or ly < 0 or ly >= cellH then return nil end
+    if f < 0 or f >= frames then return nil end
+    local ok, r, g, b, a = pcall(data.getPixel, data, lx, f * cellH + ly)
+    if not (ok and (a or 0) >= 0.5) then return nil end
+    return 0.299 * r + 0.587 * g + 0.114 * b
+  end
+
+  -- Teto de profundidade por linha, da vista lateral. Frame 2 e o personagem
+  -- de perfil; a largura dele naquela linha e a espessura real do corpo ali.
+  local sideFrame = frames >= 3 and 2 or nil
+  local budget = {}
+  for ly = 0, cellH - 1 do
+    local lo, hi = nil, nil
+    if sideFrame then
+      for lx = 0, cellW - 1 do
+        if texel(sideFrame, lx, ly) then
+          lo = lo or lx
+          hi = lx
+        end
+      end
+    end
+    local b = (lo and hi) and (hi - lo + 1) or BUDGET_MIN
+    budget[ly] = math.max(BUDGET_MIN, math.min(BUDGET_MAX, b))
+  end
+
+  -- Faixa de tons do corpo, medida na folha inteira, com o contorno de fora.
+  local outline, bodyMin, bodyMax = nil, 1, 0
+  for f = 0, frames - 1 do
+    for ly = 0, cellH - 1 do
+      for lx = 0, cellW - 1 do
+        local L = texel(f, lx, ly)
+        if L then outline = outline and math.min(outline, L) or L end
+      end
+    end
+  end
+  for f = 0, frames - 1 do
+    for ly = 0, cellH - 1 do
+      for lx = 0, cellW - 1 do
+        local L = texel(f, lx, ly)
+        if L and math.abs(L - outline) > 1e-5 then
+          bodyMin = math.min(bodyMin, L)
+          bodyMax = math.max(bodyMax, L)
+        end
+      end
+    end
+  end
+  local span = math.max(1e-6, bodyMax - bodyMin)
+
+  local function recessRaw(lx, ly)
+    local L = texel(frame, lx, ly)
+    if not L then return nil end
+    if DEPTH_MAP then
+      local row = DEPTH_MAP[ly + 1]
+      local v = row and row[lx + 1]
+      if v and v >= 0 then return v end
+      return 0
+    end
+    local maxR = RECESS_OVERRIDE or RECESS_MAX
+    local isOutline = math.abs(L - outline) <= 1e-5
+    if isOutline then
+      -- O contorno cerca o personagem inteiro. Recua-lo levanta uma parede de
+      -- cratera em volta de tudo, e a figura vira mascara: medido, nao suposto.
+      if OUTLINE_FRONT then return 0 end
+      if mode == "contour" then return nil end
+      return maxR
+    end
+    -- Claro fica na frente, escuro recua.
+    return math.floor((1 - (L - bodyMin) / span) * maxR + 0.5)
+  end
+
+  local recess = {}
+  for ly = 0, cellH - 1 do
+    for lx = 0, cellW - 1 do
+      recess[ly * cellW + lx] = recessRaw(lx, ly)
+    end
+  end
+  if mode == "contour" then
+    -- O contorno herda o recuo do vizinho de corpo mais proximo, em vez de
+    -- virar o fundo de um vale que o artista nunca desenhou.
+    for ly = 0, cellH - 1 do
+      for lx = 0, cellW - 1 do
+        if texel(frame, lx, ly) and not recess[ly * cellW + lx] then
+          local best
+          for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+            local r = recess[(ly + d[2]) * cellW + (lx + d[1])]
+            if r and (not best or r < best) then best = r end
+          end
+          recess[ly * cellW + lx] = best or RECESS_MAX
+        end
+      end
+    end
+  end
+
+  local cellBottom = cellH - 1
+  local function column(lx, ly)
+    if lx < 0 or lx >= cellW or ly < 0 or ly >= cellH then return nil end
+    local r = recess[ly * cellW + lx]
+    if not r then return nil end
+    local b = budget[ly]
+    r = math.min(r, b - 1)
+    if r < 0 then r = 0 end
+    return r, b            -- ocupa k de r ate b-1
+  end
+  local function solid(cx, cy, cz)
+    local lx, ly = math.floor(cx), cellBottom - math.floor(cy)
+    local k = math.floor(-cz)
+    local r, b = column(lx, ly)
+    if not r then return false end
+    return k >= r and k < b
+  end
+
+  -- As faces inventadas (lateral, topo, base) nao podem usar o texel do
+  -- proprio pixel: o contorno cerca a figura, e pintar as paredes com ele
+  -- reproduz exatamente as faces pretas que a comunidade reportou na v1.0.0 e
+  -- que a v1.1.0 consertou com busca por texel de corpo. Sem isto o prototipo
+  -- julgaria a ideia com um bug de tres versoes atras embutido.
+  local function bodyTexelNear(lx, ly)
+    local L = texel(frame, lx, ly)
+    if not L or math.abs(L - outline) > 1e-5 then return lx, ly end
+    for step = 1, 4 do
+      for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+        local bx, by = lx + d[1] * step, ly + d[2] * step
+        local BL = texel(frame, bx, by)
+        if BL and math.abs(BL - outline) > 1e-5 then return bx, by end
+      end
+    end
+    return lx, ly
+  end
+
+  local verts, idx = {}, {}
+  local function quad(c, lx, ly, shade, invented)
+    if invented then lx, ly = bodyTexelNear(lx, ly) end
+    local u = (lx + 0.5) / sheetW
+    local v = (frame * cellH + ly + 0.5) / sheetH
+    local n = #verts / 4
+    for i = 1, 4 do
+      verts[#verts + 1] = { c[i][1], c[i][2], c[i][3], u, v, shade }
+    end
+    local base = n * 4
+    idx[#idx + 1] = base + 1; idx[#idx + 1] = base + 2; idx[#idx + 1] = base + 3
+    idx[#idx + 1] = base + 1; idx[#idx + 1] = base + 3; idx[#idx + 1] = base + 4
+  end
+  local SH = { front = 1.0, back = 0.68, side = 0.78, top = 1.0, bottom = 0.55 }
+  for ly = 0, cellH - 1 do
+    for lx = 0, cellW - 1 do
+      local r, b = column(lx, ly)
+      if r then
+        local x0, x1 = lx, lx + 1
+        local y0, y1 = cellBottom - ly, cellBottom - ly + 1
+        for k = r, b - 1 do
+          local z0, z1 = -k, -k - 1
+          if not solid(lx + 0.5, y0 + 0.5, z0 + 0.5) then
+            quad({ { x0, y0, z0 }, { x1, y0, z0 }, { x1, y1, z0 }, { x0, y1, z0 } },
+                 lx, ly, SH.front)
+          end
+          if not solid(lx + 0.5, y0 + 0.5, z1 - 0.5) then
+            quad({ { x1, y0, z1 }, { x0, y0, z1 }, { x0, y1, z1 }, { x1, y1, z1 } },
+                 lx, ly, SH.back)
+          end
+          if not solid(lx - 0.5, y0 + 0.5, z0 - 0.5) then
+            quad({ { x0, y0, z1 }, { x0, y0, z0 }, { x0, y1, z0 }, { x0, y1, z1 } },
+                 lx, ly, SH.side, true)
+          end
+          if not solid(lx + 1.5, y0 + 0.5, z0 - 0.5) then
+            quad({ { x1, y0, z0 }, { x1, y0, z1 }, { x1, y1, z1 }, { x1, y1, z0 } },
+                 lx, ly, SH.side, true)
+          end
+          if not solid(lx + 0.5, y1 + 0.5, z0 - 0.5) then
+            quad({ { x0, y1, z1 }, { x1, y1, z1 }, { x1, y1, z0 }, { x0, y1, z0 } },
+                 lx, ly, SH.top, true)
+          end
+          if not solid(lx + 0.5, y0 - 0.5, z0 - 0.5) then
+            quad({ { x0, y0, z0 }, { x1, y0, z0 }, { x1, y0, z1 }, { x0, y0, z1 } },
+                 lx, ly, SH.bottom, true)
+          end
+        end
+      end
+    end
+  end
+  return { verts = verts, map = idx }, solid
 end
 
 local function bounds(verts)
@@ -413,8 +815,95 @@ local function fail(msg)
   love.event.quit(1)
 end
 
+-- ------------------------------------------------------------- autoteste
+--
+-- O harness e a regua desta base, e por muito tempo ninguem conferiu a regua.
+-- Dez defeitos numa unica sessao foram DELE se passando por defeito do mod:
+-- sinal de profundidade invertido, que fazia a arte aparecer no shade de tras
+-- e lia como bug de cor; pitch medido da ponta errada do ladder; Y-down contra
+-- um mod Y-up; canvas que renderiza de baixo para cima, fazendo cada linha ser
+-- pontuada contra os pixels de outra; pivo por bbox escondendo desalinhamento;
+-- contagem de frames fixa em 6; stub sem setVertex; stub aceitando a forma
+-- errada de setVertex; e amostragem grossa demais para uma janela de 0,12 s.
+--
+-- Cada um custou um ciclo inteiro de diagnostico apontado para o lugar errado.
+-- Estas assercoes rodam em segundos e falham no lugar certo.
+local function selftest()
+  local fails, checks = 0, 0
+  local function check(ok, name, detail)
+    checks = checks + 1
+    if not ok then
+      fails = fails + 1
+      print("FAIL " .. name .. (detail and ("  " .. detail) or ""))
+    end
+  end
+
+  local data = loadImageData(SPRITE_DIR .. "red.png")
+  local sheetW, sheetH = data:getDimensions()
+
+  -- 1. Contagem de frames vem da altura, como o engine faz, nunca de constante.
+  check(math.floor(sheetH / 16) == 6, "frames vem da altura da folha",
+        "red.png deu " .. tostring(sheetH / 16))
+
+  -- 2. setVertex do stub aceita as DUAS formas do Mesh do LOVE. O mod tenta a
+  --    de tabela primeiro; um stub permissivo guarda a tabela dentro do
+  --    vertice e o erro aparece longe, em quem faz aritmetica com posicao.
+  local probe = makeVoxelHandle(data).exports.lib.require("Voxel3D")
+    .newMesh({ { 1, 2, 3, 4, 5, 6 } }, { 1, 2, 3, 1, 3, 4 })
+  probe:setVertex(1, { 9, 8, 7, 6, 5, 4 })
+  check(probe.verts[1][1] == 9 and probe.verts[1][4] == 6,
+        "setVertex aceita a forma de tabela")
+  probe:setVertex(1, 1, 2, 3, 4, 5, 6)
+  check(probe.verts[1][1] == 1 and probe.verts[1][4] == 4,
+        "setVertex aceita a forma de escalares")
+
+  -- 3. Convencao de eixos: o mod emite Y para cima e a frente em z = 0. Se
+  --    qualquer um dos dois inverter, isto pega antes de virar diagnostico.
+  local def = { image = SPRITE_DIR .. "red.png", frames = 6 }
+  local mesh = buildGeometry(data, def, 0, "slab", 3, "body")
+  check(mesh ~= nil, "malha SLAB constroi")
+  if mesh then
+    local b = bounds(mesh.verts)
+    check(b.maxZ == 0, "frente esta em z = 0", "maxZ=" .. tostring(b.maxZ))
+    check(b.minZ < 0, "corpo extruda para z negativo",
+          "minZ=" .. tostring(b.minZ))
+    check(b.minY == 0, "pe do sprite esta em y = 0",
+          "minY=" .. tostring(b.minY))
+    -- classificacao de face por winding, base de toda metrica de proveniencia
+    local kinds = classifyMesh(mesh, 0)
+    local seen = {}
+    for _, k in ipairs(kinds) do seen[k] = true end
+    check(seen.front and seen.back and seen.top,
+          "classificacao acha frente, tras e topo")
+  end
+
+  print(string.format("autoteste do harness: %d/%d", checks - fails, checks))
+  return fails == 0
+end
+
 function love.load(argv)
   parseArgs(argv)
+  if opts.selftest == "1" then
+    local ok = selftest()
+    return love.event.quit(ok and 0 or 1)
+  end
+  -- Antes de qualquer malha ser construida: estes parametros mudam geometria.
+  if opts.shade == "host" then SHADE_OVERRIDE = HOST_SHADE end
+  if tonumber(opts.aostrength) then setAoStrength(tonumber(opts.aostrength)) end
+  -- Congela o relogio antes de qualquer malha ser construida. O piscar e uma
+  -- janela de 0,12 s num periodo com fase por folha; em vez de replicar a
+  -- formula, que seria testar a implementacao contra ela mesma, o gate
+  -- renderiza uma tira de instantes e olha qual fecha o olho.
+  if tonumber(opts.blinktime) then
+    local t = tonumber(opts.blinktime)
+    love.timer.getTime = function() return t end
+  end
+  RECESS_OVERRIDE = tonumber(opts.recess)
+  OUTLINE_FRONT = opts.outline == "front"
+  if opts.depthmap ~= "" then
+    local chunk = assert(loadfile(opts.depthmap), "depthmap ilegivel")
+    DEPTH_MAP = chunk()
+  end
 
   local sprites = splitList(opts.sprite)
   local shapes = splitList(opts.shapes)
@@ -439,7 +928,8 @@ function love.load(argv)
 
   local rows = {}
   for _, sprite in ipairs(sprites) do
-    local path = SPRITE_DIR .. sprite .. ".png"
+    local path = (opts.spritedir ~= "" and opts.spritedir or SPRITE_DIR)
+      .. sprite .. ".png"
     local ok, data = pcall(loadImageData, path)
     if not ok then return fail("no sprite at " .. path) end
     -- The engine derives frame count from sheet height, not from a constant
@@ -454,13 +944,24 @@ function love.load(argv)
     for _, frame in ipairs(frames) do
       for _, shape in ipairs(shapes) do
         local mesh, why
+        local wantAO = shape:find("_ao") ~= nil
+        shape = shape:gsub("_ao$", "")
+        local reliefSolid
+        if wantAO then end
         if shape == "flat" then
           mesh = flatCard(data, def.frames, frame)
+        elseif shape == "sculpt" then
+          mesh, reliefSolid = sculptMesh(data, def.frames, frame, "naive")
+        elseif shape == "sculptc" then
+          mesh, reliefSolid = sculptMesh(data, def.frames, frame, "contour")
         else
           mesh, why = buildGeometry(data, def, frame, shape, depth,
                                     opts.side_color)
         end
         local sheetW, sheetH = data:getDimensions()
+        local occ = reliefSolid or ((shape == "slab")
+          and slabOccupancy(data, def.frames, frame, sheetW,
+                            sheetH / def.frames, depth) or nil)
         -- Only the carved builders rotate per role; buildSlabMesh emits every
         -- frame in the same frame of reference (main.lua:608-613).
         local role = (shape == "carved" or shape == "carved_plus")
@@ -480,7 +981,9 @@ function love.load(argv)
             pitch = math.rad(pitch.deg), pitchLabel = pitch.label,
             mesh = mesh, why = why, texture = texture,
             cellW = sheetW, cellH = sheetH / def.frames,
-            kinds = kinds, quadKinds = quadKinds, role = role,
+            kinds = kinds, quadKinds = quadKinds, role = role, occ = occ,
+            ao = wantAO,
+            shapeLabel = shape:upper() .. (wantAO and "+AO" or ""),
           }
         end
       end
@@ -495,6 +998,7 @@ function love.load(argv)
 
   state.rows, state.yaws, state.cell, state.labelH = rows, yaws, cell, labelH
   state.width, state.height = width, height
+  state.ao = opts.ao == "1"
   state.shader = love.graphics.newShader(SHADER)
   local pal = PALETTES[opts.palette] or PALETTES.obj
   for i = 1, 4 do state.shader:send("pal" .. (i - 1), pal[i]) end
@@ -505,6 +1009,11 @@ function love.load(argv)
   for _, row in ipairs(rows) do
     if row.mesh then
       quads = quads + math.floor(#row.mesh.verts / 4)
+      if row.quadKinds then
+        local t = {}
+        for _, k in ipairs(KINDS) do t[#t + 1] = k .. "=" .. row.quadKinds[k] end
+        print("    quads por face: " .. table.concat(t, "  "))
+      end
       local b = bounds(row.mesh.verts)
       print(string.format(
         "%s f%d %-12s quads=%4d  x[%.1f..%.1f] y[%.1f..%.1f] z[%.1f..%.1f] idx=%d",
@@ -522,16 +1031,19 @@ end
 local function drawCell(row, yaw, x, y, size, asProvenance)
   if not row.mesh then return end
   local b = bounds(row.mesh.verts)
-  -- Pivot on each mesh's own bounding box in X and Y, and on z = 0, the plane
-  -- the flat card occupies. The mod drops the sprite cell's empty padding
-  -- (`lx - m.minX`), so a cell-relative pivot would offset every mod mesh
-  -- against the card. Mod-vs-mod diffs are therefore exact; a diff against
-  -- FLAT still carries whatever padding the sheet had, so read that one as a
-  -- reference image, not as a number.
+  -- Pivot on the sprite CELL, and on z = 0, the plane the flat card occupies.
+  --
+  -- This used to pivot on each mesh's own bounding box, because until v1.3.0
+  -- the mod dropped the cell's empty padding and rebased geometry on the
+  -- opaque bounds. That made a cell pivot wrong and a bbox pivot merely
+  -- approximate: a sheet whose art is off centre inside its cell, like
+  -- snorlax, still read as misaligned against the card. Now that the mod
+  -- emits in cell coordinates on both axes, the cell is the shared frame of
+  -- reference and the comparison against FLAT is exact rather than indicative.
   local cam = {
     yaw = yaw, pitch = row.pitch,
-    cx = (b.minX + b.maxX) / 2,
-    cy = (b.minY + b.maxY) / 2,
+    cx = (row.cellW or (b.minX + b.maxX)) / 2,
+    cy = (row.cellH or (b.minY + b.maxY)) / 2,
     cz = 0,
     scale = size / VIEW_UNITS,
     screenX = x + size / 2,
@@ -541,9 +1053,45 @@ local function drawCell(row, yaw, x, y, size, asProvenance)
     depthRange = math.max(64, (b.maxY - b.minY) * 2),
   }
   local verts = project(row.mesh.verts, cam)
+  if SHADE_OVERRIDE and not asProvenance then
+    for i = 1, #row.mesh.verts, 4 do
+      local v = SHADE_OVERRIDE[row.kinds[(i - 1) / 4 + 1]]
+      if v then
+        for j = 0, 3 do verts[i + j][6] = v end
+      end
+    end
+  end
+  if (state.ao or row.ao) and row.occ and not asProvenance then
+    local hist, n, sum, minf = {}, 0, 0, 1
+    for i = 1, #row.mesh.verts, 4 do
+      local f = quadAO(row.mesh.verts, i, row.occ)
+      for j = 0, 3 do
+        verts[i + j][6] = verts[i + j][6] * f[j + 1]
+        local bucket = math.floor(f[j + 1] * 20 + 0.5) / 20
+        hist[bucket] = (hist[bucket] or 0) + 1
+        n, sum = n + 1, sum + f[j + 1]
+        if f[j + 1] < minf then minf = f[j + 1] end
+      end
+    end
+    if not state.aoReported then
+      state.aoReported = true
+      local keys = {}
+      for k in pairs(hist) do keys[#keys + 1] = k end
+      table.sort(keys)
+      local parts = {}
+      for _, k in ipairs(keys) do
+        parts[#parts + 1] = string.format("%.2f:%d(%.0f%%)", k, hist[k],
+          hist[k] / n * 100)
+      end
+      print(string.format("AO em %d vertices  media %.3f  minimo %.3f",
+        n, sum / n, minf))
+      print("  distribuicao  " .. table.concat(parts, "  "))
+    end
+  end
   if asProvenance then
     for i, v in ipairs(verts) do
-      v[6] = KIND_INDEX[row.kinds[math.floor((i - 1) / 4) + 1]]
+      local k = row.kinds[math.floor((i - 1) / 4) + 1]
+      v[6] = KIND_INDEX[PROV_KIND[k] or k]
     end
   end
   local mesh = love.graphics.newMesh(
@@ -560,7 +1108,7 @@ end
 -- Render the same sheet with identity colours instead of art, read it back,
 -- and count. This is the fitness function: a number for how much of what the
 -- player sees is the artist's work and how much is surface this mod made up.
-local function computeMetrics()
+local function computeMetrics(screen)
   local w, h = state.width, state.height
   local colour = love.graphics.newCanvas(w, h)
   local depth = love.graphics.newCanvas(w, h,
@@ -685,6 +1233,50 @@ local function computeMetrics()
     end
   end
 
+  -- Cruza proveniencia com a imagem visivel: para cada tipo de face, quanto
+  -- dela chega ao olho como o tom mais escuro. O contorno Gen 1 e preto e
+  -- cerca a figura inteira; se ele domina as faces inventadas, o personagem le
+  -- como bloco escuro por mais volume que tenha.
+  if screen then
+    print("")
+    print("share of each face kind that reaches the eye as the darkest tone")
+    for r, row in ipairs(state.rows) do
+      local y0 = (r - 1) * (cell + labelH) + labelH
+      for c, yawDeg in ipairs(state.yaws) do
+        local x0 = (c - 1) * cell
+        local dark, tot, darkAll, totAll = {}, {}, 0, 0
+        for _, k in ipairs(KINDS) do dark[k], tot[k] = 0, 0 end
+        for y = 0, cell - 1 do
+          for x = 0, cell - 1 do
+            local kind = kindAt(img:getPixel(x0 + x, y0 + y))
+            if kind then
+              local sr, sg, sb = screen:getPixel(x0 + x, y0 + y)
+              local isDark = (sr + sg + sb) / 3 < 0.12
+              tot[kind] = tot[kind] + 1
+              totAll = totAll + 1
+              if isDark then
+                dark[kind] = dark[kind] + 1
+                darkAll = darkAll + 1
+              end
+            end
+          end
+        end
+        if totAll > 0 then
+          local parts = {}
+          for _, k in ipairs({ "front", "top", "side", "bottom" }) do
+            if tot[k] > 0 then
+              parts[#parts + 1] = string.format("%s %.0f%%", k,
+                dark[k] / tot[k] * 100)
+            end
+          end
+          print(string.format("  %-11s yaw %2d   preto total %.1f%%   (%s)",
+            row.shape, yawDeg, darkAll / totAll * 100,
+            table.concat(parts, "  ")))
+        end
+      end
+    end
+  end
+
   print("")
   print("provenance at the visible pixel level")
   print("  art%   share of drawn pixels sampling the original sprite art")
@@ -739,8 +1331,8 @@ function love.draw()
       love.graphics.setColor(0, 0, 0, 0.55)
       love.graphics.rectangle("fill", 0, y, state.width, labelH)
       love.graphics.setColor(1, 1, 1, 1)
-      local text = string.format("%s  frame %d  %s  %s%s", row.sprite,
-        row.frame, row.shape:upper(), row.pitchLabel,
+      local text = string.format("%s  frame %d  %s%s  %s%s", row.sprite,
+        row.frame, row.shapeLabel or row.shape:upper(), "", row.pitchLabel,
         row.why and ("  [" .. row.why .. "]") or "")
       love.graphics.print(text, 6, y + 2)
     end
@@ -786,7 +1378,7 @@ function love.update()
       img:encode("png", opts.out)
       print("WROTE " .. love.filesystem.getSaveDirectory() .. "/" .. opts.out)
       if opts.diff == "1" and #state.rows > 1 then reportDiff(img) end
-      if opts.metrics == "1" then computeMetrics() end
+      if opts.metrics == "1" then computeMetrics(img) end
     end)
   elseif state.frames > 6 then
     love.event.quit()

@@ -62,6 +62,34 @@ hand. That is not a reason to dismiss the report. It is a reason to state what
 this mod does and does not claim in first person, and to make the failure a
 clean fallback to the flat card rather than a body with spikes coming out of it.
 
+### CARVED leaks outside the card in the upward pose on some sheets
+
+Found by the render gate, not by a person. A visual hull is an intersection of
+silhouettes, so it can only remove material: it must never draw where the flat
+card it replaces is empty. That makes `leak = 0` a criterion with a proof behind
+it rather than a threshold someone picked.
+
+Measured at zero pitch and zero yaw, twelve sheets, upward-facing pose:
+
+```
+blue        leak  650   miss  782
+red daisy channeler agatha biker beauty clerk cook   leak 0
+nurse       leak    0   miss  792     seel  leak 0  miss 2428
+bruno       leak    0   miss  661
+```
+
+`miss` is not a defect here. It is the material the hull carved away.
+
+Cause, confirmed by reading both sites: `mirrorX` mirrors the back view onto the
+front view's columns about the front and back bounding box
+(`main.lua:775-777`), which is the v1.2.1 correction and is a texture-space
+question. The role rotation added in v1.3.0 mirrors placement about the sprite
+cell (`m.cellW - x`), which is a geometry question. Two mirrors, two axes. They
+agree only when the art is symmetric inside its cell.
+
+Whichever way it is resolved, the two must be derived from one axis rather than
+chosen independently, or this returns the next time either is touched.
+
 ### Battle sprites
 
 Asked for by **Colonel_Aureliano** and **Pikon**, six minutes apart, and again

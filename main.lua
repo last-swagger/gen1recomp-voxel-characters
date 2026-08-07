@@ -27,31 +27,108 @@ local SUPPORTED = ">=1.5.0 <2.0.0"
 local KEY = "depth"
 local SIDE_COLOR_KEY = "side_color"
 local SHAPE_KEY = "shape"
+local GROUND_SHADE_KEY = "ground_shade"
+local BLINK_KEY = "blink"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
 local SIDE_COLOR_VALUES = { "body", "outline" }
 local SIDE_COLOR_LABELS = { "BODY", "OUTLINE" }
 local SHAPE_VALUES = { "slab", "carved", "carved_plus" }
 local SHAPE_LABELS = { "SLAB", "CARVED", "CARVED+" }
+local GROUND_SHADE_VALUES = { "off", "on" }
+local GROUND_SHADE_LABELS = { "OFF", "ON" }
+local BLINK_VALUES = { "off", "on" }
+local BLINK_LABELS = { "OFF", "ON" }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 local DEFAULT_SIDE_COLOR = "body"
 local DEFAULT_SIDE_COLOR_INDEX = 1
 local DEFAULT_SHAPE = "slab"
 local DEFAULT_SHAPE_INDEX = 1
+local DEFAULT_GROUND_SHADE = "off"
+local DEFAULT_GROUND_SHADE_INDEX = 1
+local DEFAULT_BLINK = "off"
+local DEFAULT_BLINK_INDEX = 1
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
-local OBJ_SHADE = { front = 1.0, back = 0.68, side = 0.78, top = 1.0, bottom = 0.55 }
+-- A frente segue Voxel3D.FACE_SHADE.front = 0.90, nao 1.00. As laterais ficam
+-- simetricas em 0.78 de proposito: o host resolve o frame antes de chamar
+-- SpriteBillboards.mesh(def, frame) e aplica o mirror depois na matriz
+-- (VoxelScene.lua:234-241, 287-295). Como o shade ja vem assado no vertice,
+-- valores diferentes para leste/oeste trocariam de lado em folhas espelhadas.
+local OBJ_SHADE = { front = 0.90, back = 0.68, side = 0.78, top = 1.0, bottom = 0.55 }
 local SIDE_INSET = 0.03
 local RUN_UV_INSET = 0.05
 local PITCH_BUCKET = math.pi / 180
 local MAX_MESHES = 64
+local AO_STRENGTH = 2.4
+local AO_GROUND = 0.12 * AO_STRENGTH
+local AO_RISE = 6
 -- DECISAO: quatro pixels cobre os contornos grossos de sprites Gen 1 sem
 -- deixar uma busca em arte customizada atravessar para outra parte do corpo.
 local BODY_SEARCH_LIMIT = 4
 local LUMA_EPSILON = 0.00001
 local CARVED_PLUS_RECESS_STEPS = 2
+local BLINK_CLOSED_SECONDS = 0.12
+
+local EYE_MARKS = {
+  agatha = { { 5, 7 }, { 6, 7 }, { 9, 7 }, { 10, 7 } },
+  balding_guy = { { 6, 7 }, { 9, 7 } },
+  beauty = { { 6, 7 }, { 9, 7 }, { 6, 8 }, { 9, 8 } },
+  biker = { { 5, 6 }, { 6, 7 }, { 9, 7 }, { 10, 6 } },
+  bird = { { 6, 7 }, { 9, 7 } },
+  blue = { { 6, 7 }, { 9, 7 } },
+  brunette_girl = { { 6, 7 }, { 9, 7 }, { 6, 8 }, { 9, 8 } },
+  bruno = { { 5, 7 }, { 6, 7 }, { 9, 7 }, { 10, 7 } },
+  captain = { { 6, 7 }, { 9, 7 } },
+  channeler = { { 5, 7 }, { 6, 7 }, { 9, 7 }, { 10, 7 } },
+  clerk = { { 5, 5 }, { 6, 5 }, { 9, 5 }, { 10, 5 } },
+  cook = { { 6, 7 }, { 9, 7 } },
+  cooltrainer_f = { { 6, 7 }, { 9, 7 }, { 6, 8 }, { 9, 8 } },
+  cooltrainer_m = { { 6, 7 }, { 9, 7 } },
+  daisy = { { 6, 7 }, { 9, 7 }, { 6, 8 }, { 9, 8 } },
+  fairy = { { 5, 7 }, { 10, 7 } },
+  fisher = { { 5, 5 }, { 6, 5 }, { 9, 5 }, { 10, 5 } },
+  fishing_guru = { { 6, 7 }, { 9, 7 } },
+  gambler = { { 6, 6 }, { 9, 6 } },
+  gameboy_kid = { { 6, 7 }, { 9, 7 } },
+  gentleman = { { 6, 7 }, { 9, 7 } },
+  giovanni = { { 5, 6 }, { 6, 6 }, { 9, 6 }, { 10, 6 }, { 6, 7 }, { 9, 7 } },
+  girl = { { 6, 6 }, { 9, 6 }, { 6, 7 }, { 9, 7 } },
+  gramps = { { 5, 5 }, { 6, 5 }, { 9, 5 }, { 10, 5 } },
+  granny = { { 5, 5 }, { 6, 5 }, { 9, 5 }, { 10, 5 } },
+  guard = { { 6, 7 }, { 9, 7 } },
+  gym_guide = { { 5, 6 }, { 6, 6 }, { 9, 6 }, { 10, 6 } },
+  hiker = { { 6, 5 }, { 9, 5 } },
+  koga = { { 5, 6 }, { 6, 6 }, { 9, 6 }, { 10, 6 }, { 6, 7 }, { 9, 7 } },
+  lance = { { 6, 7 }, { 9, 7 } },
+  link_receptionist = { { 6, 7 }, { 9, 7 }, { 6, 8 }, { 9, 8 } },
+  little_boy = { { 6, 8 }, { 9, 8 }, { 6, 9 }, { 9, 9 } },
+  little_girl = { { 6, 8 }, { 9, 8 }, { 6, 9 }, { 9, 9 } },
+  middle_aged_man = { { 6, 6 }, { 9, 6 } },
+  middle_aged_woman = { { 6, 6 }, { 9, 6 }, { 6, 7 }, { 9, 7 } },
+  mom = { { 6, 7 }, { 9, 7 }, { 6, 8 }, { 9, 8 } },
+  mr_fuji = { { 6, 7 }, { 9, 7 } },
+  nurse = { { 6, 6 }, { 9, 6 }, { 6, 7 }, { 9, 7 } },
+  oak = { { 6, 6 }, { 9, 6 }, { 6, 7 }, { 9, 7 } },
+  red = { { 6, 7 }, { 9, 7 } },
+  red_bike = { { 6, 6 }, { 9, 6 } },
+  rocker = { { 6, 6 }, { 9, 6 } },
+  rocket = { { 6, 7 }, { 9, 7 } },
+  safari_zone_worker = { { 6, 7 }, { 9, 7 } },
+  sailor = { { 5, 6 }, { 6, 7 }, { 9, 7 }, { 10, 6 } },
+  scientist = { { 5, 5 }, { 6, 5 }, { 9, 5 }, { 10, 5 } },
+  seel = { { 6, 6 }, { 9, 6 }, { 6, 7 }, { 9, 7 } },
+  silph_president = { { 5, 3 }, { 6, 3 }, { 9, 3 }, { 10, 3 } },
+  silph_worker_f = { { 6, 6 }, { 9, 6 }, { 6, 7 }, { 9, 7 } },
+  silph_worker_m = { { 5, 7 }, { 6, 7 }, { 9, 7 }, { 10, 7 } },
+  super_nerd = { { 6, 7 }, { 9, 7 } },
+  swimmer = { { 5, 9 }, { 10, 9 } },
+  waiter = { { 6, 7 }, { 9, 7 } },
+  warden = { { 5, 3 }, { 6, 3 }, { 9, 3 }, { 10, 3 } },
+  youngster = { { 6, 7 }, { 9, 7 } },
+}
 
 mod.options:define({
   {
@@ -86,6 +163,26 @@ mod.options:define({
     default = DEFAULT_SHAPE,
     help = "SLAB keeps the v1.1.0 extrusion. CARVED builds visual-hull volume from three views. CARVED+ adds tone relief.",
   },
+  {
+    key = GROUND_SHADE_KEY,
+    type = "choice",
+    label = "GROUND SHADE",
+    choices = {
+      { "OFF", "off" }, { "ON", "on" },
+    },
+    default = DEFAULT_GROUND_SHADE,
+    help = "Adds the host-style contact shade to the lowest six pixels of the solid character mesh.",
+  },
+  {
+    key = BLINK_KEY,
+    type = "choice",
+    label = "BLINK",
+    choices = {
+      { "OFF", "off" }, { "ON", "on" },
+    },
+    default = DEFAULT_BLINK,
+    help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
+  },
 })
 
 local SpriteBillboards, Voxel3D, ImageCache
@@ -96,7 +193,11 @@ local meshOrder = {}
 local depthValue
 local sideColorValue
 local shapeValue
+local groundShadeValue
+local blinkValue
 local optionsRegistered = false
+local meshBlink = setmetatable({}, { __mode = "k" })
+local blinkVertexWarned = false
 
 local function indexOf(value)
   for i, v in ipairs(VALUES) do
@@ -119,6 +220,20 @@ local function shapeIndexOf(value)
   return DEFAULT_SHAPE_INDEX
 end
 
+local function groundShadeIndexOf(value)
+  for i, v in ipairs(GROUND_SHADE_VALUES) do
+    if v == value then return i end
+  end
+  return DEFAULT_GROUND_SHADE_INDEX
+end
+
+local function blinkIndexOf(value)
+  for i, v in ipairs(BLINK_VALUES) do
+    if v == value then return i end
+  end
+  return DEFAULT_BLINK_INDEX
+end
+
 local function readDepth()
   local ok, value = pcall(mod.options.get, mod.options, KEY)
   if ok then return VALUES[indexOf(value)] end
@@ -135,6 +250,18 @@ local function readShape()
   local ok, value = pcall(mod.options.get, mod.options, SHAPE_KEY)
   if ok then return SHAPE_VALUES[shapeIndexOf(value)] end
   return DEFAULT_SHAPE
+end
+
+local function readGroundShade()
+  local ok, value = pcall(mod.options.get, mod.options, GROUND_SHADE_KEY)
+  if ok then return GROUND_SHADE_VALUES[groundShadeIndexOf(value)] end
+  return DEFAULT_GROUND_SHADE
+end
+
+local function readBlink()
+  local ok, value = pcall(mod.options.get, mod.options, BLINK_KEY)
+  if ok then return BLINK_VALUES[blinkIndexOf(value)] end
+  return DEFAULT_BLINK
 end
 
 local function releaseMesh(mesh)
@@ -172,9 +299,23 @@ local function setShape(value)
   return shapeValue
 end
 
+local function setGroundShade(value)
+  local nextValue = GROUND_SHADE_VALUES[groundShadeIndexOf(value)]
+  if groundShadeValue ~= nextValue then clearMeshCache() end
+  groundShadeValue = nextValue
+  return groundShadeValue
+end
+
+local function setBlink(value)
+  blinkValue = BLINK_VALUES[blinkIndexOf(value)]
+  return blinkValue
+end
+
 setDepth(readDepth())
 setSideColor(readSideColor())
 setShape(readShape())
+setGroundShade(readGroundShade())
+setBlink(readBlink())
 Assets.register(clearCache)
 
 local function writeOption(game, key, value)
@@ -246,6 +387,40 @@ local function shapeRow()
   }
 end
 
+local function groundShadeRow()
+  return {
+    id = mod.id .. ":" .. GROUND_SHADE_KEY,
+    label = "GROUND SHADE",
+    value = function()
+      return GROUND_SHADE_LABELS[groundShadeIndexOf(groundShadeValue or readGroundShade())]
+    end,
+    step = function(game, dir)
+      local i = groundShadeIndexOf(groundShadeValue or readGroundShade())
+      i = ((i + (dir or 1) - 1) % #GROUND_SHADE_VALUES) + 1
+      local value = setGroundShade(GROUND_SHADE_VALUES[i])
+      writeOption(game, GROUND_SHADE_KEY, value)
+      return true
+    end,
+  }
+end
+
+local function blinkRow()
+  return {
+    id = mod.id .. ":" .. BLINK_KEY,
+    label = "BLINK",
+    value = function()
+      return BLINK_LABELS[blinkIndexOf(blinkValue or readBlink())]
+    end,
+    step = function(game, dir)
+      local i = blinkIndexOf(blinkValue or readBlink())
+      i = ((i + (dir or 1) - 1) % #BLINK_VALUES) + 1
+      local value = setBlink(BLINK_VALUES[i])
+      writeOption(game, BLINK_KEY, value)
+      return true
+    end,
+  }
+end
+
 local function registerOptionsRows()
   if optionsRegistered then return end
   optionsRegistered = true
@@ -255,6 +430,8 @@ local function registerOptionsRows()
     out[#out + 1] = depthRow()
     out[#out + 1] = sideColorRow()
     out[#out + 1] = shapeRow()
+    out[#out + 1] = groundShadeRow()
+    out[#out + 1] = blinkRow()
     return out
   end)
 
@@ -265,6 +442,10 @@ local function registerOptionsRows()
       setSideColor(payload.value)
     elseif payload and payload.mod == mod.id and payload.key == SHAPE_KEY then
       setShape(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == GROUND_SHADE_KEY then
+      setGroundShade(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == BLINK_KEY then
+      setBlink(payload.value)
     end
   end)
 end
@@ -424,9 +605,11 @@ end
 
 -- DECISAO: o tween de rung dura 0,25 s; a 60 fps ele gerava cerca de
 -- 15 pitches distintos, cada um com chave propria. O bucket de 1 grau
--- reduz a transicao a 2 ou 3 malhas visiveis sem deslocamento perceptivel,
--- e o LRU de 64 mantem uma rota com 8 tipos e 6 frames em dezenas de
--- meshes, nao milhares, mesmo subindo e descendo escadas repetidamente.
+-- reduz a transicao a 2 ou 3 buckets visiveis sem deslocamento perceptivel.
+-- O cache continua deliberadamente pequeno: 8 tipos x 6 frames ja ocupam 48
+-- entradas em um unico pitch, e um tween que cruza 2 ou 3 buckets pode pedir
+-- 96 a 144 malhas. O LRU evita crescimento sem limite, mas pode reciclar
+-- malhas durante tweens com muitos NPCs diferentes na tela.
 local function quantizeCorrection(angle)
   return math.floor(((angle or 0) / PITCH_BUCKET) + 0.5) * PITCH_BUCKET
 end
@@ -484,18 +667,107 @@ local function referenceFramesForRole(frame, frames, role)
 end
 
 local function bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
-  if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly end
+  if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly, true end
   local opaque, outline = frameTexel(m, frameIndex, lx, ly)
-  if not (opaque and outline) then return lx, ly end
+  if not (opaque and outline) then return lx, ly, opaque and not outline end
   for step = 1, BODY_SEARCH_LIMIT do
     local bx, by = lx + dx * step, ly + dy * step
     local bodyOpaque, bodyOutline = frameTexel(m, frameIndex, bx, by)
-    if bodyOpaque and not bodyOutline then return bx, by end
+    if bodyOpaque and not bodyOutline then return bx, by, true end
   end
-  return lx, ly
+  return lx, ly, false
 end
 
-local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
+local function spriteBaseName(path)
+  if type(path) ~= "string" then return nil end
+  local name = path:match("([^/\\]+)$") or path
+  return (name:gsub("%.[^%.]*$", ""))
+end
+
+local function hashName(name)
+  local h = 5381
+  name = tostring(name or "")
+  for i = 1, #name do
+    h = (h * 33 + name:byte(i)) % 4294967296
+  end
+  return h
+end
+
+local function blinkTiming(baseName)
+  local h = hashName(baseName)
+  local period = 3 + (h % 3000) / 1000
+  local phase = (math.floor(h / 3000) % 3000) / 1000
+  return period, phase
+end
+
+local function blinkClosedForBase(baseName)
+  if not (love and love.timer and love.timer.getTime) then return false end
+  local ok, now = pcall(love.timer.getTime)
+  if not ok then return false end
+  local period, phase = blinkTiming(baseName)
+  return ((tonumber(now) or 0) + phase) % period < BLINK_CLOSED_SECONDS
+end
+
+local function blinkBodyTexel(m, frameIndex, lx, ly)
+  local dirs = {
+    { 0, 1 }, { -1, 0 }, { 1, 0 }, { 0, -1 },
+  }
+  for _, dir in ipairs(dirs) do
+    local bx, by, found = bodyTexelInFrame(m, frameIndex, lx, ly, dir[1],
+      dir[2], DEFAULT_SIDE_COLOR)
+    if found and (bx ~= lx or by ~= ly) then return bx, by end
+  end
+end
+
+local function rowsForUv(rows, first, uv4)
+  local out = {}
+  for i = 0, 3 do
+    local src = rows[first + i]
+    out[i + 1] = { src[1], src[2], src[3], uv4[i * 2 + 1],
+      uv4[i * 2 + 2], src[6] }
+  end
+  return out
+end
+
+local function setMeshVertex(mesh, index, row)
+  if not (mesh and mesh.setVertex) then return false end
+  local ok = pcall(mesh.setVertex, mesh, index, row)
+  if ok then return true end
+  return pcall(mesh.setVertex, mesh, index, row[1], row[2], row[3], row[4],
+    row[5], row[6])
+end
+
+local function warnBlinkVertexFailure()
+  if blinkVertexWarned then return end
+  blinkVertexWarned = true
+  mod.log:warn("could not update SLAB blink UVs; mesh.setVertex failed")
+end
+
+local function applyBlinkUv(mesh)
+  local meta = meshBlink[mesh]
+  if not meta then return end
+  local closed = (blinkValue or readBlink()) == "on"
+    and blinkClosedForBase(meta.baseName)
+  if meta.closed == closed then return end
+  meta.closed = closed
+  for _, quad in ipairs(meta.quads) do
+    local rows = closed and quad.closedRows or quad.openRows
+    for i = 1, 4 do
+      if not setMeshVertex(mesh, quad.first + i - 1, rows[i]) then
+        warnBlinkVertexFailure()
+      end
+    end
+  end
+end
+
+local function shadeAtHeight(shade, y, groundShade)
+  if groundShade ~= "on" or y >= AO_RISE then return shade end
+  local t = math.max(0, y) / AO_RISE
+  return shade * (1 - AO_GROUND * (1 - t))
+end
+
+local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
+                             groundShade, baseName)
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -505,13 +777,33 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
   local refFrameA, refFrameB = referenceFramesForRole(frame, m.frames)
 
   local z0, z1 = -depth, 0
-  local baseY, lowY = 0, m.maxY
+  -- CORRECAO defeito 2b (SLAB, v1.3.0): o eixo Y tinha o mesmo defeito que o
+  -- X, e a spec desta rodada afirmou que nao tinha. O host translada o card
+  -- para a altura do chao e pivota o lean ali (VoxelScene.lua:287-295), entao
+  -- y = 0 no espaco local e a linha de BAIXO da celula, nao a linha opaca
+  -- mais baixa da arte. Ancorar em m.maxY afunda no chao toda folha que tem
+  -- rodape vazio: 8 das 67, e entre elas poke_ball.png por 2 pixels, que e o
+  -- sprite de object event mais comum do jogo, alem de snorlax, pokedex,
+  -- fossil e old_amber. Para as 59 folhas cuja arte encosta em ly = cellH-1
+  -- a formula e identica a anterior, entao isto nao mexe em ninguem que ja
+  -- estava certo.
+  local cellBottom = m.cellH - 1
   local verts, idx = {}, {}
   local c, s = math.cos(correction or 0), math.sin(correction or 0)
 
+  -- CORRECAO defeito 1 (SLAB, v1.3.0): `at` respondia com `m.mask`, a uniao
+  -- de opacidade de TODOS os frames da folha (maskFor acumula sobre os
+  -- frames em main.lua:365-383). Isso funciona para frente/tras, que
+  -- amostram o frame corrente via rectUv e dependem do alpha discard do
+  -- shader para recortar a pose; nao funciona para topo/base/lateral, cujo
+  -- UV resolve de proposito para um texel opaco fixo (verticalUv, sideUv) e
+  -- nunca e descartado. O SLAB desenhava a silhueta da caminhada inteira em
+  -- cada pose (Pikon: "It kinda looks like all Red's sprites are appearing
+  -- at once when walking left to right"). Agora `at` consulta a opacidade
+  -- do FRAME CORRENTE, nao a uniao.
   local function at(lx, ly)
     if lx < m.minX or lx > m.maxX or ly < m.minY or ly > m.maxY then return false end
-    return m.mask[ly * m.cellW + lx] or false
+    return (frameTexel(m, frame, lx, ly))
   end
 
   local function uv(lx, ly)
@@ -546,6 +838,18 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
       or sameUv(bodyTexel(lx, ly, dx, 0))
   end
 
+  local function verticalUv(lx, ly, dy)
+    local function tryFrame(frameIndex)
+      if not frameIndex then return nil end
+      local bx, by = bodyTexelInFrame(m, frameIndex, lx, ly, 0, dy, sideColor)
+      if frameTexel(m, frameIndex, bx, by) then
+        return sameFrameUv(frameIndex, bx, by)
+      end
+    end
+    return tryFrame(refFrameA) or tryFrame(refFrameB)
+      or sameUv(bodyTexel(lx, ly, 0, dy))
+  end
+
   local function rectFrameUv(frameIndex, lx, ly, lx2, order)
     local ffx, ffy = frameOrigin(m, frameIndex)
     local u0 = (ffx + lx + RUN_UV_INSET) / m.sheetW
@@ -564,75 +868,143 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
     return rectFrameUv(frame, lx, ly, lx2, order)
   end
 
-  local function bodyRectLine(frameIndex, lx, ly, lx2, dy)
-    local allOutline = true
-    for sx = lx, lx2 do
-      local opaque, outline = frameTexel(m, frameIndex, sx, ly)
-      if not opaque then return nil end
-      if not outline then allOutline = false end
-    end
-    if sideColor ~= DEFAULT_SIDE_COLOR or not allOutline then return ly end
-    for step = 1, BODY_SEARCH_LIMIT do
-      local by = ly + dy * step
-      local ok = true
-      for sx = lx, lx2 do
-        local opaque, outline = frameTexel(m, frameIndex, sx, by)
-        if not (opaque and not outline) then
-          ok = false
-          break
-        end
+  local blinkQuads = {}
+  local canBlinkFrame = frame == 0
+  local eyeLookup
+  if roleForFrame(frame, m.frames) == 0 then
+    local marks = EYE_MARKS[baseName or ""]
+    if marks then
+      eyeLookup = {}
+      for _, eye in ipairs(marks) do
+        eyeLookup[eye[2] .. ":" .. eye[1]] = true
       end
-      if ok then return by end
     end
-    return ly
-  end
-
-  local function bodyRectUv(lx, ly, lx2, order, dy)
-    local function tryFrame(frameIndex)
-      if not frameIndex then return nil end
-      local by = bodyRectLine(frameIndex, lx, ly, lx2, dy)
-      if by then return rectFrameUv(frameIndex, lx, by, lx2, order) end
-    end
-    return tryFrame(refFrameA) or tryFrame(refFrameB)
-      or rectUv(lx, ly, lx2, order)
   end
 
   -- DECISAO: SLAB tambem precisa fixar a classificacao de cor das faces novas
   -- por role, nao pelo frame corrente. O bug medido no red.png vinha de usar
   -- a caminhada diretamente: 49/180 posicoes de face de topo alternavam entre
   -- parado e andando, 14 delas na regiao do bone. A causa direta e a linha 0
-  -- do frame 3 ficar vazia porque o sprite desce uma linha inteira. Topo/base
-  -- usam runs retangulares, entao so trocamos para a referencia quando a linha
-  -- inteira esta opaca; laterais usam o mesmo texel fixo por pixel.
+  -- do frame 3 ficar vazia porque o sprite desce uma linha inteira. Topo,
+  -- base e laterais usam texel fixo por pixel para poder buscar corpo no
+  -- eixo certo sem misturar colunas de um run.
 
   local function p(x, y, z)
     -- A matriz do Dramatic Shape inclina o card no X, pivotando nos pes.
     -- A malha solida chega contra-rotacionada no mesmo pivo; depois do lean
     -- externo, o corpo volta a ficar de pe.
-    return { x, y * c - z * s, y * s + z * c }
+    return { x, y * c - z * s, y * s + z * c, y }
   end
 
   local function quad(c1, c2, c3, c4, uv4, shade)
     local n = #verts / 4
-    verts[#verts + 1] = { c1[1], c1[2], c1[3], uv4[1], uv4[2], shade }
-    verts[#verts + 1] = { c2[1], c2[2], c2[3], uv4[3], uv4[4], shade }
-    verts[#verts + 1] = { c3[1], c3[2], c3[3], uv4[5], uv4[6], shade }
-    verts[#verts + 1] = { c4[1], c4[2], c4[3], uv4[7], uv4[8], shade }
+    local first = #verts + 1
+    local function add(corner, u, v)
+      verts[#verts + 1] = {
+        corner[1], corner[2], corner[3], u, v,
+        shadeAtHeight(shade, corner[4], groundShade),
+      }
+    end
+    add(c1, uv4[1], uv4[2])
+    add(c2, uv4[3], uv4[4])
+    add(c3, uv4[5], uv4[6])
+    add(c4, uv4[7], uv4[8])
     Voxel3D.pushQuad(idx, n)
+    return first
   end
 
-  -- DECISAO: laterais esquerda/direita continuam por pixel, porque a
-  -- silhueta animada depende disso. Frente, tras, topo e base viram runs
-  -- horizontais com UV retangular e inset de 0,05 texel; no red.png isso
-  -- reduz a uniao de 189 pixels de 1.134 quads para 442 sem sair da celula
-  -- do frame que o alpha discard recorta. A comunidade mediu que 34/34
-  -- pixels de silhueta lateral de red.png vinham no tom mais escuro, mas
-  -- um passo para dentro so 16/34 ainda eram contorno. Por isso BODY pinta
-  -- faces novas com texel interno, enquanto frente e tras continuam sendo
-  -- a arte original. Topo/base so deslocavam o UV quando o run inteiro e
-  -- contorno e a mesma linha interna inteira tem corpo; se misturar tons,
-  -- preservar o run vale mais que quebrar o merge. A partir da v1.2.2, essa
-  -- decisao roda em frames de referencia fixos para o SLAB nao piscar.
+  local function isEye(lx, ly)
+    return eyeLookup and eyeLookup[ly .. ":" .. lx]
+  end
+
+  local function eyeClosedUv(lx, ly)
+    local bx, by = blinkBodyTexel(m, frame, lx, ly)
+    if bx then return sameUv(bx, by) end
+  end
+
+  local function addEyeQuad(first, openUv, closedUv)
+    if not (canBlinkFrame and closedUv) then return end
+    blinkQuads[#blinkQuads + 1] = {
+      first = first,
+      openRows = rowsForUv(verts, first, openUv),
+      closedRows = rowsForUv(verts, first, closedUv),
+    }
+  end
+
+  -- CORRECAO defeito B (SLAB, v1.3.0): desde que `at()` passou a consultar o
+  -- frame corrente, as faces laterais podem ser runs verticais quando isso
+  -- preserva exatamente o mesmo UV e o mesmo shade dos quads por pixel.
+  local function sameUvTable(a, b)
+    if not (a and b) then return false end
+    for i = 1, 8 do
+      if a[i] ~= b[i] then return false end
+    end
+    return true
+  end
+
+  local sideRuns, finishedSideRuns = {}, {}
+
+  local function sideRunKey(px, side)
+    return side .. ":" .. px
+  end
+
+  local function finishSideRun(key)
+    local run = sideRuns[key]
+    if run then
+      finishedSideRuns[#finishedSideRuns + 1] = run
+      sideRuns[key] = nil
+    end
+  end
+
+  local function addSideRun(px, ly, side, uv4)
+    local key = sideRunKey(px, side)
+    local sy = cellBottom - ly
+    local run = sideRuns[key]
+    if run and run.lastLy + 1 == ly and sameUvTable(run.uv4, uv4)
+        and run.shade == OBJ_SHADE.side then
+      run.lastLy = ly
+      run.minY = math.min(run.minY, sy)
+      run.maxY = math.max(run.maxY, sy + 1)
+      return
+    end
+    finishSideRun(key)
+    sideRuns[key] = {
+      px = px, side = side, lastLy = ly, minY = sy, maxY = sy + 1,
+      uv4 = uv4, shade = OBJ_SHADE.side,
+    }
+  end
+
+  local function emitSideRun(run)
+    if run.side == "left" then
+      local x = run.px + SIDE_INSET
+      quad(p(x, run.minY, z0), p(x, run.minY, z1),
+           p(x, run.maxY, z1), p(x, run.maxY, z0),
+           run.uv4, run.shade)
+    else
+      local x = run.px + 1 - SIDE_INSET
+      quad(p(x, run.minY, z1), p(x, run.minY, z0),
+           p(x, run.maxY, z0), p(x, run.maxY, z1),
+           run.uv4, run.shade)
+    end
+  end
+
+  -- DECISAO: historicamente as laterais esquerda/direita do SLAB eram por
+  -- pixel porque a ocupacao vinha de `m.mask` (uniao de todos os frames) e so
+  -- o alpha discard do shader recortava a pose por cima. Se fossem runs, a
+  -- lateral deixaria rastro quando a silhueta andasse. Desde a v1.3.0, `at()`
+  -- consulta o frame corrente e a lateral ja nasce na silhueta certa, entao
+  -- faces adjacentes podem ser mescladas verticalmente quando isso e
+  -- lossless: mesmo X, mesmo lado, mesmo shade e mesmo UV resolvido. Onde o
+  -- UV muda, preservamos os quads separados. Frente e tras continuam em runs
+  -- horizontais com UV retangular e inset de 0,05 texel.
+  -- A comunidade mediu que 34/34 pixels de silhueta lateral de red.png vinham
+  -- no tom mais escuro, mas um passo para dentro so 16/34 ainda eram contorno.
+  -- Por isso BODY pinta faces novas com texel interno, enquanto frente e tras
+  -- continuam sendo a arte original. Topo/base sao por pixel como as laterais:
+  -- quando um pixel de contorno encosta numa linha vertical de corpo, o texel
+  -- novo vem desse corpo em vez de exigir que o run horizontal inteiro combine.
+  -- A partir da v1.2.2, essa decisao roda em frames de referencia fixos para
+  -- o SLAB nao piscar.
   for ly = m.minY, m.maxY do
     local lx = m.minX
     while lx <= m.maxX do
@@ -640,28 +1012,53 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
         local lx2 = lx
         while lx2 + 1 <= m.maxX and at(lx2 + 1, ly) do lx2 = lx2 + 1 end
 
-        local x, y = lx - m.minX, lowY - ly
+        -- CORRECAO defeito 2 (SLAB, v1.3.0): X saia relativo a bbox opaca
+        -- (`lx - m.minX`), nao a celula do sprite. O host ancora o card com
+        -- Mat4.translate(px+8, y, py+8) seguido de Mat4.translate(-8,0,0)
+        -- (VoxelScene.lua:287-295): o espaco local vai de x=0 a x=16 e o
+        -- pivo de yaw/espelho fica em x=8, o centro da CELULA, nao da bbox
+        -- da arte. 40 das 67 folhas tem minX=1, entao a arte inteira saia
+        -- 1 pixel a esquerda do card que ela substitui. X agora usa lx puro.
+        local x, y = lx, cellBottom - ly
         local w = lx2 - lx + 1
-        quad(p(x, y, z1), p(x + w, y, z1), p(x + w, y + 1, z1),
-             p(x, y + 1, z1), rectUv(lx, ly, lx2), OBJ_SHADE.front)
+        local function emitFrontRun(a, b)
+          if a > b then return end
+          local rx, rw = a, b - a + 1
+          quad(p(rx, y, z1), p(rx + rw, y, z1),
+               p(rx + rw, y + 1, z1), p(rx, y + 1, z1),
+               rectUv(a, ly, b), OBJ_SHADE.front)
+        end
+        local cursor = lx
+        for sx = lx, lx2 do
+          if isEye(sx, ly) then
+            emitFrontRun(cursor, sx - 1)
+            local openUv = sameUv(sx, ly)
+            local first = quad(p(sx, y, z1), p(sx + 1, y, z1),
+              p(sx + 1, y + 1, z1), p(sx, y + 1, z1),
+              openUv, OBJ_SHADE.front)
+            addEyeQuad(first, openUv, eyeClosedUv(sx, ly))
+            cursor = sx + 1
+          end
+        end
+        emitFrontRun(cursor, lx2)
         quad(p(x + w, y, z0), p(x, y, z0), p(x, y + 1, z0),
              p(x + w, y + 1, z0), rectUv(lx, ly, lx2, "back"),
              OBJ_SHADE.back)
-        quad(p(x, y + 1 - SIDE_INSET, z0), p(x + w, y + 1 - SIDE_INSET, z0),
-             p(x + w, y + 1 - SIDE_INSET, z1), p(x, y + 1 - SIDE_INSET, z1),
-             bodyRectUv(lx, ly, lx2, "top", 1), OBJ_SHADE.top)
-        quad(p(x, y + SIDE_INSET, z1), p(x + w, y + SIDE_INSET, z1),
-             p(x + w, y + SIDE_INSET, z0), p(x, y + SIDE_INSET, z0),
-             bodyRectUv(lx, ly, lx2, nil, -1), OBJ_SHADE.bottom)
-
         for sx = lx, lx2 do
-          local px, sy = sx - m.minX, lowY - ly
-          quad(p(px + SIDE_INSET, sy, z0), p(px + SIDE_INSET, sy, z1),
-               p(px + SIDE_INSET, sy + 1, z1), p(px + SIDE_INSET, sy + 1, z0),
-               sideUv(sx, ly, 1), OBJ_SHADE.side)
-          quad(p(px + 1 - SIDE_INSET, sy, z1), p(px + 1 - SIDE_INSET, sy, z0),
-               p(px + 1 - SIDE_INSET, sy + 1, z0), p(px + 1 - SIDE_INSET, sy + 1, z1),
-               sideUv(sx, ly, -1), OBJ_SHADE.side)
+          quad(p(sx, y + 1 - SIDE_INSET, z0),
+               p(sx + 1, y + 1 - SIDE_INSET, z0),
+               p(sx + 1, y + 1 - SIDE_INSET, z1),
+               p(sx, y + 1 - SIDE_INSET, z1),
+               verticalUv(sx, ly, 1), OBJ_SHADE.top)
+          quad(p(sx, y + SIDE_INSET, z1),
+               p(sx + 1, y + SIDE_INSET, z1),
+               p(sx + 1, y + SIDE_INSET, z0),
+               p(sx, y + SIDE_INSET, z0),
+               verticalUv(sx, ly, -1), OBJ_SHADE.bottom)
+          -- CORRECAO defeito 2 (SLAB, v1.3.0): mesma correcao da run acima,
+          -- por pixel: sx puro, nao sx - m.minX.
+          addSideRun(sx, ly, "left", sideUv(sx, ly, 1))
+          addSideRun(sx, ly, "right", sideUv(sx, ly, -1))
         end
         lx = lx2 + 1
       else
@@ -670,7 +1067,17 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor)
     end
   end
 
-  return Voxel3D.newMesh(verts, idx)
+  local finalSideKeys = {}
+  for key in pairs(sideRuns) do finalSideKeys[#finalSideKeys + 1] = key end
+  table.sort(finalSideKeys)
+  for _, key in ipairs(finalSideKeys) do finishSideRun(key) end
+  for _, run in ipairs(finishedSideRuns) do emitSideRun(run) end
+
+  local mesh = Voxel3D.newMesh(verts, idx)
+  if mesh and #blinkQuads > 0 then
+    meshBlink[mesh] = { baseName = baseName, quads = blinkQuads }
+  end
+  return mesh
 end
 
 local function frameBounds(m, frame)
@@ -710,7 +1117,8 @@ local function carvedFrames(frame, frames)
   }
 end
 
-local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shape)
+local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shape,
+                               groundShade)
   m = m or maskFor(def)
   if not (m and m.frames >= 3) then return nil end
   local pose = carvedFrames(frame, m.frames)
@@ -721,32 +1129,31 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   local backBounds = frameBounds(m, pose.back)
   local sideBounds = frameBounds(m, pose.side)
   if not (frontBounds and backBounds and sideBounds) then return nil end
-  local widthFrame = pose.role == 1 and pose.back or pose.front
-  local widthBounds = pose.role == 1 and backBounds or frontBounds
+  local widthFrame = pose.front
+  local widthBounds = frontBounds
   local widthFrameA, widthFrameB = referenceFramesForRole(frame, m.frames,
-    pose.role == 1 and 1 or 0)
+    0)
 
   local verts, idx = {}, {}
   local pitchC, pitchS = math.cos(correction or 0), math.sin(correction or 0)
-  local lowY = m.maxY
+  local cellBottom = m.cellH - 1
   local depthPixels = sideBounds.maxX - sideBounds.minX + 1
-  local widthPixels = m.maxX - m.minX + 1
-  local frontBackMinX = math.min(frontBounds.minX, backBounds.minX)
-  local frontBackMaxX = math.max(frontBounds.maxX, backBounds.maxX)
   local frontFrameA = 0
   local frontFrameB = m.frames >= 6 and 3 or nil
   local sideLineRecess = {}
 
   local function mirrorX(lx)
-    return frontBackMinX + frontBackMaxX - lx
+    -- CORRECAO defeito A (CARVED, v1.3.0): o espelho de intersecao e a
+    -- rotacao por role derivam do mesmo eixo de celula.
+    return (m.cellW - 1) - lx
   end
 
   local function frontXFor(lx)
-    return pose.role == 1 and mirrorX(lx) or lx
+    return lx
   end
 
   local function backXFor(lx)
-    return pose.role == 1 and lx or mirrorX(lx)
+    return mirrorX(lx)
   end
 
   local function frameLuma(frameIndex, lx, ly)
@@ -816,14 +1223,20 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   -- da lateral tem 13 colunas por incluir pixels fora do tronco. Em ambos os
   -- casos, profundidade vem da arte, nao do slider de slab.
   --
-  -- DECISAO: v1.2.1 acrescenta a silhueta de costas na intersecao. Como frente
-  -- e costas sao vistas opostas, a coluna X da vista traseira entra espelhada;
-  -- sem esse espelho o casco perde quase tudo em sprites assimetricos. O eixo
-  -- vem so do par frente/costas, nao do bbox global da folha: Kim mediu 12/40
-  -- folhas de 6 frames em que a vista lateral alarga o bbox global
+  -- DECISAO: v1.2.1 acrescentou a silhueta de costas na intersecao. Como
+  -- frente e costas sao vistas opostas, a coluna X da vista traseira entra
+  -- espelhada; sem esse espelho o casco perde quase tudo em sprites
+  -- assimetricos. O eixo nao pode vir do bbox global da folha: Kim mediu
+  -- 12/40 folhas de 6 frames em que a vista lateral alarga esse bbox
   -- (biker 0..15 contra frente 1..14; bird 0..15 contra 2..13;
-  -- brunette_girl e cooltrainer_f 1..15 contra 2..13). Usar esse global
-  -- cortava 3% a 8% dos voxels legitimos em 7/8 sprites auditados.
+  -- brunette_girl e cooltrainer_f 1..15 contra 2..13), cortando 3% a 8% dos
+  -- voxels legitimos em 7/8 sprites auditados. Tambem nao pode divergir do
+  -- eixo usado pela rotacao por role: desde a v1.3.0 a geometria e ancorada
+  -- na celula, entao o espelho de textura frente/costas usa o mesmo eixo da
+  -- celula para nao vazar fora do card em folhas assimetricas.
+  -- No role 1 esse espelho nao pode inverter de novo o espaco logico do casco:
+  -- p() ja transforma lx em m.cellW - x para apresentar a vista de costas.
+  -- Espelhar tambem aqui valida a opacidade em uma coluna e desenha em outra.
   --
   -- DECISAO: CARVED+ recua a superficie frontal por tom em so 2 passos. red.png
   -- tem 3 tons opacos de corpo alem do contorno; mais degraus so fingiriam uma
@@ -921,24 +1334,33 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   local function p(x, y, z)
     local ox, oz = x, z
     if pose.role == 1 then
-      ox, oz = widthPixels - x, -depthPixels - z
+      ox, oz = m.cellW - x, -depthPixels - z
     elseif pose.role == 2 then
       -- DECISAO: o role lateral tambem precisa compensar o pivo. Sem isso,
       -- red.png medido no main.lua real ia de Y [0, 13] na frente para
       -- Y [-14, 0] de lado: o z positivo entrava na contra-rotacao do lean
       -- como deslocamento vertical e metade das direcoes afundava no chao.
       -- A compensacao mantem o volume em z nao positivo, como frente e costas.
-      ox, oz = -z, x - widthPixels
+      -- Desde a v1.3.0 o X tambem preserva o padding da celula; por isso o
+      -- eixo que vem da vista lateral soma sideBounds.minX de volta, enquanto
+      -- o eixo de profundidade gira em torno da largura da celula.
+      ox, oz = sideBounds.minX - z, x - m.cellW
     end
-    return { ox, y * pitchC - oz * pitchS, y * pitchS + oz * pitchC }
+    return { ox, y * pitchC - oz * pitchS, y * pitchS + oz * pitchC, y }
   end
 
   local function quad(c1, c2, c3, c4, uv4, shade)
     local n = #verts / 4
-    verts[#verts + 1] = { c1[1], c1[2], c1[3], uv4[1], uv4[2], shade }
-    verts[#verts + 1] = { c2[1], c2[2], c2[3], uv4[3], uv4[4], shade }
-    verts[#verts + 1] = { c3[1], c3[2], c3[3], uv4[5], uv4[6], shade }
-    verts[#verts + 1] = { c4[1], c4[2], c4[3], uv4[7], uv4[8], shade }
+    local function add(corner, u, v)
+      verts[#verts + 1] = {
+        corner[1], corner[2], corner[3], u, v,
+        shadeAtHeight(shade, corner[4], groundShade),
+      }
+    end
+    add(c1, uv4[1], uv4[2])
+    add(c2, uv4[3], uv4[4])
+    add(c3, uv4[5], uv4[6])
+    add(c4, uv4[7], uv4[8])
     Voxel3D.pushQuad(idx, n)
   end
 
@@ -946,8 +1368,8 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
     for lx = widthBounds.minX, widthBounds.maxX do
       for sx = sideBounds.minX, sideBounds.maxX do
         if solid(lx, ly, sx) then
-          local x0, x1 = lx - m.minX, lx - m.minX + 1
-          local y0, y1 = lowY - ly, lowY - ly + 1
+          local x0, x1 = lx, lx + 1
+          local y0, y1 = cellBottom - ly, cellBottom - ly + 1
           local z0 = -(sx - sideBounds.minX)
           local z1 = z0 - 1
 
@@ -985,16 +1407,19 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   return Voxel3D.newMesh(verts, idx)
 end
 
-local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape)
+local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape,
+                                 groundShade, baseName)
   if shape == "carved" or shape == "carved_plus" then
     local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m,
-      sideColor, shape)
+      sideColor, shape, groundShade)
     if ok and mesh then return mesh end
   end
-  return buildSlabMesh(def, frame, depth, correction, m, sideColor)
+  return buildSlabMesh(def, frame, depth, correction, m, sideColor, groundShade,
+    baseName)
 end
 
-local function cacheKey(def, frame, depth, correction, layout, sideColor, shape)
+local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
+                        groundShade)
   local depthPart = (shape == "carved" or shape == "carved_plus") and "art"
     or tostring(depth)
   return table.concat({
@@ -1004,6 +1429,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape)
     depthPart,
     tostring(sideColor or ""),
     tostring(shape or ""),
+    tostring(groundShade or ""),
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -1011,23 +1437,56 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape)
   }, "#")
 end
 
+-- CORRECAO defeito 3 (SLAB e CARVED, v1.3.0; roda antes de qualquer um dos
+-- dois ser escolhido): o shader do host move cada vertice em direcao ao olho
+-- quando FirstPerson.cardBlend() > 0 (Voxel3D.lua:122-130, enviado em
+-- :1296-1307). Num card plano isso e projetivamente estavel; num volume
+-- solido, cada canto anda numa direcao diferente, e somado a camera de
+-- primeira pessoa, que fica na cabeca do sprite com near plane curto
+-- (FirstPerson.lua:63-75, Voxel3D.lua:518-519), atravessa o near plane e
+-- produz espetos pretos (Colonel_Aureliano, Dramatic Shape 1.7.0 + Kanto
+-- First Person, campo de conflito do manifest limpo a mao). O contrato deste
+-- mod e explicito: todo caminho de falha cai de volta para o card plano
+-- original, nunca um corpo com espetos. Em pcall como leanCorrection ja faz
+-- (main.lua:418-421), porque FirstPerson pode nao existir em toda versao
+-- suportada do host; ausencia = blend zero = comportamento atual. Nao
+-- tentamos compensar o rotateY: o host tambem troca o frame pedido por uma
+-- direcao aparente continua em primeira pessoa (VoxelScene.lua:234-241) e
+-- documenta o card de primeira pessoa como billboard cilindrico; um solido
+-- nao deveria herdar esse contrato. Isto nao vira opcao de menu: nao e
+-- escolha estetica, e o contrato de falha limpa.
+local function firstPersonCardActive()
+  if not (FirstPerson and FirstPerson.cardBlend) then return false end
+  local ok, blend = pcall(FirstPerson.cardBlend)
+  return ok and tonumber(blend) ~= nil and tonumber(blend) > 0
+end
+
 local function voxelMesh(def, frame)
   local depth = depthValue or readDepth()
   if depth == "off" then return originalMesh(def, frame) end
+  if firstPersonCardActive() then return originalMesh(def, frame) end
   local sideColor = sideColorValue or readSideColor()
   local shape = shapeValue or readShape()
+  local groundShade = groundShadeValue or readGroundShade()
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then return originalMesh(def, frame) end
-  local key = cacheKey(def, frame, depth, correction, m, sideColor, shape)
+  local baseName = spriteBaseName(def and def.image)
+  local key = cacheKey(def, frame, depth, correction, m, sideColor, shape,
+    groundShade)
   if meshes[key] ~= nil then
     touchMeshKey(key)
   else
     local ok, mesh = pcall(buildSelectedMesh, def, frame, depth, correction,
-      m, sideColor, shape)
+      m, sideColor, shape, groundShade, baseName)
     rememberMesh(key, (ok and mesh) or false)
   end
-  return meshes[key] or originalMesh(def, frame)
+  local mesh = meshes[key]
+  if mesh then
+    applyBlinkUv(mesh)
+    return mesh
+  end
+  return originalMesh(def, frame)
 end
 
 local function patch(handle)

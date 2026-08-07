@@ -1,0 +1,30 @@
+# Files that stay in the repo and out of the distributed package.
+# Exact relative paths, one per line. modkit matches literally, no globs.
+
+# The render harness and the sheet composer. These are development tools: they
+# run by hand on a machine that has already imported its own ROM, they load
+# main.lua under a stub of the host API, and they read the player's generated
+# sprite cache to build geometry from real art. That last part is why they
+# cannot ship: modkit's MK301 rejects any lua that names assets/generated,
+# and it is right to, because a distributed mod has no business pointing at
+# that tree. Nothing here is loaded by the mod at runtime.
+tools/render/main.lua
+tools/render/check.sh
+tools/render/conf.lua
+tools/render/README.md
+tools/render/compose/main.lua
+tools/render/compose/conf.lua
+
+# The suite. It requires engine modules through package.path, which reads as a
+# private require against the archive, and it is meaningless without the repo.
+tests/voxel_chars_test.lua
+
+# Field notes. Useful to contributors, noise to players.
+docs/FIELD_REPORTS.md
+
+# Comparison renders for the release notes. Documentation, not mod content.
+docs/images/walk.png
+docs/images/faces.png
+docs/images/ground.png
+docs/images/blink.png
+docs/images/itemball.png

@@ -28,12 +28,14 @@ appear. It never breaks a game it cannot support.
 
 ## Options
 
-Three rows, under **OPTIONS**:
+Five rows, under **OPTIONS**:
 
 ```
 VOXEL CHARS:   OFF / 1 / 2 / 3 / 5 / 10
 SIDE COLOR:    BODY / OUTLINE
 SHAPE:         SLAB / CARVED / CARVED+
+GROUND SHADE:  OFF / ON
+BLINK:         OFF / ON
 ```
 
 `VOXEL CHARS` controls slab thickness in voxels. Default is **3**.
@@ -82,8 +84,21 @@ is why it is a separate step and not the default. The recess is capped by the
 side-view depth so at least one voxel layer remains, including very thin custom
 sprite sheets.
 
+`GROUND SHADE` adds a host-style contact shade to the lowest six pixels of the
+solid mesh. Default is **OFF**. It is meant only to plant the character on the
+floor, not to add full ambient occlusion across the body.
+
+`BLINK` swaps known front-facing eye texels to nearby skin texels for a short
+closed-eye frame. Default is **OFF**, so enabling the mod does not impose a new
+visual change beyond the selected shape and thickness. Blink only applies to
+the standing front SLAB frame, with a verified eye entry and a safe nearby body
+texel. Walking frames, sheets with no entry, object sheets, and eyes that cannot
+find body color within 4 pixels stay open.
+
 The carved modes do not merge horizontal runs yet. On `red.png` frame 3, **SLAB**
-builds 442 quads, **CARVED** builds 1,044 and **CARVED+** builds 1,018.
+builds 652 quads, **CARVED** builds 1,044 and **CARVED+** builds 1,018. The
+unconditional eye split adds 542 quads across the 303 measured SLAB meshes,
+0.27%, so it is not tied to the `BLINK` option.
 
 ## Compatibility
 
@@ -130,6 +145,11 @@ from tone, but tone is ambiguous in Gen 1 art: it marks both contour and volume.
 carved, including stationary three-frame NPC sheets. One-frame sheets still fall
 back to **SLAB** because the mod has no side or back silhouette to intersect.
 
+**Characters that share one sheet blink together.** The host calls
+`SpriteBillboards.mesh(def, frame)` without an entity id or world position, so
+the blink phase is derived from the sprite sheet name. Two NPCs using the same
+sheet will close their eyes at the same time.
+
 ## How it works
 
 For mod developers, and for anyone deciding whether to trust this.
@@ -146,11 +166,27 @@ mod.find("DRAMATIC_SHAPE").exports.lib   -- the V namespace
 `shadowQuad` and `invalidate` are left alone. `shadowQuad` in particular must not
 be replaced: it feeds the inverted-depth silhouette described above.
 
-In **SLAB**, the mesh is built over the union of every walk frame, with each
-frame clipped in texture space by the shader's own alpha discard. Side walls are
-emitted per pixel so an animating silhouette cannot leak through what used to be
-interior. Front, back, top and bottom merge into horizontal runs, which takes a
-typical character from about 1,100 quads down to about 440.
+In **SLAB**, the mesh is built from the pose actually being drawn: a pixel is
+occupied only if it is opaque in that exact frame, not if it is opaque in any
+frame on the sheet. Before v1.3.0 the occupancy test read the union of every
+walk frame instead, relying on the shader's alpha discard to clip each pose
+back down; that worked for front and back, which sample the current frame, but
+not for the invented side, top and bottom faces, whose UVs deliberately land on
+a texel that is never discarded, so every pose showed the walk cycle's full
+silhouette at once. Side walls are still emitted per pixel, which used to be
+required so an animating silhouette could not leak through what was interior to
+that union; the mask is pose-exact now, but sides still emit per pixel unless an
+adjacent vertical run has the exact same resolved UV. Front and back merge into
+horizontal runs. Top and bottom are emitted per pixel so `SIDE COLOR: BODY` can
+search vertically for a nearby body texel even when a horizontal run mixes body
+and outline pixels.
+
+When `BLINK` is available for a SLAB sheet, verified front-facing eye pixels are
+split out of the merged front run as their own quads even while blinking is
+disabled. That keeps the cached mesh topology identical in both eye states.
+Blinking then mutates only those vertices' UVs in place, from the eye texel to a
+nearby body-color texel found by the same 4 pixel body search used by
+`SIDE COLOR: BODY`. Time is never part of the mesh cache key.
 
 In **CARVED**, each pose uses the front, back and side frames as orthographic
 silhouettes. A voxel is solid only when all three views agree. The back view is
@@ -168,10 +204,31 @@ intentional contour-versus-volume trade-off described above.
 
 For `SIDE COLOR: BODY`, the mod identifies the sheet's outline tone and samples
 nearby body-colored pixels for the new side, top and bottom faces. Horizontal
-side faces search inward per pixel; top and bottom runs move only when the whole
-run is outline and a whole adjacent line is body color, so the run merge cannot
-mix unrelated sprite columns. Front and back never use that correction because
-they are the visible sprite art, not new extrusion faces.
+side faces search inward per pixel. Top and bottom faces search vertically per
+pixel, up to the same 4 pixel limit. Front and back never use that correction
+because they are the visible sprite art, not new extrusion faces.
+
+The baked face shade values match the host world mesh:
+
+```
+front:  0.90
+back:   0.68
+side:   0.78
+top:    1.00
+bottom: 0.55
+```
+
+The two side directions intentionally share one value. The host mirrors sprite
+cards after asking `SpriteBillboards.mesh(def, frame)` for geometry, so a mesh
+with different baked east and west shades would swap lighting when the same
+sheet is mirrored.
+
+When `GROUND SHADE` is **ON**, each vertex below height 6 receives the same
+contact term used by the host ground shading, with strength 2.4:
+
+```lua
+shade * (1 - 0.12 * 2.4 * (1 - y / 6))
+```
 
 Camera pitch is baked into the geometry as a counter rotation, because the Voxel
 Mod leans character cards back by the camera pitch and a leaning solid would tip
@@ -192,12 +249,13 @@ build. The worst case is flat characters, never a broken game.
 luajit mods/voxel_characters/tests/voxel_chars_test.lua
 ```
 
-96 assertions covering the version guard, the options rows and their
+148 assertions covering the version guard, the options rows and their
 persistence, slab geometry and vertex format, carved visual-hull surface faces,
 per-frame silhouette projection, absolute role position, depth-axis orientation,
 three-frame carve sheets, carve fallback, pitch bucketing, cache keying and LRU
 eviction, side-face, top-face and bottom-face color selection, three-view
-carving, CARVED+ relief direction and thin-sprite depth limits.
+carving, face shade values, ground contact shading, CARVED+ relief direction and
+thin-sprite depth limits.
 
 ## Credits
 

@@ -61,11 +61,37 @@ local function quadUvBounds(mesh, i)
   return minU, maxU, minV, maxV
 end
 
+local quadBoundsAt
+
+local function frontQuadIndexAt(mesh, minX, maxX, minY, maxY)
+  return quadIndex(mesh, function(i)
+    local b = quadBoundsAt(mesh, i)
+    return close(b.minX, minX) and close(b.maxX, maxX)
+      and close(b.minY, minY) and close(b.maxY, maxY)
+      and close(b.minZ, b.maxZ)
+      and allQuad(mesh, i, function(v) return close(v[6], 0.90) end)
+  end)
+end
+
+local function allUvAt(mesh, i, u, v)
+  return i and allQuad(mesh, i, function(row)
+    return close(row[4], u) and close(row[5], v)
+  end)
+end
+
+local function uvSignature(mesh)
+  local out = {}
+  for i, v in ipairs(mesh.verts) do
+    out[i] = ("%.4f,%.4f"):format(v[4], v[5])
+  end
+  return table.concat(out, ";")
+end
+
 local function quadCount(mesh)
   return math.floor(#mesh.verts / 4)
 end
 
-local function quadBoundsAt(mesh, i)
+function quadBoundsAt(mesh, i)
   local b = {
     minX = math.huge, maxX = -math.huge,
     minY = math.huge, maxY = -math.huge,
@@ -113,24 +139,6 @@ local function projectedCells(mesh, ax, ay, pred)
   return table.concat(out, ";")
 end
 
-local function expectedCells(pixels, sheetW, cellW, cellH, frame)
-  local cells, maxY = {}, nil
-  for ly = 0, cellH - 1 do
-    for lx = 0, cellW - 1 do
-      if pixels[ly * sheetW + frame * cellW + lx] then
-        cells[#cells + 1] = { x = lx, y = ly }
-        maxY = maxY and math.max(maxY, ly) or ly
-      end
-    end
-  end
-  local out = {}
-  for _, cell in ipairs(cells) do
-    out[#out + 1] = cell.x .. "," .. (maxY - cell.y)
-  end
-  table.sort(out)
-  return table.concat(out, ";")
-end
-
 local function meshBounds(mesh)
   local b = {
     minX = math.huge, maxX = -math.huge,
@@ -174,14 +182,34 @@ local function horizontalFaceUvAt(mesh, shade, top)
   if bestI then return mesh.verts[bestI][4], mesh.verts[bestI][5] end
 end
 
+local function horizontalFaceUvInBounds(mesh, shade, minX, maxX, minY, maxY)
+  for i = 1, #mesh.verts, 4 do
+    local b = quadBoundsAt(mesh, i)
+    if close(b.minX, minX) and close(b.maxX, maxX)
+        and close(b.minY, minY) and close(b.maxY, maxY)
+        and close(b.minY, b.maxY) and b.maxZ > b.minZ
+        and allQuad(mesh, i, function(v) return close(v[6], shade) end) then
+      return mesh.verts[i][4], mesh.verts[i][5]
+    end
+  end
+end
+
 local function frontFaceZAt(mesh, minX, maxX, minY, maxY)
   for i = 1, #mesh.verts, 4 do
     local b = quadBoundsAt(mesh, i)
     if close(b.minX, minX) and close(b.maxX, maxX)
         and close(b.minY, minY) and close(b.maxY, maxY)
         and close(b.minZ, b.maxZ)
-        and allQuad(mesh, i, function(v) return close(v[6], 1.0) end) then
+        and allQuad(mesh, i, function(v) return close(v[6], 0.90) end) then
       return b.minZ
+    end
+  end
+end
+
+local function frontVertexShadeAt(mesh, x, y)
+  for _, v in ipairs(mesh.verts) do
+    if close(v[1], x) and close(v[2], y) and close(v[3], 0) then
+      return v[6]
     end
   end
 end
@@ -249,18 +277,106 @@ local function setShapeWithoutClearing(modules, value)
   return check(false, "teste encontra shapeValue em voxelMesh")
 end
 
+local function setGroundShadeWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 50 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "groundShadeValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra groundShadeValue em voxelMesh")
+end
+
+local function setBlinkWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 70 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "blinkValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra blinkValue em voxelMesh")
+end
+
+local function blinkHashName(name)
+  local h = 5381
+  name = tostring(name or "")
+  for i = 1, #name do
+    h = (h * 33 + name:byte(i)) % 4294967296
+  end
+  return h
+end
+
+local function blinkTimes(baseName)
+  local h = blinkHashName(baseName)
+  local period = 3 + (h % 3000) / 1000
+  local phase = (math.floor(h / 3000) % 3000) / 1000
+  return period - phase + 0.01, period - phase + 0.25
+end
+
+local function withLoveTime(value, fn)
+  local prev = love.timer.getTime
+  love.timer.getTime = function() return value end
+  local ok, err = pcall(fn)
+  love.timer.getTime = prev
+  if not ok then error(err) end
+end
+
+local function paintBlinkFace(pixels, sheetW, cellW, frame)
+  local skin = rgba(0.80, 0.55, 0.40, 1)
+  local eye = rgba(0.05, 0.05, 0.05, 1)
+  for lx = 5, 10 do paint(pixels, sheetW, cellW, frame, lx, 7, skin) end
+  paint(pixels, sheetW, cellW, frame, 6, 7, eye)
+  paint(pixels, sheetW, cellW, frame, 9, 7, eye)
+  paint(pixels, sheetW, cellW, frame, 6, 8, skin)
+  paint(pixels, sheetW, cellW, frame, 9, 8, skin)
+end
+
 local function fakeMesh(verts, map)
   return {
     verts = verts,
     map = map,
     released = false,
+    setVertex = function(self, index, row, ...)
+      if type(row) == "table" then
+        self.verts[index] = { row[1], row[2], row[3], row[4], row[5], row[6] }
+      else
+        self.verts[index] = { row, ... }
+      end
+    end,
     setVertexMap = function(self, m) self.map = m end,
     setTexture = function(self, tex) self.texture = tex end,
     release = function(self) self.released = true end,
   }
 end
 
-local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean)
+-- cardBlend e omitFirstPerson dao suporte ao defeito 3 (main.lua:1043+, roda
+-- antes de SLAB e CARVED). cardBlend controla o retorno do stub de
+-- FirstPerson.cardBlend(); omitFirstPerson tira o modulo do namespace, para
+-- provar a versao do host onde FirstPerson nem existe.
+local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
+                                cardBlend, omitFirstPerson)
   local modules = {}
   local V = {}
   local original = function(def, frame)
@@ -304,7 +420,10 @@ local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean)
     elseif name == "VoxelScene" then
       modules[name] = { spriteLean = spriteLean }
     elseif name == "FirstPerson" then
-      modules[name] = { cardBlend = function() return 0 end }
+      if omitFirstPerson then
+        error("unexpected module " .. tostring(name))
+      end
+      modules[name] = { cardBlend = function() return cardBlend or 0 end }
     else
       error("unexpected module " .. tostring(name))
     end
@@ -409,10 +528,12 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 4, "hook anexa as rows do voxel characters")
+  eq(#rows, 6, "hook anexa as rows do voxel characters")
   local option = rows[2]
   eq(rows[3].label, "SIDE COLOR", "hook anexa a row de cor lateral")
   eq(rows[4].label, "SHAPE", "hook anexa a row de shape")
+  eq(rows[5].label, "GROUND SHADE", "hook anexa a row de ground shade")
+  eq(rows[6].label, "BLINK", "hook anexa a row de blink")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -458,7 +579,11 @@ end
 
 do
   local pixels = {}
-  pixels[0] = 1
+  -- Pixel vive no frame 5 (linha 80 de uma folha vertical de 16px por
+  -- frame), nao no frame 0: desde a v1.3.0 a mascara SLAB e por frame
+  -- corrente (defeito 1), entao um pixel opaco so no frame 0 nao bastaria
+  -- mais para provar que o frame 5 constroi malha.
+  pixels[80 * 16] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 96)
   loadWith(makeMod(handle, { depth = 2 }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
@@ -658,7 +783,7 @@ do
     local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
     local q = quadIndex(got, function(i)
       return allQuad(got, i, function(v)
-        return close(v[3], 0) and close(v[6], 1.0)
+        return close(v[3], 0) and close(v[6], 0.90)
       end)
     end)
     local minU, maxU, minV, maxV = 0, 0, 0, 0
@@ -672,22 +797,16 @@ end
 do
   local pixels = {
     [0] = rgba(0.20, 0.20, 0.20, 1),
-    [1] = rgba(0.20, 0.20, 0.20, 1),
+    [1] = rgba(0.80, 0.80, 0.80, 1),
     [2] = rgba(0.80, 0.80, 0.80, 1),
     [3] = rgba(0.80, 0.80, 0.80, 1),
   }
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
   loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
-  local q = quadIndex(got, function(i)
-    return allQuad(got, i, function(v)
-      return close(v[2], 1.97) and close(v[6], 1.0)
-    end)
-  end)
-  local minU, maxU, minV, maxV = 0, 0, 0, 0
-  if q then minU, maxU, minV, maxV = quadUvBounds(got, q) end
-  check(q and close(minV, 0.525) and close(maxV, 0.975),
-        "topo com run inteiro em contorno usa UV da linha de corpo abaixo")
+  local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 1.97, 1.97)
+  check(u and close(u, 0.25) and close(v, 0.75),
+        "face de topo SLAB busca corpo na vertical quando o run mistura tons")
 end
 
 do
@@ -695,41 +814,32 @@ do
     [0] = rgba(0.80, 0.80, 0.80, 1),
     [1] = rgba(0.80, 0.80, 0.80, 1),
     [2] = rgba(0.20, 0.20, 0.20, 1),
-    [3] = rgba(0.20, 0.20, 0.20, 1),
+    [3] = rgba(0.80, 0.80, 0.80, 1),
   }
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
   loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
-  local q = quadIndex(got, function(i)
-    return allQuad(got, i, function(v)
-      return close(v[2], 0.03) and close(v[6], 0.55)
-    end)
-  end)
-  local minU, maxU, minV, maxV = 0, 0, 0, 0
-  if q then minU, maxU, minV, maxV = quadUvBounds(got, q) end
-  check(q and close(minV, 0.025) and close(maxV, 0.475),
-        "base com run inteiro em contorno usa UV da linha de corpo acima")
+  local u, v = horizontalFaceUvInBounds(got, 0.55, 0, 1, 0.03, 0.03)
+  check(u and close(u, 0.25) and close(v, 0.25),
+        "face de base SLAB busca corpo para cima")
 end
 
 do
+  local cellW, cellH = 1, 6
   local pixels = {
     [0] = rgba(0.20, 0.20, 0.20, 1),
     [1] = rgba(0.20, 0.20, 0.20, 1),
-    [2] = rgba(0.80, 0.80, 0.80, 1),
+    [2] = rgba(0.20, 0.20, 0.20, 1),
     [3] = rgba(0.20, 0.20, 0.20, 1),
+    [4] = rgba(0.20, 0.20, 0.20, 1),
+    [5] = rgba(0.80, 0.80, 0.80, 1),
   }
-  local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
   loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
-  local q = quadIndex(got, function(i)
-    return allQuad(got, i, function(v)
-      return close(v[2], 1.97) and close(v[6], 1.0)
-    end)
-  end)
-  local minU, maxU, minV, maxV = 0, 0, 0, 0
-  if q then minU, maxU, minV, maxV = quadUvBounds(got, q) end
-  check(q and close(minV, 0.025) and close(maxV, 0.475),
-        "topo com corpo parcial na linha candidata preserva o UV original")
+  local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 5.97, 5.97)
+  check(u and close(u, 0.5) and close(v, 0.5 / cellH),
+        "face de topo SLAB preserva o contorno quando nao ha corpo em 4 pixels")
 end
 
 do
@@ -748,6 +858,37 @@ do
   check(q ~= nil, "folha de um tom so encontra a face lateral")
   check(q and allQuad(got, q, function(v) return close(v[4], 0.25) end),
         "folha de um tom so falha a busca e preserva o UV proprio")
+end
+
+do
+  local pixels = { [0] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 1, 1)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local front = quadIndex(got, function(i)
+    local b = quadBoundsAt(got, i)
+    return close(b.minZ, 0) and close(b.maxZ, 0)
+      and allQuad(got, i, function(v) return close(v[6], 0.90) end)
+  end)
+  check(front ~= nil, "shade frontal SLAB usa 0.90")
+end
+
+do
+  local pixels = { [0] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 1, 1)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local left = quadIndex(got, function(i)
+    local b = quadBoundsAt(got, i)
+    return close(b.minX, 0.03) and close(b.maxX, 0.03)
+      and allQuad(got, i, function(v) return close(v[6], 0.78) end)
+  end)
+  local right = quadIndex(got, function(i)
+    local b = quadBoundsAt(got, i)
+    return close(b.minX, 0.97) and close(b.maxX, 0.97)
+      and allQuad(got, i, function(v) return close(v[6], 0.78) end)
+  end)
+  check(left ~= nil and right ~= nil, "shade lateral SLAB permanece simetrico")
 end
 
 do
@@ -812,13 +953,19 @@ do
   local cellW, cellH = 1, 4
   local sheetW = cellW * 6
   local pixels = {}
+  -- A partir da v1.3.0 a geometria SLAB e por frame corrente (defeito 1), nao
+  -- mais a uniao, entao o parado (linhas 1-3) precisa cobrir a linha que o
+  -- andar (linhas 1-2) consulta como referencia de role 0: sem essa
+  -- sobreposicao a busca por referencia falha e cai para o proprio frame,
+  -- o que so provaria estabilidade trivial.
   for _, frame in ipairs({ 0, 1, 2 }) do
-    paint(pixels, sheetW, cellW, frame, 0, 1, rgba(0.80, 0.10, 0.10, 1))
-    paint(pixels, sheetW, cellW, frame, 0, 2, rgba(0.05, 0.05, 0.05, 1))
-  end
-  for _, frame in ipairs({ 3, 4, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, rgba(0.05, 0.05, 0.05, 1))
     paint(pixels, sheetW, cellW, frame, 0, 2, rgba(0.80, 0.10, 0.10, 1))
     paint(pixels, sheetW, cellW, frame, 0, 3, rgba(0.05, 0.05, 0.05, 1))
+  end
+  for _, frame in ipairs({ 3, 4, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, rgba(0.80, 0.10, 0.10, 1))
+    paint(pixels, sheetW, cellW, frame, 0, 2, rgba(0.05, 0.05, 0.05, 1))
   end
   local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
   loadWith(makeMod(handle, { depth = 2, shape = "slab", side_color = "body" }))
@@ -971,7 +1118,7 @@ do
     return function(i)
       local b = quadBoundsAt(mesh, i)
       return close(b.minZ, 0) and close(b.maxZ, 0)
-        and allQuad(mesh, i, function(v) return close(v[6], 1.0) end)
+        and allQuad(mesh, i, function(v) return close(v[6], 0.90) end)
     end
   end
   local backPlane = function(i)
@@ -980,16 +1127,16 @@ do
       and allQuad(back, i, function(v) return close(v[6], 0.68) end)
   end
   eq(projectedCells(front, 1, 2, frontPlane(front)),
-     "1,1;1,2;2,2",
+     "1,1;2,1;2,2",
      "silhueta CARVED de frente bate em posicao absoluta com frame 0")
-  eq(projectedCells(back, 1, 2, backPlane), "0,0;1,1",
+  eq(projectedCells(back, 1, 2, backPlane), "1,1;2,1",
      "silhueta CARVED de costas fica espelhada em posicao absoluta")
   eq(projectedCells(side),
-     "0,1;0,2;1,2;2,0;2,1",
+     "0,1;0,2;1,2;2,1",
      "silhueta CARVED lateral bate em posicao absoluta com frame 2")
   check(projectedCells(side) ~= projectedCells(front, 1, 2, frontPlane(front)),
         "frame lateral com rotacao zerada quebraria a silhueta")
-  eq(projectedCells(side, 1, 3), "0,-1;0,-2;1,-1;1,-2;2,-2;2,-3",
+  eq(projectedCells(side, 1, 3), "0,-2;0,-3;1,-2;2,-2;2,-3",
         "eixo de profundidade preserva a frente na esquerda do frame lateral")
   local fb, bb, sb = meshBounds(front), meshBounds(back), meshBounds(side)
   check(sameRange(fb.minY, fb.maxY, bb.minY, bb.maxY)
@@ -1224,6 +1371,70 @@ do
   local pixels = {}
   for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
   local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", ground_shade = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setGroundShadeWithoutClearing(modules, "on")
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  check(a ~= b, "cacheKey separa GROUND SHADE mesmo sem limpar o cache")
+  eq(modules.Voxel3D.created, 2,
+     "cacheKey cria uma entrada propria para cada GROUND SHADE")
+end
+
+do
+  local cellW, cellH = 1, 7
+  local pixels = {}
+  for ly = 0, cellH - 1 do paint(pixels, cellW, cellW, 0, 0, ly, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", ground_shade = "on",
+  }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local ok, foundLow, foundHigh = true, false, false
+  for i = 1, #got.verts, 4 do
+    local b = quadBoundsAt(got, i)
+    if close(b.minZ, 0) and close(b.maxZ, 0) then
+      for j = i, i + 3 do
+        local y = got.verts[j][2]
+        local t = y < 6 and math.max(0, y) / 6 or 1
+        local expected = 0.90 * (1 - 0.288 * (1 - t))
+        if y >= 6 then expected = 0.90 end
+        ok = ok and close(got.verts[j][6], expected)
+        foundLow = foundLow or (y < 6 and got.verts[j][6] < 0.90)
+        foundHigh = foundHigh or (y >= 6 and close(got.verts[j][6], 0.90))
+      end
+    end
+  end
+  check(ok and foundLow and foundHigh,
+        "contato com o chao escurece so os 6 pixels de baixo")
+end
+
+do
+  local cellW, cellH = 1, 7
+  local pixels = {}
+  for ly = 0, cellH - 1 do paint(pixels, cellW, cellW, 0, 0, ly, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", ground_shade = "off",
+  }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local unchanged = true
+  for _, v in ipairs(got.verts) do
+    unchanged = unchanged and (
+      close(v[6], 0.90) or close(v[6], 0.68) or close(v[6], 0.78)
+      or close(v[6], 1.0) or close(v[6], 0.55)
+    )
+  end
+  check(unchanged and close(frontVertexShadeAt(got, 0, 0), 0.90),
+        "contato com o chao desligado nao muda nenhum vertice")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
   loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
   local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
   local a = modules.SpriteBillboards.mesh(def, 0)
@@ -1248,6 +1459,495 @@ do
   eq(a, b, "cacheKey ignora DEPTH quando SHAPE e CARVED+")
   eq(modules.Voxel3D.created, 1,
      "CARVED+ nao duplica malha identica ao trocar DEPTH")
+end
+
+do
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paintBlinkFace(pixels, cellW, cellW, 0)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "off" }))
+  local got = modules.SpriteBillboards.mesh({ image = "red.png", frames = 1 }, 0)
+  local leftEye = frontQuadIndexAt(got, 6, 7, 8, 9)
+  local rightEye = frontQuadIndexAt(got, 9, 10, 8, 9)
+  check(leftEye ~= nil and rightEye ~= nil,
+        "olho SLAB vira quad proprio mesmo com BLINK desligado")
+  check(allUvAt(got, leftEye, 6.5 / 16, 7.5 / 16),
+        "olho SLAB aberto aponta para o proprio texel")
+end
+
+do
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paintBlinkFace(pixels, cellW, cellW, 0)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 1 }
+  withLoveTime(closedTime, function()
+    local got = modules.SpriteBillboards.mesh(def, 0)
+    local leftEye = frontQuadIndexAt(got, 6, 7, 8, 9)
+    check(allUvAt(got, leftEye, 6.5 / 16, 8.5 / 16),
+          "piscar acontece no frame 0")
+  end)
+  withLoveTime(openTime, function()
+    local got = modules.SpriteBillboards.mesh(def, 0)
+    local leftEye = frontQuadIndexAt(got, 6, 7, 8, 9)
+    check(allUvAt(got, leftEye, 6.5 / 16, 7.5 / 16),
+          "olho SLAB aberto aponta para o proprio texel")
+  end)
+end
+
+do
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paintBlinkFace(pixels, sheetW, cellW, frame) end
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 6, frameWidth = cellW }
+  local backOpen, backClosed, sideOpen, sideClosed
+  withLoveTime(openTime, function()
+    backOpen = uvSignature(modules.SpriteBillboards.mesh(def, 1))
+    sideOpen = uvSignature(modules.SpriteBillboards.mesh(def, 2))
+  end)
+  withLoveTime(closedTime, function()
+    local walk = modules.SpriteBillboards.mesh(def, 3)
+    local walkEye = frontQuadIndexAt(walk, 6, 7, 8, 9)
+    check(allUvAt(walk, walkEye, (3 * cellW + 6.5) / sheetW, 7.5 / cellH),
+          "piscar nao acontece no frame 3")
+    backClosed = uvSignature(modules.SpriteBillboards.mesh(def, 1))
+    sideClosed = uvSignature(modules.SpriteBillboards.mesh(def, 2))
+  end)
+  eq(backOpen, backClosed, "piscar so acontece no role 0")
+  eq(sideOpen, sideClosed, "piscar so acontece no role 0")
+end
+
+do
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paintBlinkFace(pixels, cellW, cellW, 0)
+  local closedTime, openTime = blinkTimes("unknown")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "unknown.png", frames = 1 }
+  local openSig, closedSig
+  withLoveTime(openTime, function()
+    openSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+  end)
+  withLoveTime(closedTime, function()
+    closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+  end)
+  eq(openSig, closedSig, "folha sem entrada na tabela nao pisca")
+end
+
+do
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paint(pixels, cellW, cellW, 0, 6, 7, rgba(0.05, 0.05, 0.05, 1))
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 1 }
+  local openSig, closedSig
+  withLoveTime(openTime, function()
+    openSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+  end)
+  withLoveTime(closedTime, function()
+    closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+  end)
+  eq(openSig, closedSig, "folha cujo olho nao acha corpo em 4 pixels nao pisca")
+end
+
+do
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paintBlinkFace(pixels, cellW, cellW, 0)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "off" }))
+  local def = { image = "red.png", frames = 1 }
+  local openSig, closedSig
+  withLoveTime(openTime, function()
+    openSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+  end)
+  withLoveTime(closedTime, function()
+    closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+  end)
+  eq(openSig, closedSig, "BLINK desligado nao muda nenhum UV")
+end
+
+do
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paintBlinkFace(pixels, cellW, cellW, 0)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 1 }
+  local openMesh, closedMesh
+  withLoveTime(openTime, function()
+    openMesh = modules.SpriteBillboards.mesh(def, 0)
+  end)
+  withLoveTime(closedTime, function()
+    closedMesh = modules.SpriteBillboards.mesh(def, 0)
+  end)
+  eq(openMesh, closedMesh, "o cacheKey nao muda com o estado de piscada")
+  eq(modules.Voxel3D.created, 1,
+     "estado de piscada troca UV sem criar outra malha")
+end
+
+-- v1.3.0 defeito 1 (SLAB): a mascara passa a ser a do frame corrente, nao a
+-- uniao de todos os frames. Folha de 6 frames (frameWidth=cellW forca layout
+-- horizontal) com um pixel exclusivo do frame 0 (lx=0), um pixel exclusivo do
+-- frame 3 (lx=1) e uma ancora sempre opaca (lx=3) so para manter a malha viva
+-- em todo frame.
+do
+  local cellW, cellH = 4, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    paint(pixels, sheetW, cellW, frame, 3, 0, 1)
+  end
+  paint(pixels, sheetW, cellW, 0, 0, 0, 1)
+  paint(pixels, sheetW, cellW, 3, 1, 0, 1)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local f0 = modules.SpriteBillboards.mesh(def, 0)
+  local f3 = modules.SpriteBillboards.mesh(def, 3)
+
+  check(frontFaceZAt(f0, 0, 1, 0, 1) ~= nil,
+        "geometria SLAB usa mascara do frame corrente, nao da uniao (frame 0 tem seu proprio pixel)")
+  check(frontFaceZAt(f3, 0, 1, 0, 1) == nil,
+        "geometria SLAB usa mascara do frame corrente, nao da uniao")
+
+  -- Se `at()` regredisse para `m.mask` (a uniao), o pixel exclusivo do
+  -- frame 0 vazaria para o frame 3 e a asserção acima falharia. Esta cobre o
+  -- sentido oposto: o pixel exclusivo do frame 3 tem que aparecer nele
+  -- mesmo, nao pode ser cortado por engano.
+  check(frontFaceZAt(f3, 1, 2, 0, 1) ~= nil,
+        "geometria SLAB nao usa o frame errado no lugar do frame corrente (pixel proprio do frame 3 aparece)")
+  -- Num sheet de 6 frames, roleForFrame(3, 6) = 0, entao a referencia de cor
+  -- do role 0 e o proprio frame 0 (referenceFramesForRole). Se `at()` fosse
+  -- trocado para consultar essa referencia em vez do frame pedido, o pixel
+  -- exclusivo do frame 3 sumiria (frame 0 nao o tem), e esta asserção pegaria
+  -- isso.
+  check(frontFaceZAt(f0, 1, 2, 0, 1) == nil,
+        "geometria SLAB nao usa o frame errado no lugar do frame corrente (frame 0 nao tem o pixel do frame 3)")
+
+  local sideAtF0 = sideFaceUvAt(f0, 0.03, 0.03, 0, 1)
+  local sideAtF3 = sideFaceUvAt(f3, 0.03, 0.03, 0, 1)
+  check(sideAtF0 ~= nil,
+        "face lateral SLAB some quando o pixel some no frame (existe enquanto o pixel existe)")
+  check(sideAtF3 == nil,
+        "face lateral SLAB some quando o pixel some no frame")
+end
+
+-- v1.3.0 defeito 2 (SLAB): X passa a ser relativo a celula do sprite, nao a
+-- bbox opaca. Primeira coluna (lx=0) inteiramente transparente; a arte
+-- comeca em lx=1, e a malha tem que preservar esse deslocamento em vez de
+-- reancorar em X=0 como a bbox opaca faria.
+do
+  local cellW, cellH = 2, 1
+  local pixels = { [1] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  check(got and not got.original,
+        "geometria SLAB alinha com a celula do sprite: malha construida")
+  if got and not got.original then
+    local b = meshBounds(got)
+    check(close(b.minX, 1),
+          "geometria SLAB alinha com a celula do sprite, nao com a bbox opaca")
+  end
+end
+
+-- v1.3.0 defeito 2b (SLAB): o eixo Y tem a mesma regra que o X. O host pivota
+-- o lean no chao, entao y = 0 e a linha de BAIXO da CELULA, nao a linha opaca
+-- mais baixa da arte. Celula de duas linhas com arte so na de cima: a malha
+-- tem que flutuar um pixel acima do chao, como o card original faz, em vez de
+-- reancorar os pes na propria arte. Sao 8 das 67 folhas reais, entre elas
+-- poke_ball.png por 2 pixels.
+do
+  local cellW, cellH = 1, 2
+  local pixels = { [0] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  check(got and not got.original,
+        "geometria SLAB ancora no chao da celula: malha construida")
+  if got and not got.original then
+    local b = meshBounds(got)
+    check(close(b.minY, 1),
+          "geometria SLAB ancora no chao da celula, nao na arte mais baixa")
+    check(close(b.maxY, 2),
+          "geometria SLAB preserva a altura de um pixel acima do chao")
+  end
+end
+
+-- v1.3.0 defeito B (SLAB): laterais adjacentes na vertical podem virar uma
+-- face so quando a amostragem resolvida e exatamente a mesma. A altura
+-- infinita aqui e intencional: no stub, ela faz os dois centros de texel terem
+-- o mesmo V numerico sem mudar a geometria finita da celula.
+do
+  local cellW, cellH = 1, 2
+  local pixels = { [0] = 1, [1] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, math.huge)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1,
+                                              frameWidth = cellW,
+                                              frameHeight = cellH }, 0)
+  eq(quadCount(got), 10,
+     "face lateral SLAB mescla verticalmente quando o UV coincide")
+end
+
+do
+  local cellW, cellH = 1, 2
+  local pixels = { [0] = 1, [1] = 1 }
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1,
+                                              frameWidth = cellW,
+                                              frameHeight = cellH }, 0)
+  eq(quadCount(got), 12,
+     "face lateral SLAB nao mescla quando o UV difere")
+end
+
+-- v1.3.0 defeito 2 (CARVED): mesma ancora de X do SLAB. O casco usa as
+-- tres vistas, mas o espaco emitido tem que continuar sendo o da celula do
+-- sprite. Primeira coluna transparente em todas as vistas; bbox opaca
+-- reancoraria a malha em X=0.
+do
+  local cellW, cellH = 3, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    paint(pixels, sheetW, cellW, frame, 1, 0, 1)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 0)
+  check(got and not got.original,
+        "geometria CARVED alinha com a celula do sprite: malha construida")
+  if got and not got.original then
+    local b = meshBounds(got)
+    check(close(b.minX, 1),
+          "geometria CARVED alinha com a celula do sprite, nao com a bbox opaca")
+  end
+end
+
+-- v1.3.0 defeito A (CARVED): o espelho frente/costas usa o mesmo eixo de
+-- celula que a rotacao por role. A folha e assimetrica dentro da celula:
+-- a coluna extra em lx=5 mudaria o eixo da bbox para 6 e apagaria o voxel
+-- legitimo do role de costas se `mirrorX` nao fosse `cellW - 1 - lx`.
+do
+  local cellW, cellH = 6, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  paint(pixels, sheetW, cellW, 0, 1, 0, 1)
+  paint(pixels, sheetW, cellW, 0, 5, 0, 1)
+  paint(pixels, sheetW, cellW, 1, 4, 0, 1)
+  paint(pixels, sheetW, cellW, 2, 0, 0, 1)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 1)
+  eq(quadCount(got), 6,
+     "espelho CARVED usa eixo da celula em folha assimetrica")
+  local b = meshBounds(got)
+  -- O valor antigo, X 1..2, era a coluna logica antes da rotacao do role 1:
+  -- ele passava porque o casco espelhava o X uma vez no `solid` e outra em
+  -- p(). A tela precisa receber a coluna 4..5, onde o frame 1 tem arte.
+  check(close(b.minX, 4) and close(b.maxX, 5),
+        "espelho CARVED posiciona o role de costas no mesmo eixo da celula")
+end
+
+-- Role 1 precisa de folha assimetrica para expor o espelho duplo: numa folha
+-- simetrica, validar uma coluna e desenhar a outra produz o mesmo resultado.
+-- Aqui o frame de costas tem arte em lx=4; o role 1 tambem deve aparecer na
+-- coluna de tela 4, porque p() ja faz a unica espelhada de apresentacao.
+do
+  local cellW, cellH = 6, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  paint(pixels, sheetW, cellW, 0, 1, 0, 1)
+  paint(pixels, sheetW, cellW, 1, 4, 0, 1)
+  paint(pixels, sheetW, cellW, 2, 0, 0, 1)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 1)
+  eq(projectedCells(got, 1, 2), "4,0",
+     "CARVED role 1 desenha na mesma coluna de tela da arte do frame 1")
+end
+
+do
+  local cellW, cellH = 6, 2
+  local sheetW = cellW * 6
+  local pixels = {}
+  for ly = 0, 1 do
+    paint(pixels, sheetW, cellW, 0, 1, ly, 1)
+    paint(pixels, sheetW, cellW, 0, 5, ly, 1)
+    paint(pixels, sheetW, cellW, 1, 4, ly, 1)
+    paint(pixels, sheetW, cellW, 2, 0, ly, 1)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 1)
+  eq(quadCount(got), 10,
+     "intersecao CARVED nao perde corpo com espelho da celula")
+end
+
+-- v1.3.0 defeito 2b (CARVED): mesma ancora de Y do SLAB. Rodape vazio na
+-- celula deve ficar vazio tambem no casco, em vez de puxar a arte para o chao.
+do
+  local cellW, cellH = 1, 2
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    paint(pixels, sheetW, cellW, frame, 0, 0, 1)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 0)
+  check(got and not got.original,
+        "geometria CARVED ancora no chao da celula: malha construida")
+  if got and not got.original then
+    local b = meshBounds(got)
+    check(close(b.minY, 1),
+          "geometria CARVED ancora no chao da celula")
+    check(close(b.maxY, 2),
+          "geometria CARVED preserva o rodape vazio da celula")
+  end
+end
+
+do
+  local cellW, cellH = 4, 3
+  local sheetW = cellW * 6
+  local pixels = {}
+  for _, frame in ipairs({ 0, 3 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+  end
+  for _, frame in ipairs({ 1, 4 }) do
+    paint(pixels, sheetW, cellW, frame, 2, 1, 1)
+  end
+  for _, frame in ipairs({ 2, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 0)
+  local b = meshBounds(got)
+  check(close(b.minX, 1) and close(b.maxX, 2)
+        and close(b.minY, 1) and close(b.maxY, 2)
+        and close(b.minZ, -1) and close(b.maxZ, 0),
+        "geometria CARVED role 0 preserva posicao absoluta na celula")
+end
+
+do
+  local cellW, cellH = 4, 3
+  local sheetW = cellW * 6
+  local pixels = {}
+  for _, frame in ipairs({ 0, 3 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+  end
+  for _, frame in ipairs({ 1, 4 }) do
+    paint(pixels, sheetW, cellW, frame, 2, 1, 1)
+  end
+  for _, frame in ipairs({ 2, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 1)
+  local b = meshBounds(got)
+  -- O X antigo, 1..2, era o espaco logico da frente vazando para a assercao.
+  -- No role 1 a rotacao de p() apresenta esse voxel na coluna de costas,
+  -- portanto a posicao absoluta preservada na celula e 2..3.
+  check(close(b.minX, 2) and close(b.maxX, 3)
+        and close(b.minY, 1) and close(b.maxY, 2)
+        and close(b.minZ, -1) and close(b.maxZ, 0),
+        "geometria CARVED role 1 preserva posicao absoluta na celula")
+end
+
+do
+  local cellW, cellH = 4, 3
+  local sheetW = cellW * 6
+  local pixels = {}
+  for _, frame in ipairs({ 0, 3 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+  end
+  for _, frame in ipairs({ 1, 4 }) do
+    paint(pixels, sheetW, cellW, frame, 2, 1, 1)
+  end
+  for _, frame in ipairs({ 2, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 1, 1, 1)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 6,
+                                              frameWidth = cellW }, 2)
+  local b = meshBounds(got)
+  check(close(b.minX, 1) and close(b.maxX, 2)
+        and close(b.minY, 1) and close(b.maxY, 2)
+        and close(b.minZ, -3) and close(b.maxZ, -2),
+        "geometria CARVED role 2 preserva posicao absoluta na celula")
+end
+
+-- v1.3.0 defeito 3 (SLAB e CARVED, o guard roda em voxelMesh antes dos dois):
+-- primeira pessoa cai para o card original em vez do solido, porque o shader
+-- de primeira pessoa do host move vertices individualmente e um volume
+-- atravessa o near plane.
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules, original = makeVoxelHandle("1.6.0", pixels, sheetW, cellH,
+    nil, nil, 0.5)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local got = modules.SpriteBillboards.mesh(def, 2)
+  check(got and got.original, "primeira pessoa devolve o card original")
+  eq(got.def, def, "primeira pessoa preserva o def pedido")
+  eq(got.frame, 2, "primeira pessoa preserva o frame pedido")
+  check(original ~= modules.SpriteBillboards.mesh,
+        "primeira pessoa ainda passa pelo wrapper instalado")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH,
+    nil, nil, 0)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local got = modules.SpriteBillboards.mesh(def, 2)
+  check(got and not got.original,
+        "primeira pessoa com blend zero mantem a malha solida")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH,
+    nil, nil, nil, true)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local got = modules.SpriteBillboards.mesh(def, 2)
+  check(got and not got.original,
+        "primeira pessoa sem FirstPerson no host mantem a malha solida")
 end
 
 T.finish("voxel_chars_test")

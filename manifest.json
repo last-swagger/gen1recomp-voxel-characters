@@ -1,7 +1,7 @@
 {
   "id": "voxel_characters",
   "name": "Voxel Characters",
-  "version": "1.2.2",
+  "version": "1.4.0",
   "api": 2,
   "entry": "main.lua",
   "game_version": "0.0.0-dev || >=0.1.51 <2.0.0",
