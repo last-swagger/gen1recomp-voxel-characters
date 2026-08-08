@@ -134,6 +134,18 @@ local function vertexSignature(mesh)
   return table.concat(out, ";")
 end
 
+-- v1.6.0: como vertexSignature, mas sem a coluna de shade (v[6]). TOP DOME
+-- e TOP EDGE so mudam shade, nunca posicao de vertice nem UV; esta
+-- assinatura prova a geometria byte a byte identica enquanto o shade muda
+-- livremente por cima dela.
+local function positionSignature(mesh)
+  local out = {}
+  for i, v in ipairs(mesh.verts) do
+    out[i] = ("%.4f,%.4f,%.4f,%.4f,%.4f"):format(v[1], v[2], v[3], v[4], v[5])
+  end
+  return table.concat(out, ";")
+end
+
 local function quadCount(mesh)
   return math.floor(#mesh.verts / 4)
 end
@@ -327,6 +339,21 @@ local function countFrontQuadsInRange(mesh, minX, maxX)
   return count
 end
 
+-- v1.6.0: como frontQuadShadeAt, mas para a face de TOPO (achatada em Y,
+-- com extensao em Z): acha o quad na altura Y e nos limites X dados e
+-- devolve o shade que ele levou, sem exigir um valor especifico -- o
+-- objetivo e comparar shades diferentes entre borda e centro de um run de
+-- TOP DOME.
+local function topQuadShadeAt(mesh, minX, maxX, y)
+  for i = 1, #mesh.verts, 4 do
+    local b = quadBoundsAt(mesh, i)
+    if close(b.minX, minX) and close(b.maxX, maxX)
+        and close(b.minY, y) and close(b.maxY, y) and b.maxZ > b.minZ then
+      return mesh.verts[i][6]
+    end
+  end
+end
+
 local function setDepthWithoutClearing(modules, value)
   local wrapper = modules.SpriteBillboards.mesh
   local voxelMesh
@@ -472,6 +499,27 @@ local function setFrontShapeWithoutClearing(modules, value)
     end
   end
   return check(false, "teste encontra frontShapeValue em voxelMesh")
+end
+
+local function setTopDomeWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 100 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "topDomeValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra topDomeValue em voxelMesh")
 end
 
 local function blinkHashName(name)
@@ -1087,7 +1135,7 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 9, "hook anexa as rows do voxel characters, mais STATUS")
+  eq(#rows, 10, "hook anexa as rows do voxel characters, mais STATUS")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
   local option = rows[3]
   eq(rows[4].label, "SIDE COLOR", "hook anexa a row de cor lateral")
@@ -1096,6 +1144,7 @@ do
   eq(rows[7].label, "BLINK", "hook anexa a row de blink")
   eq(rows[8].label, "TOP EDGE", "hook anexa a row de top edge")
   eq(rows[9].label, "FRONT SHAPE", "hook anexa a row de front shape")
+  eq(rows[10].label, "TOP DOME", "hook anexa a row de top dome")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -1182,6 +1231,46 @@ do
   eq(option.value(), "HIGH", "FRONT SHAPE alterna para HIGH")
   check(option.step(game, 1), "FRONT SHAPE da a volta")
   eq(option.value(), "OFF", "FRONT SHAPE volta para OFF depois de HIGH")
+end
+
+do
+  -- v1.6.0: a row de TOP DOME, no mesmo padrao das outras: default OFF
+  -- (regra da casa), dois degraus (OFF, LOW 0.15, HIGH 0.30 -- so os dois
+  -- pontos medidos, sem um MED interpolado), step troca e persiste no save
+  -- e no loader.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 1 }))
+  local emitted = {}
+  local game = {
+    save = { options = {} },
+    mods = {
+      modOptions = {},
+      events = {
+        emit = function(_, name, payload)
+          emitted[#emitted + 1] = { name = name, payload = payload }
+          if mod._events[name] then mod._events[name](payload) end
+        end,
+      },
+    },
+  }
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
+  local option = rows[9]
+  eq(option.label, "TOP DOME", "row de TOP DOME fica depois de FRONT SHAPE")
+  eq(option.value(), "OFF", "TOP DOME default e OFF")
+  check(option.step(game, 1), "step de TOP DOME informa mudanca")
+  eq(option.value(), "LOW", "TOP DOME alterna para LOW")
+  eq(game.save.options.modOptions.voxel_characters.top_dome, 0.15,
+     "TOP DOME persiste no save")
+  eq(game.mods.modOptions.voxel_characters.top_dome, 0.15,
+     "TOP DOME persiste no loader")
+  eq(emitted[1].payload.value, 0.15, "TOP DOME emite o valor novo")
+  check(option.step(game, 1), "TOP DOME segue avancando")
+  eq(option.value(), "HIGH", "TOP DOME alterna para HIGH")
+  check(option.step(game, 1), "TOP DOME da a volta")
+  eq(option.value(), "OFF", "TOP DOME volta para OFF depois de HIGH")
 end
 
 do
@@ -2634,6 +2723,45 @@ do
 end
 
 do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved", top_dome = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setTopDomeWithoutClearing(modules, 0.15)
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  eq(a, b, "cacheKey ignora TOP DOME quando SHAPE e CARVED")
+  eq(modules.Voxel3D.created, 1,
+     "CARVED nao duplica malha identica ao trocar TOP DOME")
+end
+
+do
+  -- v1.6.0, teste obrigatorio 5: "a chave de cache muda com a forca". Sem
+  -- isso a opcao nao muda nada na tela: e literalmente o defeito que o
+  -- Colonel_Aureliano reportou na v1.4.0 (trocar a opcao no menu nao mudava
+  -- nada, porque a malha continuava vindo do cache antigo).
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", top_dome = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local off = modules.SpriteBillboards.mesh(def, 0)
+  setTopDomeWithoutClearing(modules, 0.15)
+  local low = modules.SpriteBillboards.mesh(def, 0)
+  setTopDomeWithoutClearing(modules, 0.30)
+  local high = modules.SpriteBillboards.mesh(def, 0)
+  check(off ~= low and low ~= high and off ~= high,
+        "cacheKey separa TOP DOME mesmo sem limpar o cache (off/low/high)")
+  eq(modules.Voxel3D.created, 3,
+     "cacheKey cria uma entrada propria para cada forca de TOP DOME")
+end
+
+do
   local cellW, cellH = 1, 7
   local pixels = {}
   for ly = 0, cellH - 1 do paint(pixels, cellW, cellW, 0, 0, ly, 1) end
@@ -3784,7 +3912,7 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 8, "com host, oito rows: STATUS mais as sete de sempre")
+  eq(#rows, 9, "com host, nove rows: STATUS mais as oito de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
   eq(rows[2].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
   eq(rows[3].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
@@ -3793,6 +3921,7 @@ do
   eq(rows[6].label, "BLINK", "BLINK continua na mesma posicao relativa")
   eq(rows[7].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
   eq(rows[8].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
+  eq(rows[9].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
 end
 
 do
@@ -4191,6 +4320,205 @@ do
   local side = modules.SpriteBillboards.mesh(def, 2)
   check(countFrontQuadsInRange(side, 6, 9) > 1,
         "o segmento depois do olho de perfil se divide em degraus sem quebrar a piscada")
+end
+
+-- v1.6.0: TOP DOME. Volume na face de TOPO do SLAB em degraus alinhados ao
+-- pixel, opcao nova de menu com default OFF. Os seis testes abaixo sao os
+-- obrigatorios da spec da rodada; a row/step/persist e as duas variantes de
+-- cacheKey (SLAB separa, CARVED ignora) ja foram cobertas mais acima, junto
+-- das rows e cacheKeys das outras opcoes. Todas as folhas pintam so a linha
+-- ly = 7 (o mesmo ly que FRONT SHAPE ja usa), entao nenhuma linha acima
+-- existe e todo pixel pintado sai como face de topo, sem precisar de uma
+-- fixture nova por teste.
+
+do
+  -- teste obrigatorio 1: "com a opcao desligada, a malha e byte a byte a de
+  -- hoje". Um run de largura 6 (acima do limiar de degrau) continua com
+  -- TODOS os pixels de topo no mesmo shade -- topShade() de sempre --
+  -- tanto com top_dome = "off" explicito quanto sem a chave (default). Se o
+  -- degrau vazasse por baixo do OFF, os pixels de borda sairiam mais
+  -- escuros que o do centro.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 4, 9 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local def = { image = "sheet.png", frames = 1 }
+  local topY = cellH - 7
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", top_dome = "off" }))
+  local gotOff = modulesOff.SpriteBillboards.mesh(def, 0)
+
+  local handleDefault, modulesDefault = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleDefault, { depth = 2, shape = "slab" }))
+  local gotDefault = modulesDefault.SpriteBillboards.mesh(def, 0)
+
+  eq(vertexSignature(gotOff), vertexSignature(gotDefault),
+     "TOP DOME OFF explicito e o default (sem a chave) produzem a mesma malha, byte a byte")
+
+  local edge = topQuadShadeAt(gotOff, 4, 5, topY)
+  local center = topQuadShadeAt(gotOff, 6, 7, topY)
+  local other = topQuadShadeAt(gotOff, 9, 10, topY)
+  check(edge ~= nil and center ~= nil and other ~= nil,
+        "teste encontra os quads de topo do run")
+  eq(edge, center, "TOP DOME desligado: shade constante em todo o run, sem degrau")
+  eq(center, other, "TOP DOME desligado: shade constante em todo o run, sem degrau (borda direita)")
+  eq(edge, 0.82, "TOP DOME desligado devolve o shade de topo de hoje (TOP EDGE default ON)")
+end
+
+do
+  -- teste obrigatorio 2: "a contagem de quads nao muda com a opcao ligada"
+  -- -- e o que separa esta mudanca da anterior. FRONT SHAPE ACRESCENTA
+  -- quads ao dividir o run frontal quando ligado (de 1 quad para ate 6); a
+  -- face de topo ja saia por pixel MESMO ANTES desta feature (o laco
+  -- `for sx = lx, lx2 do if not at(sx, ly - 1)`), entao ligar TOP DOME so
+  -- troca o shade de um quad que ja existia, nunca adiciona um novo.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 4, 9 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local def = { image = "sheet.png", frames = 1 }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", top_dome = "off" }))
+  local gotOff = modulesOff.SpriteBillboards.mesh(def, 0)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", top_dome = 0.30 }))
+  local gotOn = modulesOn.SpriteBillboards.mesh(def, 0)
+
+  eq(quadCount(gotOn), quadCount(gotOff),
+     "TOP DOME ligado nao muda a contagem de quads")
+  eq(positionSignature(gotOn), positionSignature(gotOff),
+     "TOP DOME ligado nao move nenhum vertice nem UV -- so troca o shade")
+  check(vertexSignature(gotOn) ~= vertexSignature(gotOff),
+        "controle: o shade realmente mudou (senao os dois testes acima estariam provando o nada)")
+end
+
+do
+  -- teste obrigatorio 3: "o shade do topo e simetrico em torno do centro do
+  -- run". Run de largura impar (5 pixels, 4 a 8): a borda esquerda (pixel
+  -- 4) e a borda direita (pixel 8) tem que sair no MESMO shade, e o centro
+  -- (pixel 6) tem que sair mais claro que as bordas, senao o degrau nao
+  -- aconteceu de verdade.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 4, 8 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", top_dome = 0.30 }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local topY = cellH - 7
+  local left = topQuadShadeAt(got, 4, 5, topY)
+  local right = topQuadShadeAt(got, 8, 9, topY)
+  local center = topQuadShadeAt(got, 6, 7, topY)
+  check(left ~= nil and right ~= nil and center ~= nil,
+        "teste encontra os tres quads de topo do run (borda esquerda, centro, borda direita)")
+  eq(left, right, "o primeiro e o ultimo pixel do run de topo tem o mesmo shade")
+  check(center and left and center > left,
+        "o centro do run de topo sai mais claro que as bordas -- o degrau aconteceu")
+end
+
+do
+  -- v1.6.0: a mesma simetria vale espelhada (mascara desenhada do lado
+  -- direito da celula em vez do esquerdo), provando que o shade depende so
+  -- do centro do PROPRIO run (a e b: lx, lx2 da linha), nunca de uma
+  -- coordenada absoluta de tela nem de estar no lado leste ou oeste -- a
+  -- restricao de simetria em X que a spec exige.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 9, 13 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", top_dome = 0.30 }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local topY = cellH - 7
+  local left = topQuadShadeAt(got, 9, 10, topY)
+  local right = topQuadShadeAt(got, 13, 14, topY)
+  check(left ~= nil and right ~= nil,
+        "teste encontra as duas bordas do run de topo espelhado")
+  eq(left, right,
+     "o shade de topo simetrico nao depende de estar no lado leste ou oeste da celula")
+end
+
+do
+  -- teste obrigatorio 4: "run de 2 pixels nao recebe degrau". A mesma linha
+  -- tem dois runs separados por um vao: um de 2 pixels (1 a 2) e um de 6
+  -- pixels (6 a 11, acima do limiar de degrau). O run curto tem que sair no
+  -- MESMO shade ligado ou desligado (nao ha pixel "do meio" distinto das
+  -- duas bordas num run de largura 2: dividir so custaria quad sem nenhum
+  -- degrau possivel); o de 6 pixels, na mesma folha com a mesma opcao
+  -- ligada, tem que degrauar de verdade -- controle de que a exclusao e uma
+  -- REGRA (largura < 3), nao "nada degraua".
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paint(pixels, cellW, cellW, 0, 1, 7, 1)
+  paint(pixels, cellW, cellW, 0, 2, 7, 1)
+  for lx = 6, 11 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local def = { image = "sheet.png", frames = 1 }
+  local topY = cellH - 7
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", top_dome = "off" }))
+  local gotOff = modulesOff.SpriteBillboards.mesh(def, 0)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", top_dome = 0.30 }))
+  local gotOn = modulesOn.SpriteBillboards.mesh(def, 0)
+
+  local shortOff = topQuadShadeAt(gotOff, 1, 2, topY)
+  local shortOn = topQuadShadeAt(gotOn, 1, 2, topY)
+  check(shortOff ~= nil and shortOn ~= nil, "teste encontra os quads do run curto")
+  eq(shortOn, shortOff,
+     "run de 2 pixels nao recebe degrau -- mesmo shade ligado ou desligado")
+
+  local longEdgeOff = topQuadShadeAt(gotOff, 6, 7, topY)
+  local longEdgeOn = topQuadShadeAt(gotOn, 6, 7, topY)
+  check(longEdgeOff ~= nil and longEdgeOn ~= nil,
+        "teste encontra os quads da borda do run longo")
+  check(longEdgeOn < longEdgeOff,
+        "controle: o run de 6 pixels na mesma folha DEGRAUA -- a exclusao do curto e uma regra, nao coincidencia")
+end
+
+-- teste obrigatorio 5 ("a chave de cache muda com a forca") ja esta coberto
+-- junto das outras cacheKeys, mais acima (cacheKey separa TOP DOME mesmo
+-- sem limpar o cache, off/low/high).
+
+do
+  -- teste obrigatorio 6: "TOP EDGE e TOP DOME convivem". Os dois mexem no
+  -- shade da MESMA face de topo; prova a ordem de aplicacao (TOP EDGE
+  -- primeiro, como a BASE que topShadeDomo le de topShade(); TOP DOME
+  -- degraua essa base, nunca a substitui) e que ligar um nao anula o outro.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 4, 9 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local def = { image = "sheet.png", frames = 1 }
+  local topY = cellH - 7
+
+  local handleEdgeOnly, modulesEdgeOnly = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleEdgeOnly,
+    { depth = 2, shape = "slab", top_edge = "on", top_dome = "off" }))
+  local edgeOnly = modulesEdgeOnly.SpriteBillboards.mesh(def, 0)
+
+  local handleBoth, modulesBoth = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleBoth,
+    { depth = 2, shape = "slab", top_edge = "on", top_dome = 0.30 }))
+  local both = modulesBoth.SpriteBillboards.mesh(def, 0)
+
+  local edgeOnlyCenter = topQuadShadeAt(edgeOnly, 6, 7, topY)
+  local bothCenter = topQuadShadeAt(both, 6, 7, topY)
+  local bothEdge = topQuadShadeAt(both, 4, 5, topY)
+  check(edgeOnlyCenter ~= nil and bothCenter ~= nil and bothEdge ~= nil,
+        "teste encontra os quads de topo nas duas malhas")
+
+  eq(bothCenter, edgeOnlyCenter,
+     "ligar TOP DOME nao muda o centro do run -- TOP EDGE continua valendo, nao foi anulado")
+  check(bothEdge < bothCenter,
+        "com os dois ligados, a borda do run sai mais escura que o centro -- TOP DOME continua valendo por cima do TOP EDGE, nao foi anulado")
+  -- Mesma expressao, mesma ordem de operacoes que topShadeDomo usa
+  -- internamente (base * (1 - domoStep * level / (TOP_DOME_STEPS - 1)),
+  -- com level = 2 para o pixel de borda de um run de 6): prova a ORDEM de
+  -- aplicacao, TOP EDGE como base multiplicada por TOP DOME, nao os dois
+  -- competindo por cima do shade puro do host.
+  local multiplier = 1 - 0.30 * 2 / 2
+  eq(bothEdge, edgeOnlyCenter * multiplier,
+     "TOP DOME multiplica a base que TOP EDGE ja escureceu, nunca a substitui")
 end
 
 T.finish("voxel_chars_test")

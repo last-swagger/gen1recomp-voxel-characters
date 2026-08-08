@@ -51,7 +51,7 @@ once a host is found.
 
 ## Options
 
-Eight rows, under **OPTIONS**:
+Nine rows, under **OPTIONS**:
 
 ```
 STATUS:        read only, see below
@@ -62,6 +62,7 @@ GROUND SHADE:  OFF / ON
 BLINK:         OFF / ON
 TOP EDGE:      OFF / ON
 FRONT SHAPE:   OFF / LOW / MED / HIGH
+TOP DOME:      OFF / LOW / HIGH
 ```
 
 `STATUS` is read only and recomputed live every time the menu opens, never
@@ -177,6 +178,21 @@ count does not grow further between LOW, MED and HIGH. On `red.png` frame 3,
 **CARVED** builds 1,044 and **CARVED+** builds 1,018. The unconditional eye
 split adds 542 quads across the 303 measured SLAB meshes, 0.27%, so it is not
 tied to the `BLINK` option.
+
+`TOP DOME` steps the **SLAB** top face into shade toward each horizontal
+run's edges, in the same three pixel aligned tones as `FRONT SHAPE`, instead
+of the single flat shade every top face baked before. Default is **OFF**. At
+a typical overworld camera angle the top face is a quarter of the pixels the
+player sees, and the side faces contribute nothing at that angle (the card's
+tilt is a rotation around X, which exposes no face whose normal is in X), so
+the top face is the one invented surface left worth shading. It already
+comes out as one quad per pixel, so stepping it costs no extra geometry:
+unlike `FRONT SHAPE`, the quad count on `red.png` frame 0 stays at 104 with
+`TOP DOME` at any strength. **LOW** (strength 0.15) and **HIGH** (0.30) are
+the two strengths measured against the silhouette gate, IoU 1.000 at every
+strength; there is no MED here, only the two measured points. `TOP EDGE` and
+`TOP DOME` shade the same face without conflict: `TOP DOME` steps whatever
+base `TOP EDGE` already produced, so turning one on never cancels the other.
 
 ## Compatibility
 
@@ -335,6 +351,27 @@ eye still blinks normally. Runs under 3 pixels wide, and every run when
 `FRONT SHAPE: OFF`, take the single flat quad path unchanged from every
 earlier version. The mesh cache key includes the selected strength, so it is
 never possible for a stale cached mesh to hide a strength change.
+
+With `TOP DOME` above OFF, each top face quad picks its shade the same way,
+from its own row's run bounds, but the base it steps is whatever `TOP EDGE`
+already produced, not a fixed constant:
+
+```lua
+local base = topEdge == "on" and 1.00 * 0.82 or 1.00
+local center, half = (a + b) / 2, (b - a) / 2
+local t = math.abs(sx - center) / half        -- 0 at the center, 1 at either edge
+local level = math.floor(t * (STEPS - 0.001)) -- 0, 1 or 2 with STEPS = 3
+local shade = base * (1 - strength * level / (STEPS - 1))
+```
+
+Unlike `FRONT SHAPE`, the top face was already emitted one quad per pixel
+before this option existed, so `SIDE COLOR: BODY` can search vertically per
+pixel even when a horizontal run mixes body and outline pixels. Stepping it
+changes only the shade argument of a quad call that was already there, so
+the quad count is identical to `TOP DOME: OFF` at every strength, on every
+sheet. Runs under 3 pixels wide take the same `base` shade unchanged. The
+mesh cache key includes the selected strength for the same reason
+`FRONT SHAPE` does.
 
 The two side directions intentionally share one value. The host mirrors sprite
 cards after asking `SpriteBillboards.mesh(def, frame)` for geometry, so a mesh

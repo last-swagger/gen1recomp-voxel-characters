@@ -56,6 +56,7 @@ local GROUND_SHADE_KEY = "ground_shade"
 local BLINK_KEY = "blink"
 local TOP_EDGE_KEY = "top_edge"
 local FRONT_SHAPE_KEY = "front_shape"
+local TOP_DOME_KEY = "top_dome"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
 local SIDE_COLOR_VALUES = { "body", "outline" }
@@ -83,6 +84,17 @@ local TOP_EDGE_LABELS = { "OFF", "ON" }
 -- exigir uma rodada extra de render.
 local FRONT_SHAPE_VALUES = { "off", 0.12, 0.17, 0.22 }
 local FRONT_SHAPE_LABELS = { "OFF", "LOW", "MED", "HIGH" }
+-- DECISAO v1.6.0: TOP DOME segue o mesmo mecanismo de FRONT SHAPE (degraus
+-- de shade por posicao no run, a forca so escala o multiplicador de cada
+-- degrau, nunca a posicao de um vertice), mas com dois niveis, nao tres:
+-- so 0.15 e 0.30 foram medidos (IoU 1.000 contra o card plano em red,
+-- blue, snorlax, poke_ball e nurse, frames 0-5; contagem de quads
+-- identica a com a opcao desligada em qualquer forca) e a cintilacao entre
+-- poses, o risco pre-registrado, nao apareceu no gate. Ao contrario de
+-- FRONT SHAPE, nao ha um MED interpolado aqui: a spec desta rodada so deu
+-- os dois pontos medidos, e um terceiro nivel sem medicao seria chute.
+local TOP_DOME_VALUES = { "off", 0.15, 0.30 }
+local TOP_DOME_LABELS = { "OFF", "LOW", "HIGH" }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 local DEFAULT_SIDE_COLOR = "body"
@@ -102,6 +114,11 @@ local DEFAULT_TOP_EDGE = "on"
 local DEFAULT_TOP_EDGE_INDEX = 2
 local DEFAULT_FRONT_SHAPE = "off"
 local DEFAULT_FRONT_SHAPE_INDEX = 1
+-- Regra da casa: toda opcao de menu nova comeca com um default conservador.
+-- TOP DOME muda uma leitura visual estabelecida (a tampa chapada) e nao foi
+-- lancada ainda, entao OFF, como FRONT SHAPE.
+local DEFAULT_TOP_DOME = "off"
+local DEFAULT_TOP_DOME_INDEX = 1
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -123,6 +140,10 @@ local RUN_UV_INSET = 0.05
 -- shade constante por pixel, quantizado nestes degraus, e o que combina
 -- com o resto do desenho.
 local FRONT_SHAPE_STEPS = 3
+-- Mesmo raciocinio de FRONT_SHAPE_STEPS: tres tons e o que o artista ja usa
+-- para volume nos sprites Gen 1 fonte, e degrau alinhado ao pixel, nao
+-- gradiente continuo (main.lua, DECISAO acima de FRONT_SHAPE_STEPS).
+local TOP_DOME_STEPS = 3
 local PITCH_BUCKET = math.pi / 180
 local MAX_MESHES = 64
 -- DECISAO v1.4.2, pente fino (item 1): STATUS decide por PROPORCAO numa
@@ -339,6 +360,16 @@ mod.options:define({
     default = DEFAULT_FRONT_SHAPE,
     help = "Steps the SLAB front face into three pixel aligned shade tones toward each run's edges, for false roundness without a gradient.",
   },
+  {
+    key = TOP_DOME_KEY,
+    type = "choice",
+    label = "TOP DOME",
+    choices = {
+      { "OFF", "off" }, { "LOW", 0.15 }, { "HIGH", 0.30 },
+    },
+    default = DEFAULT_TOP_DOME,
+    help = "Steps the SLAB top face into pixel aligned shade tones toward each run's edges, for a domed cap instead of a flat one.",
+  },
 })
 
 local SpriteBillboards, Voxel3D, ImageCache
@@ -353,6 +384,7 @@ local groundShadeValue
 local blinkValue
 local topEdgeValue
 local frontShapeValue
+local topDomeValue
 local optionsRegistered = false
 local meshBlink = setmetatable({}, { __mode = "k" })
 local blinkVertexWarned = false
@@ -448,6 +480,13 @@ local function frontShapeIndexOf(value)
   return DEFAULT_FRONT_SHAPE_INDEX
 end
 
+local function topDomeIndexOf(value)
+  for i, v in ipairs(TOP_DOME_VALUES) do
+    if v == value then return i end
+  end
+  return DEFAULT_TOP_DOME_INDEX
+end
+
 local function readDepth()
   local ok, value = pcall(mod.options.get, mod.options, KEY)
   if ok then return VALUES[indexOf(value)] end
@@ -488,6 +527,12 @@ local function readFrontShape()
   local ok, value = pcall(mod.options.get, mod.options, FRONT_SHAPE_KEY)
   if ok then return FRONT_SHAPE_VALUES[frontShapeIndexOf(value)] end
   return DEFAULT_FRONT_SHAPE
+end
+
+local function readTopDome()
+  local ok, value = pcall(mod.options.get, mod.options, TOP_DOME_KEY)
+  if ok then return TOP_DOME_VALUES[topDomeIndexOf(value)] end
+  return DEFAULT_TOP_DOME
 end
 
 local function releaseMesh(mesh)
@@ -555,6 +600,16 @@ local function setFrontShape(value)
   return frontShapeValue
 end
 
+-- Mesmo padrao de FRONT SHAPE: a forca entra na cacheKey (ver cacheKey
+-- abaixo) e tambem limpa o cache aqui, para as malhas velhas nao esperarem
+-- o LRU reciclar antes do topo novo aparecer na tela.
+local function setTopDome(value)
+  local nextValue = TOP_DOME_VALUES[topDomeIndexOf(value)]
+  if topDomeValue ~= nextValue then clearMeshCache() end
+  topDomeValue = nextValue
+  return topDomeValue
+end
+
 setDepth(readDepth())
 setSideColor(readSideColor())
 setShape(readShape())
@@ -562,6 +617,7 @@ setGroundShade(readGroundShade())
 setBlink(readBlink())
 setTopEdge(readTopEdge())
 setFrontShape(readFrontShape())
+setTopDome(readTopDome())
 Assets.register(clearCache)
 
 local function writeOption(game, key, value)
@@ -696,6 +752,23 @@ local function frontShapeRow()
       i = ((i + (dir or 1) - 1) % #FRONT_SHAPE_VALUES) + 1
       local value = setFrontShape(FRONT_SHAPE_VALUES[i])
       writeOption(game, FRONT_SHAPE_KEY, value)
+      return true
+    end,
+  }
+end
+
+local function topDomeRow()
+  return {
+    id = mod.id .. ":" .. TOP_DOME_KEY,
+    label = "TOP DOME",
+    value = function()
+      return TOP_DOME_LABELS[topDomeIndexOf(topDomeValue or readTopDome())]
+    end,
+    step = function(game, dir)
+      local i = topDomeIndexOf(topDomeValue or readTopDome())
+      i = ((i + (dir or 1) - 1) % #TOP_DOME_VALUES) + 1
+      local value = setTopDome(TOP_DOME_VALUES[i])
+      writeOption(game, TOP_DOME_KEY, value)
       return true
     end,
   }
@@ -1175,7 +1248,8 @@ local function shadeAtHeight(shade, y, groundShade)
 end
 
 local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
-                             groundShade, baseName, topEdge, frontShape)
+                             groundShade, baseName, topEdge, frontShape,
+                             topDome)
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -1225,6 +1299,36 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   local function topShade()
     if topEdge == "on" then return OBJ_SHADE.top * TOP_EDGE_SHADE end
     return OBJ_SHADE.top
+  end
+
+  -- FEATURE TOP DOME (v1.6.0): a face de topo ja sai como um quad por pixel
+  -- (o ramo `if not at(sx, ly - 1)` mais abaixo), entao variar o shade pela
+  -- posicao dentro do run custa ZERO quad extra: e so trocar o valor de
+  -- shade que ja ia em cada quad, nunca adicionar um quad novo. Mesmo
+  -- mecanismo de FRONT SHAPE: TOP_DOME_STEPS tons constantes, alinhados ao
+  -- pixel, escolhidos pela distancia ate a borda do run, nao um gradiente
+  -- continuo (esse ja foi prototipado na face frontal e leu como uma
+  -- listra brilhante solta por cima da arte). `a` e `b` sao os limites do
+  -- run horizontal DESTA linha (lx, lx2 no laco principal), a mesma
+  -- referencia que emitFrontRun usa para o proprio degrau: relativos
+  -- apenas ao run, nunca a uma coordenada absoluta de tela, o que garante
+  -- a simetria em X exigida (o run espelha junto com o personagem, e o
+  -- shade espelha junto com ele). `base` vem de topShade(), entao TOP EDGE
+  -- e TOP DOME convivem por construcao: o degrau do domo e sempre um
+  -- multiplicador APLICADO SOBRE a base do TOP EDGE, nunca no lugar dela;
+  -- ligar um nao anula o outro.
+  local domoStep = tonumber(topDome) or 0
+  local function topShadeDomo(sx, a, b)
+    local base = topShade()
+    -- Runs com menos de 3 pixels nao tem um pixel "do meio" distinto das
+    -- duas bordas: nao ha degrau possivel, entao ficam no shade constante
+    -- de sempre, igual a opcao desligada.
+    if domoStep <= 0 or b - a < 2 then return base end
+    local center = (a + b) / 2
+    local half = (b - a) / 2
+    local t = math.abs(sx - center) / half
+    local level = math.floor(t * (TOP_DOME_STEPS - 0.001))
+    return base * (1 - domoStep * level / (TOP_DOME_STEPS - 1))
   end
 
   local function sameUv(lx, ly)
@@ -1550,7 +1654,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
                  p(sx + 1, y + 1 - SIDE_INSET, z0),
                  p(sx + 1, y + 1 - SIDE_INSET, z1),
                  p(sx, y + 1 - SIDE_INSET, z1),
-                 verticalUv(sx, ly, 1), topShade())
+                 verticalUv(sx, ly, 1), topShadeDomo(sx, lx, lx2))
           end
           if not at(sx, ly + 1) then
             quad(p(sx, y + SIDE_INSET, z1),
@@ -1966,26 +2070,32 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
 end
 
 local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape,
-                                 groundShade, baseName, topEdge, frontShape)
+                                 groundShade, baseName, topEdge, frontShape,
+                                 topDome)
   if shape == "carved" or shape == "carved_plus" then
     local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m,
       sideColor, shape, groundShade)
     if ok and mesh then return mesh end
   end
   return buildSlabMesh(def, frame, depth, correction, m, sideColor, groundShade,
-    baseName, topEdge, frontShape)
+    baseName, topEdge, frontShape, topDome)
 end
 
--- FRONT SHAPE, como TOP EDGE, so existe para SLAB: CARVED/CARVED+ constroem
--- a partir do casco visual em voxels, sem o run frontal continuo que
--- emitFrontRun escalona. Fora do SLAB, a chave ignora a forca de proposito,
--- para nao duplicar malhas identicas so porque o menu trocou de nivel.
+-- FRONT SHAPE e TOP DOME, como TOP EDGE, so existem para SLAB: CARVED/CARVED+
+-- constroem a partir do casco visual em voxels, sem o run frontal continuo
+-- que emitFrontRun escalona nem o run de topo que topShadeDomo le. Fora do
+-- SLAB, a chave ignora a forca de proposito, para nao duplicar malhas
+-- identicas so porque o menu trocou de nivel.
 local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
-                        groundShade, topEdge, frontShape)
+                        groundShade, topEdge, frontShape, topDome)
   local depthPart = (shape == "carved" or shape == "carved_plus") and "art"
     or tostring(depth)
   local topEdgePart = shape == "slab" and tostring(topEdge or "") or ""
   local frontShapePart = shape == "slab" and tostring(frontShape or "") or ""
+  -- A chave PRECISA incluir a forca do domo, mesmo padrao de FRONT SHAPE:
+  -- sem isso, mexer no menu nao muda nada na tela ate o LRU reciclar por
+  -- acaso, exatamente o defeito que o Colonel_Aureliano reportou na v1.4.0.
+  local topDomePart = shape == "slab" and tostring(topDome or "") or ""
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
@@ -1996,6 +2106,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
     tostring(groundShade or ""),
     topEdgePart,
     frontShapePart,
+    topDomePart,
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -2188,6 +2299,7 @@ local function registerOptionsRows()
       out[#out + 1] = blinkRow()
       out[#out + 1] = topEdgeRow()
       out[#out + 1] = frontShapeRow()
+      out[#out + 1] = topDomeRow()
     end
     return out
   end)
@@ -2207,6 +2319,8 @@ local function registerOptionsRows()
       setTopEdge(payload.value)
     elseif payload and payload.mod == mod.id and payload.key == FRONT_SHAPE_KEY then
       setFrontShape(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == TOP_DOME_KEY then
+      setTopDome(payload.value)
     end
   end)
 end
@@ -2226,6 +2340,7 @@ local function voxelMesh(def, frame)
   local groundShade = groundShadeValue or readGroundShade()
   local topEdge = topEdgeValue or readTopEdge()
   local frontShape = frontShapeValue or readFrontShape()
+  local topDome = topDomeValue or readTopDome()
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then
@@ -2235,12 +2350,12 @@ local function voxelMesh(def, frame)
   end
   local baseName = spriteBaseName(def and def.image)
   local key = cacheKey(def, frame, depth, correction, m, sideColor, shape,
-    groundShade, topEdge, frontShape)
+    groundShade, topEdge, frontShape, topDome)
   if meshes[key] ~= nil then
     touchMeshKey(key)
   else
     local ok, mesh = pcall(buildSelectedMesh, def, frame, depth, correction,
-      m, sideColor, shape, groundShade, baseName, topEdge, frontShape)
+      m, sideColor, shape, groundShade, baseName, topEdge, frontShape, topDome)
     if ok and mesh then
       meshFailureReasons[key] = nil
     else

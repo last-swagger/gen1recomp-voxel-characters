@@ -49,6 +49,48 @@ the direction is named in the entry their contribution landed in.
   `FRONT SHAPE` in the options menu changes what is on screen immediately
   instead of waiting on an unrelated cache invalidation.
 
+- **`TOP DOME: OFF / LOW / HIGH` steps the SLAB top face into shade toward
+  each run's edges, for a domed cap instead of a flat one.** At a typical
+  overworld camera angle the top face is a quarter of the pixels the player
+  sees, and it carries no art at all: it is colored by a body color search
+  and comes out flat. The side faces never contribute at this angle (the
+  card's tilt is a rotation around X, and a rotation around X exposes no
+  face whose normal is in X). The top face is therefore the one invented
+  surface left worth the effort, and it already comes out as one quad per
+  pixel, so shading it by position inside its run costs zero extra geometry.
+  As with `FRONT SHAPE`, a continuous gradient was tried first and read as a
+  bright stripe floating over the art; this steps the shade into a fixed
+  number of constant tones instead, quantized the same way the source art
+  already implies volume.
+
+  Each horizontal top run picks a shade per pixel from that pixel's distance
+  to the run's own edges, mirrored around the run's own center, the same
+  mechanism `FRONT SHAPE` uses on the front face. The center and half width
+  are both relative to the run's own bounds, never to an absolute screen
+  coordinate, so a mirrored character keeps a mirrored shade with no east or
+  west special case. Runs under 3 pixels wide have no middle pixel to
+  distinguish from either edge, so nothing splits there. `TOP EDGE` and
+  `TOP DOME` both shade the same face without stepping on each other: `TOP
+  DOME` steps the base shade `TOP EDGE` already produced, never replaces it,
+  so turning one on never cancels the other.
+
+  Default is OFF. LOW and HIGH are the two strengths measured against the
+  silhouette gate: IoU 1.000 against the flat card at pitch 0 on `red`,
+  `blue`, `snorlax`, `poke_ball` and `nurse`, frames 0 through 5, with the
+  quad count identical to the option off at every strength, unlike `FRONT
+  SHAPE`, which does add quads when it steps a front run: the top face was
+  already emitted per pixel before this option existed, so there was never a
+  run to split. Flicker between the standing and walking pose, the risk this
+  measurement was meant to catch, did not appear: the outline width changes
+  between poses mostly in the legs, which produce almost no top face, and
+  the top faces concentrate on the head, which stays 95% stable between
+  poses.
+
+  The mesh cache key now carries the selected strength, the same fix `FRONT
+  SHAPE` needed: without it, switching `TOP DOME` in the options menu would
+  change nothing on screen until an unrelated cache eviction happened to
+  clear the old mesh.
+
 ## [1.5.0] - 2026-08-08
 
 ### Added
