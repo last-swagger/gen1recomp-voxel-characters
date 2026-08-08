@@ -67,6 +67,7 @@ local opts = {
   blinkscan = "",
   selftest = "",
   topedge = "",
+  opt = "",
 }
 
 local function parseArgs(argv)
@@ -246,12 +247,30 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
   package.loaded["src.render.Assets"] = nil
   package.loaded["src.mods.Semver"] = nil
   local handle = makeVoxelHandle(imageData)
-  local mod = makeMod(handle, {
+  local stored = {
     depth = depth, shape = shape, side_color = sideColor,
     ground_shade = opts.ground ~= "" and opts.ground or nil,
     blink = opts.blink ~= "" and "on" or nil,
     top_edge = opts.topedge ~= "" and opts.topedge or nil,
-  })
+  }
+  -- Passagem generica de opcao do mod: `opt=chave:valor,chave:valor`.
+  --
+  -- Antes disto, cada opcao nova do mod exigia editar este arquivo, e uma
+  -- rodada de implementacao ficou sem medicao visual justamente porque a
+  -- opcao nova nao tinha como chegar aqui e o implementador estava proibido
+  -- de mexer na regua. Ferramenta que precisa ser editada a cada feature nao
+  -- e ferramenta, e degrau.
+  --
+  -- Valor numerico e convertido, porque o mod guarda algumas opcoes como
+  -- numero e outras como string (FRONT_SHAPE_VALUES = { "off", 0.12, ... }) e
+  -- passar "0.12" onde ele espera 0.12 cai no default sem avisar.
+  for par in tostring(opts.opt):gmatch("[^,]+") do
+    local chave, valor = par:match("^%s*([%w_]+)%s*:%s*(.-)%s*$")
+    if chave then
+      stored[chave] = tonumber(valor) or valor
+    end
+  end
+  local mod = makeMod(handle, stored)
   local chunk = assert(loadfile(MAIN_PATH))
   chunk(mod)
   local SpriteBillboards = handle.exports.lib.require("SpriteBillboards")
