@@ -1,7 +1,7 @@
 {
   "id": "voxel_characters",
   "name": "Voxel Characters",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "api": 2,
   "entry": "main.lua",
   "game_version": "0.0.0-dev || >=0.1.51 <2.0.0",
@@ -9,11 +9,16 @@
   "category": "GRAPHICS",
   "priority": 150,
   "dependencies": [],
-  "optional_dependencies": ["BATTLE_ART_VOXEL_FORK", "DRAMATIC_SHAPE"],
+  "optional_dependencies": [
+    "BATTLE_ART_VOXEL_FORK",
+    "DRAMALESS_SHAPE",
+    "DRAMATIC_SHAPE"
+  ],
   "conflicts": [],
   "permissions": [
     "engine_internals"
   ],
   "affects_link": false,
-  "description": "Extrudes overworld character sprites into voxel-thick slabs when Battle Art Voxel Fork or Dramatic Shape Voxel Mod is active."
+  "description": "Extrudes overworld character sprites into voxel-thick slabs when a supported Dramatic Shape lineage is active.",
+  "github": "last-swagger/gen1recomp-voxel-characters"
 }

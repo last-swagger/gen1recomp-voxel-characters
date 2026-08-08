@@ -1,15 +1,16 @@
 # Voxel Characters
 
-Gives the overworld cast real thickness when the
-[Battle Art Voxel Fork](https://github.com/absol89/DramaticShapeVoxelMod)
-or legacy Dramatic Shape Voxel Mod is running.
+Gives the overworld cast real thickness when a Dramatic Shape Voxel Mod
+lineage is running.
 
 The voxel world is 3D, but every person in it is a flat sprite card. This mod
 extrudes those sprites into voxel slabs built from their own pixels, so the cast
 reads as part of the diorama instead of standing in it like cardboard.
 
-It is a companion mod. It does not modify the Voxel Mod, it ships no art, and
-turning it off restores the original card on the next frame.
+It is a companion mod. It does not contain, redistribute, or derive code from
+any voxel mod. It calls the host's exported API at runtime, on the player's
+own machine; it does not modify the Voxel Mod, it ships no art, and turning
+it off restores the original card on the next frame.
 
 ## Install
 
@@ -20,23 +21,40 @@ turning it off restores the original card on the next frame.
 ## Requirements
 
 - gen1recomp `0.1.51` or newer
-- Battle Art Voxel Fork `>=1.7.0 <2.0.0`, mod id `BATTLE_ART_VOXEL_FORK`
-- Legacy Dramatic Shape Voxel Mod `1.5.0` through `1.x`, mod id
-  `DRAMATIC_SHAPE`
+- One of these host mod ids, exporting `Voxel3D`, `ImageCache` and
+  `SpriteBillboards` with a working `SpriteBillboards.mesh`:
+  - `DRAMATIC_SHAPE`, the original Dramatic Shape Voxel Mod by DramaticShape
+  - `BATTLE_ART_VOXEL_FORK`, the fork by absol89
+  - `DRAMALESS_SHAPE`, the fork by artyrambles
 
-The fork is the reference host and is preferred if both host ids are installed.
-Its tags are not monotonic semver by release date: `1.7.6` is the newest by
-date, while `v1.68` parses as `1.68.0` and compares higher, so both are inside
-the supported fork range.
-Without a supported host installed, or with a version outside the host's range,
-this mod loads, logs one line, and does nothing at all. The options row does
-not even appear. It never breaks a game it cannot support.
+This mod accepts a host by what it can do, not by its version number. It
+probes the host's exported API for the three modules above; a host that
+answers with all three, and whose `SpriteBillboards.mesh` is a function, is
+accepted. The reported version is logged either way and only earns a warning
+when it falls outside the range this mod has been tested against; it never
+blocks an accepted host. That matters because the host lineages version
+independently and inconsistently, sometimes with a suffix a version parser
+cannot read, sometimes with a manifest that reports one number while its own
+code reports another, so a hard version gate kept rejecting hosts whose API
+was intact and working.
+
+If more than one of these host ids is installed at once, the first one found
+in the list above is used. That is deterministic order for breaking a tie,
+not a ranking of the hosts, and none of them is treated as more official or
+more supported than another.
+
+Without any of these hosts installed, this mod loads, logs one line
+explaining what it looked for, and does nothing else. Open **OPTIONS** and it
+still shows a single `STATUS: NO HOST` row, so the mod being present and idle
+is visible instead of silent. See Options below for what `STATUS` reports
+once a host is found.
 
 ## Options
 
-Six rows, under **OPTIONS**:
+Seven rows, under **OPTIONS**:
 
 ```
+STATUS:        read only, see below
 VOXEL CHARS:   OFF / 1 / 2 / 3 / 5 / 10
 SIDE COLOR:    BODY / OUTLINE
 SHAPE:         SLAB / CARVED / CARVED+
@@ -44,6 +62,25 @@ GROUND SHADE:  OFF / ON
 BLINK:         OFF / ON
 TOP EDGE:      OFF / ON
 ```
+
+`STATUS` is read only and recomputed live every time the menu opens, never
+cached. With no host it reads **NO HOST**. With a host patched, it reads one
+of:
+
+- **ACTIVE**, drawing voxel characters normally.
+- **FIRST PERSON**, intentional: a solid does not inherit the flat card's
+  cylindrical billboard contract in first person, so this mod returns the
+  original card on purpose while the camera is there. Not a defect.
+- **REPLACED**, another mod swapped `SpriteBillboards.mesh` after this one
+  had already patched it, so this mod's version is no longer active.
+- **MASK ERROR**, **BUILD ERROR** or **DRAW ERROR**, when half or more of
+  the last 8 sprite draws failed to voxelize, tracked as a proportion over
+  that sliding window rather than a run of failures in a row, so a sprite
+  that fails every other frame still escalates even though it never fails
+  twice in a row. The label names whichever kind of failure is most common
+  across that window, not just the most recent one. A single bad sprite
+  among many working ones does not trigger this. The underlying error for
+  each distinct cause is written to the log once.
 
 `VOXEL CHARS` controls slab thickness in voxels. Default is **3**.
 
@@ -95,18 +132,23 @@ sprite sheets.
 solid mesh. Default is **OFF**. It is meant only to plant the character on the
 floor, not to add full ambient occlusion across the body.
 
-`BLINK` swaps known front-facing eye texels to nearby skin texels for a short
+`BLINK` swaps known eye texels to nearby skin texels for a short
 closed-eye frame. Default is **OFF**, so enabling the mod does not impose a new
-visual change beyond the selected shape and thickness. Blink only applies to
-the standing front SLAB frame, with a verified eye entry and a safe nearby body
-texel. Walking frames, sheets with no entry, object sheets, and eyes that cannot
-find body color within 4 pixels stay open.
+visual change beyond the selected shape and thickness. Blink applies to SLAB
+front and side frames, standing or walking, with a verified eye entry and a
+safe nearby body texel. The walking pose is not a fixed exception: it blinks
+whenever that sheet's eye mark, taken from the standing frame and shifted by
+the same pose offset SLAB uses for its side, top and bottom faces, still
+lands on the same tone in the walking frame. If it does not, that sheet
+stays open in that pose, never half closed, the same way sheets with no eye
+entry or a color match that cannot be found within 4 pixels stay open. Back
+frames stay open on every sheet; there is no confirmed back eye mark.
 
-`TOP EDGE` darkens only exposed **SLAB** top faces. Default is **OFF**. When
-enabled, those faces use shade `0.82` instead of the host-matching `1.00`, which
-can read as a false top-down edge on hats and hair. The trade-off is deliberate:
-with it ON, the character's upward faces no longer match a world wall using
-`+Y up = 1.00`.
+`TOP EDGE` darkens only exposed **SLAB** top faces. Default is **ON**. With
+`SIDE COLOR: BODY`, **OFF** is not the neutral state on every sprite: a top face
+can sample body color below the top outline and draw a bright cap above a dark
+contour. ON keeps that top contour reading as an edge. Players can still turn
+it OFF when they want the host-matching `+Y up = 1.00` shade on character tops.
 
 The carved modes do not merge horizontal runs yet. On `red.png` frame 0, **SLAB**
 now builds 104 quads: the exposed top and bottom faces are 16 quads each instead
@@ -173,7 +215,7 @@ The host Voxel Mod exports its internal namespace, and its own test drivers use
 that door (`tests/bike_shop_shots.lua`). This mod goes in the same way:
 
 ```lua
-local host = first host whose exports.lib and version range are supported
+local host = first host whose exports.lib probes for the required modules
 host.exports.lib                         -- the V namespace
   → V.require("SpriteBillboards")         -- the cached module table
   → replace the .mesh field               -- VoxelScene calls it by field
@@ -197,12 +239,23 @@ horizontal runs. Top and bottom are emitted per pixel so `SIDE COLOR: BODY` can
 search vertically for a nearby body texel even when a horizontal run mixes body
 and outline pixels.
 
-When `BLINK` is available for a SLAB sheet, verified front-facing eye pixels are
-split out of the merged front run as their own quads even while blinking is
-disabled. That keeps the cached mesh topology identical in both eye states.
-Blinking then mutates only those vertices' UVs in place, from the eye texel to a
+When `BLINK` is available for a SLAB sheet, verified eye pixels are split out
+of the merged front run as their own quads even while blinking is disabled.
+That keeps the cached mesh topology identical in both eye states. Blinking
+then mutates only those vertices' UVs in place, from the eye texel to a
 nearby body-color texel found by the same 4 pixel body search used by
 `SIDE COLOR: BODY`. Time is never part of the mesh cache key.
+
+On a walking frame, the eye mark used is the standing frame's mark moved by
+that sheet's `poseOffset` between the two frames, and it is only split out
+as its own quad if the tone at that moved coordinate in the walking frame
+still matches the tone at the mark's own coordinate in the standing frame.
+This is decided once per sheet per pose at mesh build time from the sheet's
+own pixels, never from a fixed frame list, so a redrawn head simply stays
+open in that pose instead of blinking over the wrong texel. Frame and base
+name are already part of the mesh cache key, so a walking pose's eye state
+can never leak into the standing pose's cached mesh or the other way
+around.
 
 In **CARVED**, each pose uses the front, back and side frames as orthographic
 silhouettes. A voxel is solid only when all three views agree. The back view is
@@ -258,11 +311,14 @@ entry LRU, so cycling through the VOXEL ladder cannot flood memory.
 
 If another mod has already replaced `SpriteBillboards.mesh`, this one chains over
 it and logs a warning. If another mod replaces it afterwards there is no host
-hook to negotiate order, so that conflict can only be diagnosed from load order.
+hook to negotiate order, but `STATUS` now reads `REPLACED` in that case, so the
+conflict does not have to be diagnosed from load order alone.
 
-Every failure path falls back to the original card: an unsupported version, a
-sheet whose layout cannot be derived without guessing, a mesh that fails to
-build. The worst case is flat characters, never a broken game.
+Every failure path falls back to the original card: a host that fails the
+capability probe, a sheet whose layout cannot be derived without guessing, a
+mesh that fails to build, an unexpected exception in the mesh call itself.
+The worst case is flat characters, never a broken game, and `STATUS` now
+names which of those paths is happening instead of leaving it silent.
 
 ## Tests
 
@@ -270,21 +326,36 @@ build. The worst case is flat characters, never a broken game.
 luajit mods/voxel_characters/tests/voxel_chars_test.lua
 ```
 
-190 assertions covering host detection, version guards, the options rows and
-their persistence, slab geometry and vertex format, carved visual-hull surface
-faces, per-frame silhouette projection, absolute role position, depth-axis
-orientation, three-frame carve sheets, carve fallback, pitch bucketing, cache
-keying and LRU eviction, side-face, top-face and bottom-face color selection,
-three-view carving, face shade values, ground contact shading, top-edge shading,
-hidden SLAB top and bottom face culling, CARVED+ relief direction and
-thin-sprite depth limits.
+265 assertions covering the host capability probe and its fallback to a
+named log reason, the `STATUS` row and its patch and draw-result states, the
+options rows and their persistence, slab geometry and vertex format, carved
+visual-hull surface faces, per-frame silhouette projection, absolute role
+position, depth-axis orientation, pose-offset color compensation between
+walking and standing frames in both SLAB and CARVED, three-frame carve
+sheets, carve fallback, pitch bucketing, cache keying and LRU eviction,
+side-face, top-face and bottom-face color selection, three-view carving,
+face shade values, ground contact shading, top-edge shading, blink gating
+including the walking-pose eye transfer check against both synthetic sheets
+and lorelei's own art, hidden SLAB top and bottom face culling, CARVED+
+relief direction, thin-sprite depth limits, and the wrapper that keeps a
+misbehaving host or entity mod from taking down voxel rendering for the
+whole session.
 
 ## Credits
 
-Built on the Battle Art Voxel Fork by absol89, the legacy Dramatic Shape Voxel
-Mod by DramaticShape, and
-[gen1recomp](https://github.com/bryanthaboi/gen1recomp) by bryanthaboi.
+This mod is possible because the Dramatic Shape Voxel Mod lineage exports a
+namespace this mod can call into at runtime. The Dramatic Shape Voxel Mod,
+by DramaticShape, is the original of that lineage. This mod also accepts
+two forks of it as equally usable hosts: the Battle Art Voxel Fork by
+absol89, and the Dramaless Shape Voxel Mod by artyrambles. None of the
+three is treated as more official than another; see Requirements for how a
+host is chosen when more than one is installed.
 
-The per-pixel voxelization follows the approach their own `Structures.lua` already
-uses for props, and the face shading table matches theirs so the cast lights the
-same way as the world around it.
+Also built on [gen1recomp](https://github.com/bryanthaboi/gen1recomp) by
+bryanthaboi.
+
+This mod contains no code from any of the above. It calls their exported
+API at runtime, on the player's own machine. The per-pixel voxelization
+follows the approach their own `Structures.lua` uses for props, and the
+face shading table matches theirs so the cast lights the same way as the
+world around it.

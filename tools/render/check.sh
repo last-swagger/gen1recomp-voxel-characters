@@ -41,10 +41,34 @@ for fr in 1 2 3 4 5; do
   [ "$R" = "IoU 1.000" ] || FAIL=1
 done
 
-# 2c. Piscar vale no frame parado e NAO vale nos de caminhada.
-R=$($LOVE $H sprite=red shapes=slab frames=3 yaws=0 rungs=75 cell=140 \
-    blink=on blinkscan=1 out=chk_b3.png 2>&1 | grep BLINKSCAN)
-say "piscar NAO dispara no frame 3" "$R"
+# 2c. O contrato da piscada mudou na v1.4.2 e a regua tinha ficado velha: ela
+#     ainda afirmava "nao pisca andando", que era o comportamento da v1.4.1.
+#     Agora a pose andando pisca SE o texel do olho transferir da pose parada
+#     sob o deslocamento do passo, medido folha a folha. Trocar a assercao por
+#     uma mais frouxa seria racionalizar um gate vermelho, entao ela ficou mais
+#     APERTADA: testa os dois lados da regra, e os dois lados vem de medicao.
+#
+#     red transfere nas duas poses de caminhada (frames 3 e 5). girl NAO
+#     transfere de frente: a cabeca dela e redesenhada entre as poses, e nesse
+#     caso a folha inteira tem que ficar de olho aberto. Se um dia a regra
+#     quebrar para o lado permissivo, e a girl que pega, e ela e a folha que
+#     representa o defeito que fez a v1.4.1 ser revertida: fechar o olho em
+#     cima de pele.
+for fr in 3 5; do
+  R=$($LOVE $H sprite=red shapes=slab frames=$fr yaws=0 rungs=75 cell=140 \
+      blink=on blinkscan=1 out=chk_b$fr.png 2>&1 | grep BLINKSCAN)
+  say "red pisca andando, frame $fr" "$R"
+  echo "$R" | grep -q "fecha em" || FAIL=1
+done
+
+R=$($LOVE $H sprite=girl shapes=slab frames=3 yaws=0 rungs=75 cell=140 \
+    blink=on blinkscan=1 out=chk_bgirl.png 2>&1 | grep BLINKSCAN)
+say "girl NAO pisca andando, olho nao transfere" "$R"
+echo "$R" | grep -q "nao fecha" || FAIL=1
+
+R=$($LOVE $H sprite=red shapes=slab frames=1 yaws=0 rungs=75 cell=140 \
+    blink=on blinkscan=1 out=chk_b1.png 2>&1 | grep BLINKSCAN)
+say "frame 1 de costas NAO pisca" "$R"
 echo "$R" | grep -q "nao fecha" || FAIL=1
 
 # 3. A piscada acontece. A janela e de 0,12 s num periodo de segundos, entao

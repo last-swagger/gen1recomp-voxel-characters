@@ -17,7 +17,13 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local ROOT = "./"
-local MAIN_PATH = ROOT .. "mods/voxel_characters/main.lua"
+-- Por padrao mede o mod da arvore de trabalho, mas aceita apontar para outro
+-- arquivo por VOXEL_CHARS_MAIN. Isso existe para poder renderizar o ANTES de
+-- verdade a partir de uma tag ja lancada (`git show v1.4.1:main.lua > /tmp/x`)
+-- em vez de ilustrar de memoria o que uma correcao mudou: comparativo de
+-- release e afirmacao publica, e afirmacao publica precisa de medicao.
+local MAIN_PATH = os.getenv("VOXEL_CHARS_MAIN")
+  or (ROOT .. "mods/voxel_characters/main.lua")
 local SPRITE_DIR = "assets/generated/sprites/"
 -- Sobrescrito por `spritedir=`, para uma folha candidata poder ser renderizada
 -- lado a lado com a original sem escrever nada no cache do jogador.
@@ -60,6 +66,7 @@ local opts = {
   blinktime = "",
   blinkscan = "",
   selftest = "",
+  topedge = "",
 }
 
 local function parseArgs(argv)
@@ -243,6 +250,7 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
     depth = depth, shape = shape, side_color = sideColor,
     ground_shade = opts.ground ~= "" and opts.ground or nil,
     blink = opts.blink ~= "" and "on" or nil,
+    top_edge = opts.topedge ~= "" and opts.topedge or nil,
   })
   local chunk = assert(loadfile(MAIN_PATH))
   chunk(mod)
@@ -780,9 +788,17 @@ uniform vec3 pal3;
 // pass paints flat identity colours. Alpha discard still runs, so the
 // silhouette of the provenance pass matches the visible one exactly.
 uniform float provenance;
+// Quando ligado, vShade carrega a celula de origem da face de topo,
+// codificada como (lx + ly*16)/255, e o passe pinta isso em cinza. Serve para
+// separar "a cor mudou" de "a superficie mudou de dono" entre duas poses.
+uniform float cellid;
 vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   vec4 t = Texel(tex, tc);
   if (t.a < 0.5) discard;
+  if (cellid > 0.5) {
+    if (vShade < 0.0) discard;
+    return vec4(vShade, vShade, vShade, 1.0);
+  }
   if (provenance > 0.5) {
     int k = int(vShade + 0.5);
     if (k == 1) return vec4(0.0, 1.0, 0.0, 1.0);  // front, original art
@@ -1028,7 +1044,7 @@ function love.load(argv)
     #rows * #yaws, quads, width, height))
 end
 
-local function drawCell(row, yaw, x, y, size, asProvenance)
+local function drawCell(row, yaw, x, y, size, asProvenance, asCellId)
   if not row.mesh then return end
   local b = bounds(row.mesh.verts)
   -- Pivot on the sprite CELL, and on z = 0, the plane the flat card occupies.
@@ -1086,6 +1102,24 @@ local function drawCell(row, yaw, x, y, size, asProvenance)
       print(string.format("AO em %d vertices  media %.3f  minimo %.3f",
         n, sum / n, minf))
       print("  distribuicao  " .. table.concat(parts, "  "))
+    end
+  end
+  if asCellId then
+    local cellBottom = (row.cellH or 16) - 1
+    for i = 1, #row.mesh.verts, 4 do
+      local kind = row.kinds[(i - 1) / 4 + 1]
+      local val = -1
+      if kind == "top" then
+        local q = row.mesh.verts
+        local minX = math.min(q[i][1], q[i+1][1], q[i+2][1], q[i+3][1])
+        local qy = q[i][2]
+        local lx = math.floor(minX + 0.001)
+        local ly = cellBottom + 1 - math.floor(qy + 0.001)
+        if lx >= 0 and lx < 16 and ly >= 0 and ly < 16 then
+          val = (lx + ly * 16) / 255
+        end
+      end
+      for j = 0, 3 do verts[i + j][6] = val end
     end
   end
   if asProvenance then
@@ -1272,6 +1306,95 @@ local function computeMetrics(screen)
           print(string.format("  %-11s yaw %2d   preto total %.1f%%   (%s)",
             row.shape, yawDeg, darkAll / totAll * 100,
             table.concat(parts, "  ")))
+        end
+      end
+    end
+  end
+
+  -- Identidade da celula que gerou cada pixel de topo. Separa "a cor mudou"
+  -- de "a superficie mudou de dono", que sao defeitos diferentes.
+  if screen and #state.rows > 1 then
+    local cbuf = love.graphics.newCanvas(w, h)
+    local cdep = love.graphics.newCanvas(w, h, { format = "depth24", readable = false })
+    love.graphics.setCanvas({ cbuf, depthstencil = cdep })
+    love.graphics.clear(0, 0, 0, 0, true, true)
+    love.graphics.setDepthMode("less", true)
+    love.graphics.setShader(state.shader)
+    state.shader:send("cellid", 1)
+    for r, row in ipairs(state.rows) do
+      local y = (r - 1) * (cell + labelH) + labelH
+      for c, yawDeg in ipairs(state.yaws) do
+        drawCell(row, math.rad(yawDeg), (c - 1) * cell, y, cell, false, true)
+      end
+    end
+    state.shader:send("cellid", 0)
+    love.graphics.setShader()
+    love.graphics.setDepthMode("always", false)
+    love.graphics.setCanvas()
+    local cimg = cbuf:newImageData()
+    print("")
+    print("origem da face de topo, linha 1 contra as outras")
+    local y1 = labelH
+    for r = 2, #state.rows do
+      local row = state.rows[r]
+      local yR = (r - 1) * (cell + labelH) + labelH
+      for c, yawDeg in ipairs(state.yaws) do
+        local x0 = (c - 1) * cell
+        local both, sameCell, diffCell = 0, 0, 0
+        for y = 0, cell - 1 do
+          for x = 0, cell - 1 do
+            local _, _, _, a1 = cimg:getPixel(x0 + x, y1 + y)
+            local _, _, _, a2 = cimg:getPixel(x0 + x, yR + y)
+            if a1 >= 0.5 and a2 >= 0.5 then
+              both = both + 1
+              local v1 = select(1, cimg:getPixel(x0 + x, y1 + y))
+              local v2 = select(1, cimg:getPixel(x0 + x, yR + y))
+              if math.abs(v1 - v2) < 0.002 then sameCell = sameCell + 1
+              else diffCell = diffCell + 1 end
+            end
+          end
+        end
+        if both > 0 then
+          print(string.format(
+            "  f%d yaw %2d   topo em ambas %5d   mesma celula %5d   celula diferente %5d (%.1f%%)",
+            row.frame, yawDeg, both, sameCell, diffCell, diffCell / both * 100))
+        end
+      end
+    end
+    cbuf:release(); cdep:release()
+  end
+
+  -- Estabilidade de cor da face de topo entre poses. O report do Angelus e
+  -- "o topo da cabeca pisca enquanto anda": se a MESMA posicao de tela for
+  -- face de topo em duas poses e a cor mudar, isso e o piscar, medido.
+  if screen and #state.rows > 1 then
+    print("")
+    print("cor da face de topo na mesma posicao, linha 1 contra as outras")
+    local y1 = labelH
+    for r = 2, #state.rows do
+      local row = state.rows[r]
+      local yR = (r - 1) * (cell + labelH) + labelH
+      for c, yawDeg in ipairs(state.yaws) do
+        local x0 = (c - 1) * cell
+        local both, differ = 0, 0
+        for y = 0, cell - 1 do
+          for x = 0, cell - 1 do
+            local k1 = kindAt(img:getPixel(x0 + x, y1 + y))
+            local k2 = kindAt(img:getPixel(x0 + x, yR + y))
+            if k1 == "top" and k2 == "top" then
+              both = both + 1
+              local a1, b1, c1 = screen:getPixel(x0 + x, y1 + y)
+              local a2, b2, c2 = screen:getPixel(x0 + x, yR + y)
+              if math.abs(a1 - a2) + math.abs(b1 - b2) + math.abs(c1 - c2) > 0.06 then
+                differ = differ + 1
+              end
+            end
+          end
+        end
+        if both > 0 then
+          print(string.format(
+            "  %-11s f%d yaw %2d   topo em ambas %5d   cor diferente %5d  (%.1f%%)",
+            row.shape, row.frame, yawDeg, both, differ, differ / both * 100))
         end
       end
     end

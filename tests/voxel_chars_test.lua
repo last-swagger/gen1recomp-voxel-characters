@@ -17,6 +17,33 @@ local function readJson(path)
   return doc
 end
 
+-- v1.4.2, pente fino (item 5): trava do snapshot de pixels da lorelei. O
+-- teste real de arte abaixo nao le assets/generated/sprites/lorelei.png em
+-- tempo de execucao (nao ha decodificador PNG disponivel dentro do luajit
+-- puro, so dentro do love real), entao os pixels foram extraidos uma vez e
+-- viraram paint() fixos. Sem trava, se a arte for redesenhada a suite
+-- continua verde contra pixels velhos e a marca de olho pode passar a
+-- fechar sobre pele sem nenhum teste pegando, o defeito da v1.4.1 de
+-- volta. FNV-1a em vez de sha256 porque nao precisa de biblioteca de
+-- criptografia, so bit.bxor (LuaJIT builtin) e leitura de arquivo; e um
+-- checksum de integridade, nao seguranca, entao a colisao teorica nao
+-- importa aqui. Se este check falhar, a arte mudou: rode
+-- tools/render (real, com PNG de verdade) pra reextrair os pixels e
+-- atualize tanto o snapshot quanto este numero.
+local function fnv1aFile(path)
+  local f = io.open(path, "rb")
+  if not f then return nil end
+  local data = f:read("*a")
+  f:close()
+  local bit = require("bit")
+  local hash = 2166136261
+  for i = 1, #data do
+    hash = bit.bxor(hash, data:byte(i))
+    hash = (hash * 16777619) % 4294967296
+  end
+  return hash
+end
+
 local function resetLoaded()
   package.loaded["src.render.Assets"] = nil
   package.loaded["src.mods.Semver"] = nil
@@ -430,6 +457,55 @@ local function paintBlinkFace(pixels, sheetW, cellW, frame)
   paint(pixels, sheetW, cellW, frame, 9, 8, skin)
 end
 
+local function paintBlinkSide(pixels, sheetW, cellW, frame)
+  local skin = rgba(0.80, 0.55, 0.40, 1)
+  local eye = rgba(0.05, 0.05, 0.05, 1)
+  for lx = 4, 8 do paint(pixels, sheetW, cellW, frame, lx, 7, skin) end
+  paint(pixels, sheetW, cellW, frame, 5, 7, eye)
+  paint(pixels, sheetW, cellW, frame, 5, 8, skin)
+end
+
+-- v1.4.2: mesma folha de paintBlinkFace, descida `dy` linhas, para simular
+-- o passo da caminhada (frame 3 = frame 0 descido uma linha na arte real).
+local function paintBlinkFaceShifted(pixels, sheetW, cellW, frame, dy)
+  local skin = rgba(0.80, 0.55, 0.40, 1)
+  local eye = rgba(0.05, 0.05, 0.05, 1)
+  for lx = 5, 10 do paint(pixels, sheetW, cellW, frame, lx, 7 + dy, skin) end
+  paint(pixels, sheetW, cellW, frame, 6, 7 + dy, eye)
+  paint(pixels, sheetW, cellW, frame, 9, 7 + dy, eye)
+  paint(pixels, sheetW, cellW, frame, 6, 8 + dy, skin)
+  paint(pixels, sheetW, cellW, frame, 9, 8 + dy, skin)
+end
+
+-- v1.4.2: mesma silhueta (mesma opacidade, mesmas celulas) de
+-- paintBlinkFaceShifted, mas sem nenhum pixel de tom de olho: simula uma
+-- cabeca redesenhada de verdade, onde poseOffset ainda acha o deslocamento
+-- certo (a silhueta bate) mas a marca de olho nao transfere porque o tom
+-- mudou.
+local function paintBlinkFaceRedrawn(pixels, sheetW, cellW, frame, dy)
+  local skin = rgba(0.95, 0.70, 0.55, 1)
+  for lx = 5, 10 do paint(pixels, sheetW, cellW, frame, lx, 7 + dy, skin) end
+  paint(pixels, sheetW, cellW, frame, 6, 7 + dy, skin)
+  paint(pixels, sheetW, cellW, frame, 9, 7 + dy, skin)
+  paint(pixels, sheetW, cellW, frame, 6, 8 + dy, skin)
+  paint(pixels, sheetW, cellW, frame, 9, 8 + dy, skin)
+end
+
+local function paintBlinkSideShifted(pixels, sheetW, cellW, frame, dy)
+  local skin = rgba(0.80, 0.55, 0.40, 1)
+  local eye = rgba(0.05, 0.05, 0.05, 1)
+  for lx = 4, 8 do paint(pixels, sheetW, cellW, frame, lx, 7 + dy, skin) end
+  paint(pixels, sheetW, cellW, frame, 5, 7 + dy, eye)
+  paint(pixels, sheetW, cellW, frame, 5, 8 + dy, skin)
+end
+
+local function paintBlinkSideRedrawn(pixels, sheetW, cellW, frame, dy)
+  local skin = rgba(0.95, 0.70, 0.55, 1)
+  for lx = 4, 8 do paint(pixels, sheetW, cellW, frame, lx, 7 + dy, skin) end
+  paint(pixels, sheetW, cellW, frame, 5, 7 + dy, skin)
+  paint(pixels, sheetW, cellW, frame, 5, 8 + dy, skin)
+end
+
 local function fakeMesh(verts, map)
   return {
     verts = verts,
@@ -563,73 +639,290 @@ local function loadWith(mod)
   return mod
 end
 
+-- v1.4.2: le o valor atual da row de STATUS, recalculado toda vez (nunca
+-- cacheado), do mesmo jeito que o menu de opcoes leria.
+local function statusRowValue(mod)
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  for _, row in ipairs(rows) do
+    if row.label == "STATUS" then return row.value() end
+  end
+end
+
 do
   local manifest = readJson(MANIFEST_PATH)
   local seen = {}
   for _, id in ipairs(manifest.optional_dependencies or {}) do seen[id] = true end
-  check(seen.BATTLE_ART_VOXEL_FORK and seen.DRAMATIC_SHAPE,
-        "optional_dependencies lista os dois ids")
+  check(seen.BATTLE_ART_VOXEL_FORK and seen.DRAMALESS_SHAPE
+        and seen.DRAMATIC_SHAPE,
+        "optional_dependencies lista os tres ids")
 end
 
+-- v1.4.2: decidir por capacidade, nao por numero de versao. Media de Kim
+-- antes desta mudanca: "banana" (versao ilegivel) era ACEITO e "1.3.1"
+-- (versao legivel, mas fora da faixa, com a API inteira presente) era
+-- RECUSADO. Os testes abaixo trocam de lugar essa inversao.
+
 do
+  -- host com versao fora da faixa e API inteira e aceito, com aviso. Testa
+  -- o proprio numero que Kim mediu (1.3.1 contra a faixa >=1.7.0 <2.0.0).
   local pixels = {}
   pixels[0] = 1
-  local handle, modules, original = makeVoxelHandle("2.0.0", pixels, 16, 16)
+  local handle, modules, original = makeVoxelHandle("1.3.1", pixels, 16, 16,
+    nil, nil, nil, nil, "BATTLE_ART_VOXEL_FORK")
   local mod = loadWith(makeMod(handle))
-  local SpriteBillboards = handle.exports.lib.require("SpriteBillboards")
-  eq(SpriteBillboards.mesh, original, "versao fora da faixa preserva original")
-  eq(mod._rows["ui.options.rows"], nil, "row nao aparece sem patch suportado")
+  check(modules.SpriteBillboards.mesh ~= original,
+        "host com versao fora da faixa e API inteira e aceito")
+  check(mod._rows["ui.options.rows"] ~= nil,
+        "row aparece mesmo com versao fora da faixa")
   check(mod._logs.warn[1]
-        and mod._logs.warn[1]:find("outside supported range", 1, true),
+        and mod._logs.warn[1]:find("untested version", 1, true)
+        and mod._logs.warn[1]:find("BATTLE_ART_VOXEL_FORK", 1, true),
         "versao fora da faixa avisa no log")
 end
 
 do
+  -- host com versao impossivel de ler e API inteira e aceito. Este e o
+  -- teste que representa o report do Angelus (host DRAMALESS_SHAPE 1.6.2.ST).
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("1.6.2.ST", pixels, 16, 16,
+    nil, nil, nil, nil, "DRAMALESS_SHAPE")
+  local mod = loadWith(makeMod(handle))
+  check(modules.SpriteBillboards.mesh ~= original,
+        "versao ilegivel e aceita com aviso")
+  check(mod._logs.warn[1]
+        and mod._logs.warn[1]:find("untested version", 1, true)
+        and mod._logs.warn[1]:find("unparsable version", 1, true)
+        and mod._logs.warn[1]:find("DRAMALESS_SHAPE", 1, true),
+        "versao ilegivel loga aviso")
+end
+
+do
+  -- sem host: a row de STATUS aparece dizendo NO HOST (em vez do vazio de
+  -- antes, que fez o Colonel_Aureliano perder vinte minutos numa
+  -- reinstalacao limpa e o Angelus achar que era o Wilds of Kanto).
   local mod = loadWith(makeMod(nil))
-  eq(mod._rows["ui.options.rows"], nil, "row nao aparece sem Dramatic Shape")
+  check(mod._rows["ui.options.rows"] ~= nil,
+        "row de STATUS aparece mesmo sem host suportado")
+  local rows = {}
+  local out = mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  eq(#out, 1, "sem host, so a row de STATUS aparece")
+  eq(out[1].label, "STATUS", "a unica row sem host e STATUS")
+  eq(out[1].step, nil, "STATUS e somente leitura, sem step")
+  eq(out[1].value(), "NO HOST", "sem host, STATUS diz NO HOST")
   check(mod._logs.warn[1]
         and mod._logs.warn[1]:find("BATTLE_ART_VOXEL_FORK", 1, true)
+        and mod._logs.warn[1]:find("DRAMALESS_SHAPE", 1, true)
         and mod._logs.warn[1]:find("DRAMATIC_SHAPE", 1, true),
         "sem host avisa quais ids foram procurados")
 end
 
 do
+  -- o fork fora da faixa agora e aceito de cara (primeiro na lista de
+  -- HOSTS), entao o legado nem chega a ser tentado. Antes desta mudanca o
+  -- fork era recusado e o legado assumia; hoje nenhum dos dois e recusado
+  -- por versao.
   local pixels = {}
   pixels[0] = 1
-  local fork, _, forkOriginal =
+  local fork, forkModules, forkOriginal =
     makeVoxelHandle("1.3.1", pixels, 16, 16, nil, nil, nil, nil,
       "BATTLE_ART_VOXEL_FORK")
   local dramatic, dramaticModules, dramaticOriginal =
     makeVoxelHandle("1.6.0", pixels, 16, 16)
-  loadWith(makeMod({
-    BATTLE_ART_VOXEL_FORK = fork,
-    DRAMATIC_SHAPE = dramatic,
-  }))
-  local forkSprite = fork.exports.lib.require("SpriteBillboards")
-  check(dramaticModules.SpriteBillboards.mesh ~= dramaticOriginal
-        and forkSprite.mesh == forkOriginal,
-        "fork fora da faixa e legado valido: o legado e usado")
-end
-
-do
-  local pixels = {}
-  pixels[0] = 1
-  local fork = makeVoxelHandle("1.3.1", pixels, 16, 16, nil, nil, nil, nil,
-    "BATTLE_ART_VOXEL_FORK")
-  local dramatic = makeVoxelHandle("2.0.0", pixels, 16, 16)
   local mod = loadWith(makeMod({
     BATTLE_ART_VOXEL_FORK = fork,
     DRAMATIC_SHAPE = dramatic,
   }))
+  check(forkModules.SpriteBillboards.mesh ~= forkOriginal,
+        "fork fora da faixa mas com API inteira e aceito de qualquer forma")
+  local dramaticSprite = dramatic.exports.lib.require("SpriteBillboards")
+  eq(dramaticSprite.mesh, dramaticOriginal,
+     "o legado nem chega a ser tentado quando o fork ja foi aceito")
+  check(mod._logs.warn[1] and mod._logs.warn[1]:find("untested version", 1, true),
+        "fork fora da faixa loga aviso mas nao e recusado")
+end
+
+do
+  -- nenhum host utilizavel agora so acontece por falha de capacidade, nao
+  -- de versao: os tres ids existem, mas cada um falta um modulo diferente.
+  -- O log tem que dizer qual faltou em cada um.
+  local function brokenHandle(id, version, missingModule)
+    local V = {}
+    function V.require(name)
+      if name == missingModule then error(missingModule .. " is not available") end
+      if name == "Voxel3D" or name == "ImageCache" then return {} end
+      if name == "SpriteBillboards" then return { mesh = function() end } end
+      error("unexpected module " .. tostring(name))
+    end
+    return { id = id, version = version, exports = { lib = V } }
+  end
+  local mod = loadWith(makeMod({
+    BATTLE_ART_VOXEL_FORK = brokenHandle("BATTLE_ART_VOXEL_FORK", "1.7.6", "Voxel3D"),
+    DRAMALESS_SHAPE = brokenHandle("DRAMALESS_SHAPE", "1.6.2.ST", "ImageCache"),
+    DRAMATIC_SHAPE = brokenHandle("DRAMATIC_SHAPE", "1.6.0", "SpriteBillboards"),
+  }))
   local warn = mod._logs.warn[1] or ""
   check(warn:find("BATTLE_ART_VOXEL_FORK", 1, true)
-        and warn:find("found 1.3.1", 1, true)
-        and warn:find(">=1.7.0 <2.0.0", 1, true)
+        and warn:find("Voxel3D is missing", 1, true)
+        and warn:find("DRAMALESS_SHAPE", 1, true)
+        and warn:find("ImageCache is missing", 1, true)
         and warn:find("DRAMATIC_SHAPE", 1, true)
-        and warn:find("found 2.0.0", 1, true)
-        and warn:find(">=1.5.0 <2.0.0", 1, true)
-        and warn:find("outside supported range", 1, true),
-        "nenhum host valido: o log diz o que achou e por que rejeitou")
+        and warn:find("SpriteBillboards is missing", 1, true),
+        "nenhum host utilizavel: o log diz qual modulo faltou em cada um")
+end
+
+do
+  -- host sem Voxel3D e recusado e o log diz qual modulo faltou.
+  local V = {}
+  function V.require(name)
+    if name == "Voxel3D" then error("no Voxel3D on this host") end
+    if name == "ImageCache" then return {} end
+    if name == "SpriteBillboards" then return { mesh = function() end } end
+    error("unexpected module " .. tostring(name))
+  end
+  local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
+  local mod = loadWith(makeMod(handle))
+  check(mod._logs.warn[1] and mod._logs.warn[1]:find("Voxel3D is missing", 1, true),
+        "host sem Voxel3D e recusado e o log diz qual modulo faltou")
+end
+
+do
+  -- host cujo SpriteBillboards.mesh nao e funcao e recusado.
+  local V = {}
+  function V.require(name)
+    if name == "Voxel3D" or name == "ImageCache" then return {} end
+    if name == "SpriteBillboards" then return { mesh = "not a function" } end
+    error("unexpected module " .. tostring(name))
+  end
+  local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
+  local mod = loadWith(makeMod(handle))
+  check(mod._logs.warn[1]
+        and mod._logs.warn[1]:find("SpriteBillboards.mesh is not a function", 1, true),
+        "host cujo SpriteBillboards.mesh nao e funcao e recusado")
+end
+
+do
+  -- host cujo require estoura e recusado sem derrubar o carregamento do
+  -- mod inteiro (o buraco do main.lua original 1750). pcall ao redor de
+  -- loadWith prova que o chunk inteiro nao lanca.
+  local V = {}
+  function V.require(name)
+    if name == "Voxel3D" then error("boom inside host require") end
+    if name == "ImageCache" then return {} end
+    if name == "SpriteBillboards" then return { mesh = function() end } end
+    error("unexpected module " .. tostring(name))
+  end
+  local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
+  local ok, mod = pcall(loadWith, makeMod(handle))
+  check(ok, "host cujo require estoura nao derruba o carregamento do mod")
+  check(ok and mod._logs.warn[1]
+        and mod._logs.warn[1]:find("Voxel3D is missing", 1, true),
+        "host cujo require estoura e recusado como modulo faltando")
+end
+
+do
+  -- BLOQUEANTE do pente fino: patch() tem que ser atomico. SpriteBillboards
+  -- protegida contra escrita: um proxy vazio cujo __index le de uma tabela
+  -- escondida (entao .mesh existe e a sonda de capacidade aceita o host,
+  -- porque probeHost so LE .mesh, nunca testa escrita) e cujo __newindex
+  -- lanca em QUALQUER atribuicao (entao a folha nunca acumula chaves reais,
+  -- diferente de um __newindex normal que so dispara em chave nova). A
+  -- segunda escrita arriscada de patch() (spriteBillboards.mesh =
+  -- installed) lanca; sem commit atomico, SpriteBillboards ja tinha sido
+  -- setada e STATUS lia REPLACED por uma substituicao que nunca aconteceu,
+  -- pior que NO HOST porque aponta a investigacao para outro mod
+  -- inexistente. Com commit atomico, nenhuma upvalue de modulo e tocada.
+  local hidden = { mesh = function() end }
+  local frozen = setmetatable({}, {
+    __index = hidden,
+    __newindex = function() error("attempt to modify a frozen table") end,
+  })
+  local V = {}
+  function V.require(name)
+    if name == "Voxel3D" or name == "ImageCache" then return {} end
+    if name == "SpriteBillboards" then return frozen end
+    error("unexpected module " .. tostring(name))
+  end
+  local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
+  local mod = loadWith(makeMod(handle))
+  check(mod._logs.warn[#mod._logs.warn]
+        and mod._logs.warn[#mod._logs.warn]:find("could not patch", 1, true)
+        and mod._logs.warn[#mod._logs.warn]:find("frozen table", 1, true),
+        "tabela protegida contra escrita: patch() falha e loga a causa")
+  eq(statusRowValue(mod), "NO HOST",
+     "host com tabela protegida contra escrita produz STATUS: NO HOST")
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  eq(#rows, 1,
+     "host com tabela protegida contra escrita nao registra as seis rows")
+end
+
+do
+  -- pente fino, item 1: a escrita parcial nao pode ficar na tabela do
+  -- host. O bloqueante cobriu "as duas escritas falham" (host que bloqueia
+  -- tudo); este cobre o caso mais plausivel, um host que protege so a
+  -- chave `mesh` (ja existente, nunca vira chave bruta, sempre passa pelo
+  -- __newindex) e permite chave nova (assim se defende uma API publica
+  -- sem travar extensao). A primeira escrita (__voxelCharactersOriginal,
+  -- chave nova) sucede; a segunda (.mesh) lanca. Sem desfazer a primeira,
+  -- __voxelCharactersOriginal ficava gravado na tabela do host pra
+  -- sempre, mesmo com o patch nunca tendo pegado, contradizendo o README
+  -- ("does not modify the Voxel Mod").
+  local hidden = { mesh = function() end }
+  local guarded = setmetatable({}, {
+    __index = hidden,
+    __newindex = function(t, k, v)
+      if k == "mesh" then error("attempt to modify a frozen table") end
+      rawset(t, k, v)
+    end,
+  })
+  local V = {}
+  function V.require(name)
+    if name == "Voxel3D" or name == "ImageCache" then return {} end
+    if name == "SpriteBillboards" then return guarded end
+    error("unexpected module " .. tostring(name))
+  end
+  local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
+  local mod = loadWith(makeMod(handle))
+  check(mod._logs.warn[#mod._logs.warn]
+        and mod._logs.warn[#mod._logs.warn]:find("could not patch", 1, true)
+        and mod._logs.warn[#mod._logs.warn]:find("frozen table", 1, true),
+        "escrita parcial: patch() falha e loga a causa")
+  eq(statusRowValue(mod), "NO HOST",
+     "host com escrita parcial produz STATUS: NO HOST")
+  eq(rawget(guarded, "__voxelCharactersOriginal"), nil,
+     "a escrita parcial e desfeita: a tabela do host fica byte a byte como estava")
+  eq(rawget(guarded, "mesh"), nil,
+     "mesh nunca chegou a virar chave bruta na tabela do host")
+end
+
+do
+  -- pente fino, item 1, caso de repatch: se __voxelCharactersOriginal ja
+  -- existia de verdade (um patch anterior bem sucedido) e a segunda
+  -- escrita falha, o valor anterior tem que voltar, nunca virar nil.
+  -- Apagar um __voxelCharactersOriginal legitimo quebraria a cadeia de
+  -- chaining que warnChainedMesh depende para detectar quem patcheou
+  -- antes da gente.
+  local originalMarker = function() end
+  local hidden = { mesh = function() end }
+  local guarded = setmetatable({ __voxelCharactersOriginal = originalMarker }, {
+    __index = hidden,
+    __newindex = function(t, k, v)
+      if k == "mesh" then error("attempt to modify a frozen table") end
+      rawset(t, k, v)
+    end,
+  })
+  local V = {}
+  function V.require(name)
+    if name == "Voxel3D" or name == "ImageCache" then return {} end
+    if name == "SpriteBillboards" then return guarded end
+    error("unexpected module " .. tostring(name))
+  end
+  local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
+  loadWith(makeMod(handle))
+  eq(rawget(guarded, "__voxelCharactersOriginal"), originalMarker,
+     "repatch com escrita parcial: o __voxelCharactersOriginal anterior volta, nao vira nil")
 end
 
 do
@@ -654,6 +947,18 @@ do
   check(mod._logs.info[1]
         and mod._logs.info[1]:find("Battle Art Voxel Fork 1.7.6", 1, true),
         "host BATTLE_ART_VOXEL_FORK encontrado e logado")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("1.6.2.ST", pixels, 16, 16,
+    nil, nil, nil, nil, "DRAMALESS_SHAPE")
+  local mod = loadWith(makeMod(handle))
+  check(modules.SpriteBillboards.mesh ~= original, "host DRAMALESS_SHAPE e aceito")
+  check(mod._logs.info[1]
+        and mod._logs.info[1]:find("Dramaless Shape Voxel Mod 1.6.2.ST", 1, true),
+        "host DRAMALESS_SHAPE encontrado e logado")
 end
 
 do
@@ -715,13 +1020,14 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 7, "hook anexa as rows do voxel characters")
-  local option = rows[2]
-  eq(rows[3].label, "SIDE COLOR", "hook anexa a row de cor lateral")
-  eq(rows[4].label, "SHAPE", "hook anexa a row de shape")
-  eq(rows[5].label, "GROUND SHADE", "hook anexa a row de ground shade")
-  eq(rows[6].label, "BLINK", "hook anexa a row de blink")
-  eq(rows[7].label, "TOP EDGE", "hook anexa a row de top edge")
+  eq(#rows, 8, "hook anexa as rows do voxel characters, mais STATUS")
+  eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
+  local option = rows[3]
+  eq(rows[4].label, "SIDE COLOR", "hook anexa a row de cor lateral")
+  eq(rows[5].label, "SHAPE", "hook anexa a row de shape")
+  eq(rows[6].label, "GROUND SHADE", "hook anexa a row de ground shade")
+  eq(rows[7].label, "BLINK", "hook anexa a row de blink")
+  eq(rows[8].label, "TOP EDGE", "hook anexa a row de top edge")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -757,16 +1063,16 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[6]
+  local option = rows[7]
   eq(option.label, "TOP EDGE", "row de TOP EDGE fica depois de BLINK")
-  eq(option.value(), "OFF", "TOP EDGE default e OFF")
+  eq(option.value(), "ON", "TOP EDGE default e ON")
   check(option.step(game, 1), "step de TOP EDGE informa mudanca")
-  eq(option.value(), "ON", "TOP EDGE alterna para ON")
-  eq(game.save.options.modOptions.voxel_characters.top_edge, "on",
+  eq(option.value(), "OFF", "TOP EDGE alterna para OFF")
+  eq(game.save.options.modOptions.voxel_characters.top_edge, "off",
      "TOP EDGE persiste no save")
-  eq(game.mods.modOptions.voxel_characters.top_edge, "on",
+  eq(game.mods.modOptions.voxel_characters.top_edge, "off",
      "TOP EDGE persiste no loader")
-  eq(emitted[1].payload.value, "on", "TOP EDGE emite o valor novo")
+  eq(emitted[1].payload.value, "off", "TOP EDGE emite o valor novo")
 end
 
 do
@@ -929,7 +1235,7 @@ do
   pixels[1 * w + 0] = 1
   pixels[3 * w + 0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, w, h)
-  loadWith(makeMod(handle, { depth = 2 }))
+  loadWith(makeMod(handle, { depth = 2, top_edge = "off" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 2 }, 1)
   local minV = (2 + 1 + 0.05) / h
   local maxV = (2 + 1 + 0.95) / h
@@ -1022,7 +1328,7 @@ do
     [3] = rgba(0.80, 0.80, 0.80, 1),
   }
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 2, 2)
-  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  loadWith(makeMod(handle, { depth = 2, side_color = "body", top_edge = "off" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 2, 2)
   check(u and close(u, 0.25) and close(v, 0.75),
@@ -1051,7 +1357,7 @@ do
     for lx = 0, cellW - 1 do paint(pixels, cellW, cellW, 0, lx, ly, 1) end
   end
   local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
-  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", top_edge = "off" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   eq(countHorizontalFacesAtY(got, 1.0, 2), 2,
      "face de topo SLAB so aparece onde o pixel acima esta vazio")
@@ -1117,7 +1423,7 @@ end
 do
   local pixels = { [0] = 1 }
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 1, 1)
-  loadWith(makeMod(handle, { depth = 2, shape = "slab" }))
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", top_edge = "off" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   check(countSideFacesAtX(got, 0) == 1 and countSideFacesAtX(got, 1) == 1,
         "SIDE_INSET zero deixa as laterais SLAB no limite do voxel")
@@ -1137,7 +1443,7 @@ do
     [5] = rgba(0.80, 0.80, 0.80, 1),
   }
   local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
-  loadWith(makeMod(handle, { depth = 2, side_color = "body" }))
+  loadWith(makeMod(handle, { depth = 2, side_color = "body", top_edge = "off" }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local u, v = horizontalFaceUvInBounds(got, 1.0, 0, 1, 6, 6)
   check(u and close(u, 0.5) and close(v, 0.5 / cellH),
@@ -1218,10 +1524,10 @@ do
   loadWith(makeMod(handleA, { depth = 2, shape = "slab" }))
   local defaultMesh = modulesA.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local handleB, modulesB = makeVoxelHandle("1.6.0", pixels, 1, 1)
-  loadWith(makeMod(handleB, { depth = 2, shape = "slab", top_edge = "off" }))
-  local offMesh = modulesB.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
-  eq(vertexSignature(offMesh), vertexSignature(defaultMesh),
-     "TOP EDGE desligado nao muda nenhum vertice")
+  loadWith(makeMod(handleB, { depth = 2, shape = "slab", top_edge = "on" }))
+  local onMesh = modulesB.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  eq(vertexSignature(onMesh), vertexSignature(defaultMesh),
+     "TOP EDGE default equivale a ON")
 end
 
 do
@@ -1272,7 +1578,9 @@ do
     paint(pixels, sheetW, cellW, frame, 1, 3, rgba(0.05, 0.05, 0.05, 1))
   end
   local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
-  loadWith(makeMod(handle, { depth = 2, shape = "slab", side_color = "body" }))
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", side_color = "body", top_edge = "off",
+  }))
   local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
   local stand = modules.SpriteBillboards.mesh(def, 0)
   local walk = modules.SpriteBillboards.mesh(def, 3)
@@ -1327,6 +1635,259 @@ do
   local sideU1, sideV1 = sideFaceUvAt(walk, 0, 0, 0, 1)
   check(sideU0 and sideU1 and close(sideU0, sideU1) and close(sideV0, sideV1),
         "face lateral SLAB nao muda classificacao de cor entre frames")
+end
+
+-- v1.4.2: poseOffset compensa o deslocamento entre a pose parada e a
+-- andando antes de ler a referencia (AngelusRole: "when a character's head
+-- is set to use the body color, the top of the head flickers while
+-- walking"). Os testes de classificacao acima usam so 3 tons e nao pegavam
+-- o defeito porque a busca de corpo por outline caia na mesma faixa por
+-- coincidencia; os testes abaixo isolam o deslocamento em si.
+
+do
+  -- poseOffset acha o deslocamento de uma linha: o frame 3 e o frame 0
+  -- descido uma linha. Tres tons (nao so 2) para que qualquer deslocamento
+  -- errado, nao so "sem deslocamento", resolva para um tom diferente do
+  -- topo parado.
+  local cellW, cellH = 1, 6
+  local sheetW = cellW * 6
+  local pixels = {}
+  local toneA = rgba(0.95, 0.95, 0.95, 1)
+  local toneB = rgba(0.55, 0.55, 0.55, 1)
+  local red = rgba(0.80, 0.10, 0.10, 1)
+  for _, frame in ipairs({ 0, 1, 2 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 0, toneA)
+    paint(pixels, sheetW, cellW, frame, 0, 1, toneB)
+    paint(pixels, sheetW, cellW, frame, 0, 2, red)
+  end
+  for _, frame in ipairs({ 3, 4, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, toneA)
+    paint(pixels, sheetW, cellW, frame, 0, 2, toneB)
+    paint(pixels, sheetW, cellW, frame, 0, 3, red)
+  end
+  -- ancora escura para fixar outlineLuma longe dos tons do teste, senao o
+  -- tom mais escuro do proprio teste (red) vira contorno por ser o minimo.
+  paint(pixels, sheetW, cellW, 1, 0, 5, rgba(0.02, 0.02, 0.02, 1))
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", side_color = "body", top_edge = "off",
+  }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local topU0, topV0 = horizontalFaceUvAt(stand, 1.0, true)
+  local topU1, topV1 = horizontalFaceUvAt(walk, 1.0, true)
+  check(topU0 and topU1 and close(topU0, topU1) and close(topV0, topV1),
+        "poseOffset acha o deslocamento de uma linha")
+end
+
+do
+  -- poseOffset devolve zero quando as poses coincidem: o caso das 6 folhas
+  -- que nao deslocam. Checa topo E base porque, sozinha, cada uma mascara
+  -- um dos dois sinais errados via o fallback sem compensar (topo nao pega
+  -- dy=-1 errado, base nao pega dy=+1 errado); as duas juntas pegam os dois.
+  local cellW, cellH = 1, 4
+  local sheetW = cellW * 6
+  local pixels = {}
+  local toneA = rgba(0.95, 0.95, 0.95, 1)
+  local toneB = rgba(0.55, 0.55, 0.55, 1)
+  local red = rgba(0.80, 0.10, 0.10, 1)
+  for _, frame in ipairs({ 0, 1, 2, 3, 4, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 0, toneA)
+    paint(pixels, sheetW, cellW, frame, 0, 1, toneB)
+    paint(pixels, sheetW, cellW, frame, 0, 2, red)
+  end
+  paint(pixels, sheetW, cellW, 1, 0, 3, rgba(0.02, 0.02, 0.02, 1))
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", side_color = "body", top_edge = "off",
+  }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local topU0, topV0 = horizontalFaceUvAt(stand, 1.0, true)
+  local topU1, topV1 = horizontalFaceUvAt(walk, 1.0, true)
+  local baseU0, baseV0 = horizontalFaceUvAt(stand, 0.55, false)
+  local baseU1, baseV1 = horizontalFaceUvAt(walk, 0.55, false)
+  check(topU0 and topU1 and close(topU0, topU1) and close(topV0, topV1)
+        and baseU0 and baseU1 and close(baseU0, baseU1) and close(baseV0, baseV1),
+        "poseOffset devolve zero quando as poses coincidem")
+end
+
+do
+  -- poseOffset desempata de forma deterministica: folha onde o frame 3 tem
+  -- um unico pixel opaco e o frame 0 tem dois, um uma linha acima e outro
+  -- uma linha abaixo dele, entao dy=-1 e dy=1 empatam em |dx|+|dy|. A
+  -- varredura canonica roda sempre de 0 (o menor indice) pra 3, entao a
+  -- regra "empate, menor dy" decide poseOffset(0,3) = (0,-1); a chamada
+  -- real e na direcao oposta, poseOffset(3,0), que e o negativo por
+  -- construcao: (0,1). Compensado, a linha 2 do frame 3 aponta pra linha 3
+  -- do frame 0 (toneQ), nao a linha 1 (pente fino, item 2: antes da
+  -- canonicalizacao, cada direcao escaneava pro seu lado e "menor dy"
+  -- escolhia -1 nas DUAS direcoes, quebrando poseOffset(A,B) ==
+  -- -poseOffset(B,A)). Roda a mesma folha sob dois nomes de imagem
+  -- diferentes (o stub de ImageCache ignora o nome e devolve os mesmos
+  -- pixels) para forcar duas mascaras e duas varreduras independentes,
+  -- provando que o desempate nao depende de cache nem de ordem de
+  -- varredura incidental.
+  local cellW, cellH = 1, 5
+  local sheetW = cellW * 6
+  local pixels = {}
+  local toneP = rgba(0.40, 0.40, 0.40, 1)
+  local toneQ = rgba(0.65, 0.65, 0.65, 1)
+  local red = rgba(0.80, 0.10, 0.10, 1)
+  paint(pixels, sheetW, cellW, 0, 0, 1, toneP)
+  paint(pixels, sheetW, cellW, 0, 0, 3, toneQ)
+  paint(pixels, sheetW, cellW, 3, 0, 2, red)
+  paint(pixels, sheetW, cellW, 1, 0, 0, rgba(0.02, 0.02, 0.02, 1))
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", side_color = "body", top_edge = "off",
+  }))
+  local defA = { image = "sheet_a.png", frames = 6, frameWidth = cellW }
+  local defB = { image = "sheet_b.png", frames = 6, frameWidth = cellW }
+  local walkA = modules.SpriteBillboards.mesh(defA, 3)
+  local walkB = modules.SpriteBillboards.mesh(defB, 3)
+  local cellBottom = cellH - 1
+  -- face de topo e um plano horizontal: Y e constante (cellBottom - ly + 1),
+  -- nao uma faixa, entao minY e maxY tem que ser o mesmo valor.
+  local topY = cellBottom - 2 + 1
+  local expectedU = (0 + 0.5) / sheetW
+  local expectedV = (3 + 0.5) / cellH
+  local uA, vA = horizontalFaceUvInBounds(walkA, 1.0, 0, 1, topY, topY)
+  local uB, vB = horizontalFaceUvInBounds(walkB, 1.0, 0, 1, topY, topY)
+  check(uA and close(uA, expectedU) and close(vA, expectedV),
+        "poseOffset desempata de forma deterministica: canonicaliza pro menor indice de frame")
+  check(uB and close(uB, expectedU) and close(vB, expectedV),
+        "poseOffset desempata de forma deterministica: repete numa varredura independente")
+end
+
+do
+  -- pente fino, item 4: o teste acima (e o de repeticao entre duas
+  -- varreduras) prova so REPETIBILIDADE, que continua verdadeira mesmo
+  -- se o bloco de desempate explicito for apagado (a lente C removeu o
+  -- bloco inteiro, deixando so `score > bestScore`, e a suite inteira
+  -- passou: sem o bloco, empate vira "o primeiro que o laco encontrar
+  -- fica", que E deterministico, so que segue a ORDEM DO LACO (dy de -3 a
+  -- 3 por fora, dx de -2 a 2 por dentro: empate "ganha" o menor dy, sem
+  -- olhar |dx|+|dy|), nao a politica documentada (menor |dx|+|dy|
+  -- primeiro). Dataset que distingue as duas: A opaco so em (0,3); B
+  -- opaco em (2,0) [dx=2,dy=-3, o PRIMEIRO candidato que o laco visita,
+  -- |dx|+|dy|=5] e em (0,4) [dx=0,dy=1, visitado bem depois, |dx|+|dy|=1].
+  -- Os dois empatam em score=1, e so esses dois pontuam. A ordem do laco
+  -- escolheria (2,-3) porque dy=-3 vem primeiro; a politica documentada
+  -- escolhe (0,1) porque |dx|+|dy|=1 e menor que 5. So um teste que espera
+  -- (0,1) pega um dev futuro apagando o bloco de desempate num refactor.
+  local cellW, cellH = 3, 7
+  local sheetW = cellW * 6
+  local pixels = {}
+  paint(pixels, sheetW, cellW, 0, 0, 3, 1)
+  paint(pixels, sheetW, cellW, 3, 2, 0, 1)
+  paint(pixels, sheetW, cellW, 3, 0, 4, 1)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local function getUpvalue(fn, name)
+    for i = 1, 80 do
+      local n, v = debug.getupvalue(fn, i)
+      if n == nil then break end
+      if n == name then return v end
+    end
+  end
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMeshFn = getUpvalue(wrapper, "voxelMesh")
+  local buildSelectedMeshFn = getUpvalue(voxelMeshFn, "buildSelectedMesh")
+  local buildCarvedMeshFn = getUpvalue(buildSelectedMeshFn, "buildCarvedMesh")
+  local poseOffsetFn = getUpvalue(buildCarvedMeshFn, "poseOffset")
+  check(type(poseOffsetFn) == "function",
+        "teste encontra poseOffset (desempate distingue politica de ordem)")
+
+  local fakeM = {
+    data = fakeImage(pixels, sheetW, cellH),
+    sheetW = sheetW, sheetH = cellH,
+    frames = 6, cellW = cellW, cellH = cellH, columns = 6,
+  }
+  local dx, dy = poseOffsetFn(fakeM, 0, 3)
+  eq(dx, 0, "empate: a politica de menor |dx|+|dy| vence a ordem do laco em X")
+  eq(dy, 1, "empate: a politica de menor |dx|+|dy| vence a ordem do laco em Y")
+end
+
+do
+  -- a face de topo da coroa resolve para o mesmo texel nos dois frames: o
+  -- teste que representa o report do Angelus. Folha de 3 colunas com
+  -- deslocamento de uma linha; pega a face de topo da coluna do meio no
+  -- frame parado e no frame andando e prova que aponta para o mesmo tom.
+  local cellW, cellH = 3, 5
+  local sheetW = cellW * 6
+  local pixels = {}
+  local toneA = rgba(0.95, 0.95, 0.95, 1)
+  local toneB = rgba(0.60, 0.60, 0.60, 1)
+  local red = rgba(0.80, 0.10, 0.10, 1)
+  local dark = rgba(0.05, 0.05, 0.05, 1)
+  for _, frame in ipairs({ 0, 1, 2 }) do
+    for lx = 0, cellW - 1 do
+      paint(pixels, sheetW, cellW, frame, lx, 0, toneA)
+      paint(pixels, sheetW, cellW, frame, lx, 1, toneB)
+      paint(pixels, sheetW, cellW, frame, lx, 2, red)
+      paint(pixels, sheetW, cellW, frame, lx, 3, dark)
+    end
+  end
+  for _, frame in ipairs({ 3, 4, 5 }) do
+    for lx = 0, cellW - 1 do
+      paint(pixels, sheetW, cellW, frame, lx, 1, toneA)
+      paint(pixels, sheetW, cellW, frame, lx, 2, toneB)
+      paint(pixels, sheetW, cellW, frame, lx, 3, red)
+      paint(pixels, sheetW, cellW, frame, lx, 4, dark)
+    end
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", side_color = "body", top_edge = "off",
+  }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local cellBottom = cellH - 1
+  -- face de topo e um plano horizontal: Y e constante (cellBottom - ly + 1),
+  -- nao uma faixa, entao minY e maxY tem que ser o mesmo valor.
+  local standU, standV = horizontalFaceUvInBounds(stand, 1.0, 1, 2,
+    cellBottom - 0 + 1, cellBottom - 0 + 1)
+  local walkU, walkV = horizontalFaceUvInBounds(walk, 1.0, 1, 2,
+    cellBottom - 1 + 1, cellBottom - 1 + 1)
+  check(standU and walkU and close(standU, walkU) and close(standV, walkV),
+        "a face de topo da coroa resolve para o mesmo texel nos dois frames")
+end
+
+do
+  -- o equivalente do teste da coroa para a face lateral (sideUv). Coluna
+  -- unica de 2 pixels (tom de corpo e contorno) que desce uma linha ao
+  -- andar; sem compensar, a leitura sem sucesso da referencia cai no
+  -- contorno em vez do corpo, porque a folha de 1 pixel de largura nao tem
+  -- coluna vizinha para a busca interna alcancar.
+  local cellW, cellH = 1, 3
+  local sheetW = cellW * 6
+  local pixels = {}
+  local toneA = rgba(0.90, 0.90, 0.90, 1)
+  local dark = rgba(0.05, 0.05, 0.05, 1)
+  for _, frame in ipairs({ 0, 1, 2 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 0, toneA)
+    paint(pixels, sheetW, cellW, frame, 0, 1, dark)
+  end
+  for _, frame in ipairs({ 3, 4, 5 }) do
+    paint(pixels, sheetW, cellW, frame, 0, 1, toneA)
+    paint(pixels, sheetW, cellW, frame, 0, 2, dark)
+  end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, {
+    depth = 2, shape = "slab", side_color = "body", top_edge = "off",
+  }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local cellBottom = cellH - 1
+  local standU, standV = sideFaceUvAt(stand, 0, 0, cellBottom - 0, cellBottom - 0 + 1)
+  local walkU, walkV = sideFaceUvAt(walk, 0, 0, cellBottom - 1, cellBottom - 1 + 1)
+  check(standU and walkU and close(standU, walkU) and close(standV, walkV),
+        "a face lateral da coroa resolve para o mesmo texel nos dois frames")
 end
 
 do
@@ -1578,6 +2139,184 @@ do
         "face de topo CARVED nao muda classificacao de cor entre frames")
 end
 
+-- Rodada 2, "o mesmo defeito que voce acabou de corrigir, no
+-- buildCarvedMesh" (v1.4.2): topUv e sideUv do CARVED tem a mesma estrutura
+-- de busca por frame de referencia que o SLAB tinha, sem compensar o passo.
+-- O teste de classificacao acima nao pega isso pelo mesmo motivo do SLAB:
+-- so 2 tons, entao a busca de corpo cai na mesma faixa por coincidencia.
+
+do
+  -- a face de topo E a face lateral da coroa do CARVED resolvem para o
+  -- mesmo texel nos dois frames. Tres vistas (frente, costas, perfil), com
+  -- deslocamento de uma linha em todas; a de perfil so pinta a coluna 0 de
+  -- proposito, para so existir uma face lateral por linha (sem isso, varias
+  -- profundidades dariam varias faces laterais na mesma borda e o teste
+  -- nao saberia qual delas checar).
+  local cellW, cellH = 3, 6
+  local sheetW = cellW * 6
+  local pixels = {}
+  local toneA = rgba(0.95, 0.95, 0.95, 1)
+  local toneB = rgba(0.60, 0.60, 0.60, 1)
+  local red = rgba(0.80, 0.10, 0.10, 1)
+  local dark = rgba(0.05, 0.05, 0.05, 1)
+  for _, frame in ipairs({ 0, 1 }) do
+    for lx = 0, cellW - 1 do
+      paint(pixels, sheetW, cellW, frame, lx, 0, toneA)
+      paint(pixels, sheetW, cellW, frame, lx, 1, toneB)
+      paint(pixels, sheetW, cellW, frame, lx, 2, red)
+      paint(pixels, sheetW, cellW, frame, lx, 3, dark)
+    end
+  end
+  for _, frame in ipairs({ 3, 4 }) do
+    for lx = 0, cellW - 1 do
+      paint(pixels, sheetW, cellW, frame, lx, 1, toneA)
+      paint(pixels, sheetW, cellW, frame, lx, 2, toneB)
+      paint(pixels, sheetW, cellW, frame, lx, 3, red)
+      paint(pixels, sheetW, cellW, frame, lx, 4, dark)
+    end
+  end
+  paint(pixels, sheetW, cellW, 2, 0, 0, toneA)
+  paint(pixels, sheetW, cellW, 2, 0, 1, toneB)
+  paint(pixels, sheetW, cellW, 2, 0, 2, red)
+  paint(pixels, sheetW, cellW, 2, 0, 3, dark)
+  paint(pixels, sheetW, cellW, 5, 0, 1, toneA)
+  paint(pixels, sheetW, cellW, 5, 0, 2, toneB)
+  paint(pixels, sheetW, cellW, 5, 0, 3, red)
+  paint(pixels, sheetW, cellW, 5, 0, 4, dark)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved", side_color = "body" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local stand = modules.SpriteBillboards.mesh(def, 0)
+  local walk = modules.SpriteBillboards.mesh(def, 3)
+  local cellBottom = cellH - 1
+  local standTopU, standTopV = horizontalFaceUvInBounds(stand, 1.0, 1, 2,
+    cellBottom - 0 + 1, cellBottom - 0 + 1)
+  local walkTopU, walkTopV = horizontalFaceUvInBounds(walk, 1.0, 1, 2,
+    cellBottom - 1 + 1, cellBottom - 1 + 1)
+  check(standTopU and walkTopU and close(standTopU, walkTopU)
+        and close(standTopV, walkTopV),
+        "CARVED: a face de topo da coroa resolve para o mesmo texel nos dois frames")
+  local standSideU, standSideV = sideFaceUvAt(stand, 0, 0, cellBottom - 0,
+    cellBottom - 0 + 1)
+  local walkSideU, walkSideV = sideFaceUvAt(walk, 0, 0, cellBottom - 1,
+    cellBottom - 1 + 1)
+  check(standSideU and walkSideU and close(standSideU, walkSideU)
+        and close(standSideV, walkSideV),
+        "CARVED: a face lateral da coroa resolve para o mesmo texel nos dois frames")
+
+  -- "confirme que a compensacao entra no espaco de textura e nao no espaco
+  -- de geometria": frame 3 (role 0) e frame 4 (role 1) tem o MESMO
+  -- pose.front/back/side (o CARVED so gira a malha por role, nao reconstroi
+  -- a textura), entao a sequencia de UV emitida tem que ser identica entre
+  -- os dois, mesmo com a geometria girada 180 graus no mundo.
+  local mesh4 = modules.SpriteBillboards.mesh(def, 4)
+  eq(quadCount(walk), quadCount(mesh4),
+     "CARVED: role 0 e role 1 do mesmo pose tem a mesma contagem de quads")
+  eq(uvSignature(walk), uvSignature(mesh4),
+     "CARVED: a compensacao entra no espaco de textura, nao no espaco de geometria")
+end
+
+do
+  -- poseOffset so compensa entre frames do MESMO role: comparar a mascara
+  -- de frente com a de perfil mede diferenca de silhueta, nao passo, e
+  -- devolveria um numero com cara de deslocamento que na verdade e lixo.
+  -- Extrai poseOffset de dentro de buildCarvedMesh (upvalue) e chama direto,
+  -- sem passar pela malha: a fiacao correta do CARVED nunca chama
+  -- poseOffset com frames de roles diferentes, entao testar so pela malha
+  -- nunca exercitaria este branch.
+  local cellW, cellH = 4, 4
+  local sheetW = cellW * 6
+  local pixels = {}
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local function getUpvalue(fn, name)
+    for i = 1, 80 do
+      local n, v = debug.getupvalue(fn, i)
+      if n == nil then break end
+      if n == name then return v end
+    end
+  end
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMeshFn = getUpvalue(wrapper, "voxelMesh")
+  check(type(voxelMeshFn) == "function",
+        "teste encontra voxelMesh no wrapper para poseOffset")
+  local buildSelectedMeshFn = getUpvalue(voxelMeshFn, "buildSelectedMesh")
+  check(type(buildSelectedMeshFn) == "function", "teste encontra buildSelectedMesh")
+  local buildCarvedMeshFn = getUpvalue(buildSelectedMeshFn, "buildCarvedMesh")
+  check(type(buildCarvedMeshFn) == "function", "teste encontra buildCarvedMesh")
+  local poseOffsetFn = getUpvalue(buildCarvedMeshFn, "poseOffset")
+  check(type(poseOffsetFn) == "function", "teste encontra poseOffset em buildCarvedMesh")
+
+  -- frame 0 (frente, role 0): um pixel so, no canto.
+  paint(pixels, sheetW, cellW, 0, 0, 0, 1)
+  -- frame 2 (perfil, role 2): coincidencia adversarial de forma. Um bloco
+  -- solido 2 linhas abaixo do pixel de frente; se poseOffset comparasse
+  -- frente com perfil por sobreposicao de mascara, dx=0,dy=2 "acharia" 100%
+  -- de interseccao, uma leitura confiante e completamente errada.
+  paint(pixels, sheetW, cellW, 2, 0, 2, 1)
+  local fakeM = {
+    data = fakeImage(pixels, sheetW, cellH),
+    sheetW = sheetW, sheetH = cellH,
+    frames = 6, cellW = cellW, cellH = cellH, columns = 6,
+  }
+  local guardDx, guardDy = poseOffsetFn(fakeM, 0, 2)
+  eq(guardDx, 0, "poseOffset entre roles diferentes nao compensa em X")
+  eq(guardDy, 0, "poseOffset entre roles diferentes nao compensa em Y")
+
+  -- controle: o mesmo par de indices, mas do MESMO role (0 e 3, os dois
+  -- frente), ainda acha o deslocamento real. Prova que o guard nao trava o
+  -- caso legitimo.
+  paint(pixels, sheetW, cellW, 3, 0, 1, 1)
+  local sameRoleDx, sameRoleDy = poseOffsetFn(fakeM, 0, 3)
+  eq(sameRoleDx, 0, "poseOffset entre frames do mesmo role ainda acha X")
+  eq(sameRoleDy, 1, "poseOffset entre frames do mesmo role ainda acha Y")
+end
+
+do
+  -- pente fino, item 2: poseOffset(a,b) tem que ser exatamente o negativo
+  -- de poseOffset(b,a), mesmo com empate genuino de score em +dy e -dy.
+  -- Dataset do revisor: A (frame 0) opaco so em ly=2; B (frame 3, mesmo
+  -- role de A) opaco em ly=1 e ly=3. dy=-1 e dy=1 empatam (cada um alinha
+  -- A com um dos dois pixels de B). Sem canonicalizar o par pro menor
+  -- indice de frame antes de escanear, cada direcao escanearia pro seu
+  -- proprio lado e a regra "menor dy" escolheria -1 nas DUAS direcoes,
+  -- quebrando a simetria; isso importa porque a compensacao do olho pede
+  -- poseOffset(refFrame, frame) e a geometria pede
+  -- poseOffset(frame, frameIndex), direcoes opostas do mesmo par.
+  local cellW, cellH = 1, 4
+  local sheetW = cellW * 6
+  local pixels = {}
+  paint(pixels, sheetW, cellW, 0, 0, 2, 1)
+  paint(pixels, sheetW, cellW, 3, 0, 1, 1)
+  paint(pixels, sheetW, cellW, 3, 0, 3, 1)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved" }))
+  local function getUpvalue(fn, name)
+    for i = 1, 80 do
+      local n, v = debug.getupvalue(fn, i)
+      if n == nil then break end
+      if n == name then return v end
+    end
+  end
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMeshFn = getUpvalue(wrapper, "voxelMesh")
+  local buildSelectedMeshFn = getUpvalue(voxelMeshFn, "buildSelectedMesh")
+  local buildCarvedMeshFn = getUpvalue(buildSelectedMeshFn, "buildCarvedMesh")
+  local poseOffsetFn = getUpvalue(buildCarvedMeshFn, "poseOffset")
+  check(type(poseOffsetFn) == "function", "teste encontra poseOffset (simetria)")
+
+  local fakeM = {
+    data = fakeImage(pixels, sheetW, cellH),
+    sheetW = sheetW, sheetH = cellH,
+    frames = 6, cellW = cellW, cellH = cellH, columns = 6,
+  }
+  local ax, ay = poseOffsetFn(fakeM, 0, 3)
+  local bx, by = poseOffsetFn(fakeM, 3, 0)
+  eq(ay, -1, "poseOffset(a,b) desempata para o menor dy no par canonico")
+  eq(bx, -ax, "poseOffset(b,a) e o negativo exato de poseOffset(a,b) em X")
+  eq(by, -ay, "poseOffset(b,a) e o negativo exato de poseOffset(a,b) em Y")
+end
+
 do
   local cellW, cellH = 1, 3
   local sheetW = cellW * 6
@@ -1780,7 +2519,7 @@ do
   for ly = 0, cellH - 1 do paint(pixels, cellW, cellW, 0, 0, ly, 1) end
   local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
   loadWith(makeMod(handle, {
-    depth = 2, shape = "slab", ground_shade = "off",
+    depth = 2, shape = "slab", ground_shade = "off", top_edge = "off",
   }))
   local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local unchanged = true
@@ -1864,47 +2603,59 @@ do
 end
 
 do
+  -- v1.4.2: piscar passa a acontecer tambem na pose andando quando a marca
+  -- transfere. paintBlinkSide pinta o mesmo texel em todos os frames, sem
+  -- nenhum deslocamento entre a pose parada (2) e a andando (5), entao
+  -- poseOffset(2, 5) mede (0, 0) e a marca de perfil transfere de forma
+  -- trivial: o frame 5 tem que piscar exatamente como o frame 2. Frame 1
+  -- (costas) continua sem marca, e sem piscar, porque essa parte nao mudou.
   local cellW, cellH = 16, 16
   local sheetW = cellW * 6
   local pixels = {}
-  for frame = 0, 5 do paintBlinkFace(pixels, sheetW, cellW, frame) end
+  for frame = 0, 5 do paintBlinkSide(pixels, sheetW, cellW, frame) end
   local closedTime, openTime = blinkTimes("red")
   local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
   loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
   local def = { image = "red.png", frames = 6, frameWidth = cellW }
-  local backOpen, backClosed, sideOpen, sideClosed
+  local backOpen, backClosed
   withLoveTime(openTime, function()
     backOpen = uvSignature(modules.SpriteBillboards.mesh(def, 1))
-    sideOpen = uvSignature(modules.SpriteBillboards.mesh(def, 2))
+    local sideWalk = modules.SpriteBillboards.mesh(def, 5)
+    local sideWalkEye = frontQuadIndexAt(sideWalk, 5, 6, 8, 9)
+    check(allUvAt(sideWalk, sideWalkEye, (5 * cellW + 5.5) / sheetW, 7.5 / cellH),
+          "olho SLAB aberto no frame 5 aponta para o proprio texel")
   end)
   withLoveTime(closedTime, function()
-    local walk = modules.SpriteBillboards.mesh(def, 3)
-    local walkEye = frontQuadIndexAt(walk, 6, 7, 8, 9)
-    check(allUvAt(walk, walkEye, (3 * cellW + 6.5) / sheetW, 7.5 / cellH),
-          "piscar nao acontece no frame 3")
+    local side = modules.SpriteBillboards.mesh(def, 2)
+    local sideEye = frontQuadIndexAt(side, 5, 6, 8, 9)
+    check(allUvAt(side, sideEye, (2 * cellW + 5.5) / sheetW, 8.5 / cellH),
+          "piscar acontece no frame 2 com a tabela lateral")
     backClosed = uvSignature(modules.SpriteBillboards.mesh(def, 1))
-    sideClosed = uvSignature(modules.SpriteBillboards.mesh(def, 2))
+    local sideWalk = modules.SpriteBillboards.mesh(def, 5)
+    local sideWalkEye = frontQuadIndexAt(sideWalk, 5, 6, 8, 9)
+    check(allUvAt(sideWalk, sideWalkEye, (5 * cellW + 5.5) / sheetW, 8.5 / cellH),
+          "piscar agora acontece no frame 5 quando a marca de perfil transfere")
   end)
-  eq(backOpen, backClosed, "piscar so acontece no role 0")
-  eq(sideOpen, sideClosed, "piscar so acontece no role 0")
+  eq(backOpen, backClosed, "piscar continua nao acontecendo no frame 1")
 end
 
 do
   local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
   local pixels = {}
-  paintBlinkFace(pixels, cellW, cellW, 0)
+  for frame = 0, 5 do paintBlinkSide(pixels, sheetW, cellW, frame) end
   local closedTime, openTime = blinkTimes("unknown")
-  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
   loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
-  local def = { image = "unknown.png", frames = 1 }
+  local def = { image = "unknown.png", frames = 6, frameWidth = cellW }
   local openSig, closedSig
   withLoveTime(openTime, function()
-    openSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+    openSig = uvSignature(modules.SpriteBillboards.mesh(def, 2))
   end)
   withLoveTime(closedTime, function()
-    closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+    closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 2))
   end)
-  eq(openSig, closedSig, "folha sem entrada na tabela nao pisca")
+  eq(openSig, closedSig, "folha sem entrada lateral nao pisca de perfil")
 end
 
 do
@@ -1961,6 +2712,453 @@ do
   eq(openMesh, closedMesh, "o cacheKey nao muda com o estado de piscada")
   eq(modules.Voxel3D.created, 1,
      "estado de piscada troca UV sem criar outra malha")
+end
+
+-- v1.4.2, "os personagens so piscam parados": a pose andando (frames 3 e 5)
+-- passa a piscar quando a marca de olho transfere, medido folha a folha e
+-- pose a pose via poseOffset, nunca por tabela escrita a mao. O frame 3 ja
+-- mordeu este projeto uma vez na v1.4.1 (piscada validada so no frame 0,
+-- fechando o "olho" em cima de pele no frame 3 porque a face desce uma
+-- linha ao andar); os dois testes de frame 3 abaixo sao os mais
+-- importantes do lote.
+
+do
+  -- a pose andando pisca quando o olho transfere: frame 3 e o frame 0
+  -- descido uma linha (o passo da caminhada), a marca de frente transfere,
+  -- e o quad de olho do frame 3 aponta para o texel certo, aberto e
+  -- fechado.
+  local cellW, cellH = 16, 18
+  local sheetW = cellW * 6
+  local pixels = {}
+  paintBlinkFaceShifted(pixels, sheetW, cellW, 0, 0)
+  paintBlinkFaceShifted(pixels, sheetW, cellW, 3, 1)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 6, frameWidth = cellW }
+  withLoveTime(openTime, function()
+    local walk = modules.SpriteBillboards.mesh(def, 3)
+    local eye = frontQuadIndexAt(walk, 6, 7, 9, 10)
+    check(allUvAt(walk, eye, (3 * cellW + 6.5) / sheetW, 8.5 / cellH),
+          "pose andando aberta no frame 3 aponta para o proprio texel")
+  end)
+  withLoveTime(closedTime, function()
+    local walk = modules.SpriteBillboards.mesh(def, 3)
+    local eye = frontQuadIndexAt(walk, 6, 7, 9, 10)
+    check(allUvAt(walk, eye, (3 * cellW + 6.5) / sheetW, 9.5 / cellH),
+          "a pose andando pisca quando o olho transfere")
+  end)
+end
+
+do
+  -- a pose andando NAO pisca quando o olho nao transfere: o frame 3 tem a
+  -- mesma silhueta descida uma linha (poseOffset ainda acha (0, 1)), mas a
+  -- cabeca foi redesenhada com outro tom onde o olho estaria. A folha fica
+  -- de olho aberto nesta pose, exatamente como hoje: nada de piscar meio
+  -- olho. Este e o teste que impede a regressao da v1.4.1.
+  local cellW, cellH = 16, 18
+  local sheetW = cellW * 6
+  local pixels = {}
+  paintBlinkFaceShifted(pixels, sheetW, cellW, 0, 0)
+  paintBlinkFaceRedrawn(pixels, sheetW, cellW, 3, 1)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 6, frameWidth = cellW }
+  local openSig, closedSig
+  withLoveTime(openTime, function()
+    openSig = uvSignature(modules.SpriteBillboards.mesh(def, 3))
+  end)
+  withLoveTime(closedTime, function()
+    closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 3))
+  end)
+  eq(openSig, closedSig, "a pose andando nao pisca quando o olho nao transfere")
+end
+
+do
+  -- o equivalente de frente para o perfil: frame 5 e o frame 2 descido uma
+  -- linha, a marca de perfil transfere, o frame 5 pisca na coordenada certa.
+  local cellW, cellH = 16, 18
+  local sheetW = cellW * 6
+  local pixels = {}
+  paintBlinkSideShifted(pixels, sheetW, cellW, 2, 0)
+  paintBlinkSideShifted(pixels, sheetW, cellW, 5, 1)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 6, frameWidth = cellW }
+  withLoveTime(openTime, function()
+    local walk = modules.SpriteBillboards.mesh(def, 5)
+    local eye = frontQuadIndexAt(walk, 5, 6, 9, 10)
+    check(allUvAt(walk, eye, (5 * cellW + 5.5) / sheetW, 8.5 / cellH),
+          "pose andando de perfil aberta no frame 5 aponta para o proprio texel")
+  end)
+  withLoveTime(closedTime, function()
+    local walk = modules.SpriteBillboards.mesh(def, 5)
+    local eye = frontQuadIndexAt(walk, 5, 6, 9, 10)
+    check(allUvAt(walk, eye, (5 * cellW + 5.5) / sheetW, 9.5 / cellH),
+          "a pose andando de perfil pisca quando o olho transfere")
+  end)
+end
+
+do
+  -- equivalente de perfil do teste que nao transfere: frame 5 com a cabeca
+  -- redesenhada fica de olho aberto, mesmo com a silhueta batendo.
+  local cellW, cellH = 16, 18
+  local sheetW = cellW * 6
+  local pixels = {}
+  paintBlinkSideShifted(pixels, sheetW, cellW, 2, 0)
+  paintBlinkSideRedrawn(pixels, sheetW, cellW, 5, 1)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "red.png", frames = 6, frameWidth = cellW }
+  local openSig, closedSig
+  withLoveTime(openTime, function()
+    openSig = uvSignature(modules.SpriteBillboards.mesh(def, 5))
+  end)
+  withLoveTime(closedTime, function()
+    closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 5))
+  end)
+  eq(openSig, closedSig,
+     "a pose andando de perfil nao pisca quando o olho nao transfere")
+end
+
+do
+  -- lorelei pisca de frente e de perfil, contra a arte real (nao
+  -- sintetica): pixels extraidos de assets/generated/sprites/lorelei.png
+  -- (16x16, 6 frames), frames 0, 2, 3 e 5. Medido antes de escrever isto: o
+  -- preto de (5..10, 7) no frame 0 reaparece preto uma linha abaixo no
+  -- frame 3, e o preto de (5, 6) no frame 2 reaparece preto uma linha
+  -- abaixo no frame 5, entao as duas marcas transferem.
+  -- sha256 do PNG de origem no momento da extracao (conferencia humana):
+  -- 2bf59a656c6f7e76ddcac68cc011bde718b853f7fda1b13280fc3aa3a4feb3ec
+  eq(fnv1aFile("assets/generated/sprites/lorelei.png"), 1159453232,
+     "lorelei.png nao mudou desde que os pixels foram extraidos (regenere o snapshot se isto falhar)")
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  -- frame 0
+  for lx = 5, 7 do paint(pixels, sheetW, cellW, 0, lx, 0, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 0, lx, 0, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 4, 1, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 5, 7 do paint(pixels, sheetW, cellW, 0, lx, 1, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 8, 1, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 0, lx, 1, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 11, 1, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 3, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 4, 7 do paint(pixels, sheetW, cellW, 0, lx, 2, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 8, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 9, 11 do paint(pixels, sheetW, cellW, 0, lx, 2, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 12, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 2, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 5 do paint(pixels, sheetW, cellW, 0, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 6, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 0, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 9, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 10, 12 do paint(pixels, sheetW, cellW, 0, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 13, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 2, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 0, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 5, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 6, 4, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 0, lx, 4, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 9, 4, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 0, 10, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 0, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 13, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 2, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 3, 5, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 4, 6 do paint(pixels, sheetW, cellW, 0, lx, 5, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 0, lx, 5, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 9, 11 do paint(pixels, sheetW, cellW, 0, lx, 5, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 12, 5, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 0, 13, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 0, lx, 6, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 0, lx, 6, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 0, lx, 6, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 0, lx, 6, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 0, lx, 6, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 3, 7, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 4, 7, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 0, lx, 7, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 0, lx, 7, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 0, lx, 7, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 11, 7, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 0, 12, 7, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 4, 8, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 0, lx, 8, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 0, lx, 8, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 0, lx, 8, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 11, 8, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 12 do paint(pixels, sheetW, cellW, 0, lx, 9, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 2, 10, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 0, lx, 10, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 5, 10 do paint(pixels, sheetW, cellW, 0, lx, 10, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 0, lx, 10, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 13, 10, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 2, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 0, lx, 11, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 5, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 0, 6, 11, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 0, lx, 11, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 9, 11, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 0, 10, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 0, lx, 11, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 0, 13, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 12 do paint(pixels, sheetW, cellW, 0, lx, 12, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 4, 11 do paint(pixels, sheetW, cellW, 0, lx, 13, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 4, 11 do paint(pixels, sheetW, cellW, 0, lx, 14, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 0, lx, 15, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 0, lx, 15, rgba(0.0, 0.0, 0.0, 1.0)) end
+  -- frame 2
+  for lx = 5, 8 do paint(pixels, sheetW, cellW, 2, lx, 0, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 2, lx, 1, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 8 do paint(pixels, sheetW, cellW, 2, lx, 1, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 9, 1, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 2, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 2, lx, 2, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 5, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 6, 9 do paint(pixels, sheetW, cellW, 2, lx, 2, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 10, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 1, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 5 do paint(pixels, sheetW, cellW, 2, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 6, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 7, 10 do paint(pixels, sheetW, cellW, 2, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 11, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 1, 3 do paint(pixels, sheetW, cellW, 2, lx, 4, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 4, 6 do paint(pixels, sheetW, cellW, 2, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 7, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 8, 10 do paint(pixels, sheetW, cellW, 2, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 11, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 4 do paint(pixels, sheetW, cellW, 2, lx, 5, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 2, lx, 5, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 7, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 8, 10 do paint(pixels, sheetW, cellW, 2, lx, 5, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 11, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 2, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 2, lx, 6, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 5, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 6, 6, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 2, 7, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 8, 10 do paint(pixels, sheetW, cellW, 2, lx, 6, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 11, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 4 do paint(pixels, sheetW, cellW, 2, lx, 7, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 5, 7, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 6, 8 do paint(pixels, sheetW, cellW, 2, lx, 7, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 2, lx, 7, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 11, 7, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 2, 8, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 7 do paint(pixels, sheetW, cellW, 2, lx, 8, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 8, 9 do paint(pixels, sheetW, cellW, 2, lx, 8, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 10, 8, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 2, 11, 8, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 3, 9, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 4, 9, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 5, 8 do paint(pixels, sheetW, cellW, 2, lx, 9, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 2, lx, 9, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 11, 9, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 2, 12, 9, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 4, 10, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 5, 10, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 6, 9 do paint(pixels, sheetW, cellW, 2, lx, 10, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 10, 12 do paint(pixels, sheetW, cellW, 2, lx, 10, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 13, 10, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 4, 5 do paint(pixels, sheetW, cellW, 2, lx, 11, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 6, 11, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 2, 7, 11, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 2, 8, 11, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 2, lx, 11, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 2, lx, 11, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 13, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 4, 6 do paint(pixels, sheetW, cellW, 2, lx, 12, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 2, lx, 12, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 9, 12, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 2, lx, 12, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 4, 13, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 2, 5, 13, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 2, 6, 13, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 2, lx, 13, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 2, 9, 13, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 4, 9 do paint(pixels, sheetW, cellW, 2, lx, 14, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 3, 8 do paint(pixels, sheetW, cellW, 2, lx, 15, rgba(0.0, 0.0, 0.0, 1.0)) end
+  -- frame 3
+  for lx = 5, 7 do paint(pixels, sheetW, cellW, 3, lx, 1, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 3, lx, 1, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 4, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 5, 7 do paint(pixels, sheetW, cellW, 3, lx, 2, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 8, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 3, lx, 2, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 11, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 3, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 4, 7 do paint(pixels, sheetW, cellW, 3, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 8, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 9, 11 do paint(pixels, sheetW, cellW, 3, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 12, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 2, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 5 do paint(pixels, sheetW, cellW, 3, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 6, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 3, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 9, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 10, 12 do paint(pixels, sheetW, cellW, 3, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 13, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 2, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 3, lx, 5, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 5, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 6, 5, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 3, lx, 5, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 9, 5, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 3, 10, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 3, lx, 5, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 13, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 2, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 3, 6, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 4, 6 do paint(pixels, sheetW, cellW, 3, lx, 6, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 3, lx, 6, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 9, 11 do paint(pixels, sheetW, cellW, 3, lx, 6, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 12, 6, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 3, 13, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 3, lx, 7, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 3, lx, 7, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 3, lx, 7, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 3, lx, 7, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 3, lx, 7, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 3, 8, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 4, 8, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 3, lx, 8, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 3, lx, 8, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 3, lx, 8, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 11, 8, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 3, 12, 8, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 4 do paint(pixels, sheetW, cellW, 3, lx, 9, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 3, lx, 9, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 7, 8 do paint(pixels, sheetW, cellW, 3, lx, 9, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 3, lx, 9, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 3, lx, 9, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 2, 10, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 3, 3, 10, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 4, 12 do paint(pixels, sheetW, cellW, 3, lx, 10, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 3, 9 do paint(pixels, sheetW, cellW, 3, lx, 11, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 10, 11 do paint(pixels, sheetW, cellW, 3, lx, 11, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 12, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 5 do paint(pixels, sheetW, cellW, 3, lx, 12, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 6, 12, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 3, 7, 12, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 3, 8, 12, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 3, 9, 12, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 10, 11 do paint(pixels, sheetW, cellW, 3, lx, 12, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 3, 12, 12, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 4, 11 do paint(pixels, sheetW, cellW, 3, lx, 13, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 4, 7 do paint(pixels, sheetW, cellW, 3, lx, 14, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 3, lx, 15, rgba(0.0, 0.0, 0.0, 1.0)) end
+  -- frame 5
+  for lx = 5, 8 do paint(pixels, sheetW, cellW, 5, lx, 1, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 5, lx, 2, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 8 do paint(pixels, sheetW, cellW, 5, lx, 2, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 9, 2, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 2, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 5, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 5, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 6, 9 do paint(pixels, sheetW, cellW, 5, lx, 3, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 10, 3, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 1, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 5 do paint(pixels, sheetW, cellW, 5, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 6, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 7, 10 do paint(pixels, sheetW, cellW, 5, lx, 4, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 11, 4, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 1, 3 do paint(pixels, sheetW, cellW, 5, lx, 5, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 4, 6 do paint(pixels, sheetW, cellW, 5, lx, 5, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 7, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 8, 10 do paint(pixels, sheetW, cellW, 5, lx, 5, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 11, 5, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 4 do paint(pixels, sheetW, cellW, 5, lx, 6, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 5, 6 do paint(pixels, sheetW, cellW, 5, lx, 6, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 7, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 8, 10 do paint(pixels, sheetW, cellW, 5, lx, 6, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 11, 6, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 2, 7, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 4 do paint(pixels, sheetW, cellW, 5, lx, 7, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 5, 7, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 6, 7, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 5, 7, 7, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 8, 10 do paint(pixels, sheetW, cellW, 5, lx, 7, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 11, 7, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 4 do paint(pixels, sheetW, cellW, 5, lx, 8, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 5, 8, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 6, 8 do paint(pixels, sheetW, cellW, 5, lx, 8, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 5, lx, 8, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 11, 8, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 2, 9, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 3, 7 do paint(pixels, sheetW, cellW, 5, lx, 9, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 8, 9 do paint(pixels, sheetW, cellW, 5, lx, 9, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 10, 9, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 5, 11, 9, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 3, 10, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 4, 10, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 5, 8 do paint(pixels, sheetW, cellW, 5, lx, 10, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 5, lx, 10, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 11, 10, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  paint(pixels, sheetW, cellW, 5, 12, 10, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 4, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  paint(pixels, sheetW, cellW, 5, 5, 11, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  for lx = 6, 9 do paint(pixels, sheetW, cellW, 5, lx, 11, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 10, 12 do paint(pixels, sheetW, cellW, 5, lx, 11, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 13, 11, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 4, 5 do paint(pixels, sheetW, cellW, 5, lx, 12, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 6, 7 do paint(pixels, sheetW, cellW, 5, lx, 12, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 8, 12, rgba(0.666667, 0.666667, 0.666667, 1.0))
+  for lx = 9, 10 do paint(pixels, sheetW, cellW, 5, lx, 12, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 11, 12 do paint(pixels, sheetW, cellW, 5, lx, 12, rgba(0.333333, 0.333333, 0.333333, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 13, 12, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 2, 7 do paint(pixels, sheetW, cellW, 5, lx, 13, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 8, 9 do paint(pixels, sheetW, cellW, 5, lx, 13, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 10, 12 do paint(pixels, sheetW, cellW, 5, lx, 13, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 2, 5 do paint(pixels, sheetW, cellW, 5, lx, 14, rgba(0.0, 0.0, 0.0, 1.0)) end
+  paint(pixels, sheetW, cellW, 5, 6, 14, rgba(0.333333, 0.333333, 0.333333, 1.0))
+  paint(pixels, sheetW, cellW, 5, 7, 14, rgba(0.0, 0.0, 0.0, 1.0))
+  for lx = 8, 9 do paint(pixels, sheetW, cellW, 5, lx, 14, rgba(0.666667, 0.666667, 0.666667, 1.0)) end
+  for lx = 10, 11 do paint(pixels, sheetW, cellW, 5, lx, 14, rgba(0.0, 0.0, 0.0, 1.0)) end
+  for lx = 3, 9 do paint(pixels, sheetW, cellW, 5, lx, 15, rgba(0.0, 0.0, 0.0, 1.0)) end
+  local closedTime, openTime = blinkTimes("lorelei")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+  local def = { image = "lorelei.png", frames = 6, frameWidth = cellW }
+  local frontOpen, frontClosed, sideOpen, sideClosed
+  withLoveTime(openTime, function()
+    frontOpen = uvSignature(modules.SpriteBillboards.mesh(def, 3))
+    sideOpen = uvSignature(modules.SpriteBillboards.mesh(def, 5))
+  end)
+  withLoveTime(closedTime, function()
+    frontClosed = uvSignature(modules.SpriteBillboards.mesh(def, 3))
+    sideClosed = uvSignature(modules.SpriteBillboards.mesh(def, 5))
+  end)
+  check(frontOpen ~= frontClosed, "lorelei pisca de frente andando (frame 3)")
+  check(sideOpen ~= sideClosed, "lorelei pisca de perfil andando (frame 5)")
+end
+
+do
+  -- monster e bike_shop_clerk deram empate de tres candidatos no score de
+  -- deteccao de marca (sem evidencia); ficam sem entrada de proposito e
+  -- continuam de olho aberto em toda pose, mesmo com pixels escuros na
+  -- posicao que outras folhas usariam como olho.
+  for _, baseName in ipairs({ "monster", "bike_shop_clerk" }) do
+    local cellW, cellH = 16, 16
+    local sheetW = cellW * 6
+    local pixels = {}
+    for frame = 0, 5 do paintBlinkFace(pixels, sheetW, cellW, frame) end
+    local closedTime, openTime = blinkTimes(baseName)
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+    loadWith(makeMod(handle, { depth = 2, shape = "slab", blink = "on" }))
+    local def = { image = baseName .. ".png", frames = 6, frameWidth = cellW }
+    local openSig, closedSig
+    withLoveTime(openTime, function()
+      openSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+    end)
+    withLoveTime(closedTime, function()
+      closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+    end)
+    eq(openSig, closedSig, baseName .. " continua de olho aberto (sem marca)")
+  end
 end
 
 -- v1.3.0 defeito 1 (SLAB): a mascara passa a ser a do frame corrente, nao a
@@ -2313,6 +3511,334 @@ do
   local got = modules.SpriteBillboards.mesh(def, 2)
   check(got and not got.original,
         "primeira pessoa sem FirstPerson no host mantem a malha solida")
+end
+
+-- v1.4.2, "um mod de terceiro derruba o modo voxel do jogo inteiro"
+-- (AngelusRole): o host concatena `def.image .. "#" .. frame` sem guarda de
+-- tipo (DramaticShapeVoxelMod/lib/SpriteBillboards.lua:65); um frame nulo de
+-- QUALQUER mod de entidade lanca ali, sem pcall, dentro do loop de desenho
+-- do host, e derruba o modo voxel do jogo inteiro ate reiniciar. O stub
+-- padrao de teste (`original`) nunca lanca, entao os testes abaixo instalam
+-- um "original" que reproduz a conta do host de verdade, senao mediriam a
+-- coisa errada e passariam tanto antes quanto depois da correcao.
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local sprite = handle.exports.lib.require("SpriteBillboards")
+  sprite.mesh = function(def, frame) return def.image .. "#" .. frame end
+  loadWith(makeMod(handle, { depth = 2 }))
+  local ok = pcall(modules.SpriteBillboards.mesh, { frames = 6 }, 0)
+  check(ok == true, "def sem image nao lanca excecao")
+end
+
+do
+  -- este e o caminho provavel do report: def com image valido, frame nulo.
+  -- depth=off forca o primeiro dos cinco pontos sem pcall, antes de
+  -- qualquer normalizacao interna de frame acontecer.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local sprite = handle.exports.lib.require("SpriteBillboards")
+  sprite.mesh = function(def, frame) return def.image .. "#" .. frame end
+  loadWith(makeMod(handle, { depth = "off" }))
+  local def = { image = "sheet.png", frames = 6 }
+  local ok = pcall(modules.SpriteBillboards.mesh, def, nil)
+  check(ok == true, "frame nil nao lanca excecao")
+end
+
+do
+  -- teste que representa o report do Angelus: forca o original mockado do
+  -- host a lancar (aqui pelo caminho de primeira pessoa, um dos cinco
+  -- pontos) e prova que o wrapper devolve nil, nao propaga a excecao.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16, nil, nil, 1)
+  local sprite = handle.exports.lib.require("SpriteBillboards")
+  sprite.mesh = function() error("boom from host original") end
+  loadWith(makeMod(handle, { depth = 2 }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = 16 }
+  local ok, mesh = pcall(modules.SpriteBillboards.mesh, def, 0)
+  check(ok and mesh == nil, "o fallback ao original nao propaga excecao")
+end
+
+do
+  -- o aviso sai uma vez so: o mesmo caminho de falha, chamado tres vezes.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local sprite = handle.exports.lib.require("SpriteBillboards")
+  sprite.mesh = function(def, frame) return def.image .. "#" .. frame end
+  local mod = loadWith(makeMod(handle, { depth = "off" }))
+  local def = { image = "sheet.png", frames = 6 }
+  modules.SpriteBillboards.mesh(def, nil)
+  modules.SpriteBillboards.mesh(def, nil)
+  modules.SpriteBillboards.mesh(def, nil)
+  local count = 0
+  for _, msg in ipairs(mod._logs.warn) do
+    if msg:find("original mesh call failed", 1, true) then count = count + 1 end
+  end
+  eq(count, 1, "o aviso sai uma vez so")
+end
+
+-- v1.4.2, AngelusRole/Tyler Durden/TwoTracks: a row de STATUS. Os testes
+-- abaixo cobrem os quatro estados de patch (NO HOST ja coberto acima,
+-- ACTIVE, REPLACED, FIRST PERSON) e os tres resultados de desenho que o
+-- TwoTracks expos (mask_failed, build_failed, exception no wrapper
+-- externo), incluindo o requisito de nao ficar preso em erro por uma folha
+-- ruim isolada (item C) e o log latching por causa distinta (item D).
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle))
+  eq(statusRowValue(mod), "ACTIVE", "com host, STATUS e ACTIVE")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle))
+  eq(statusRowValue(mod), "ACTIVE", "antes de ser substituido, STATUS e ACTIVE")
+  -- este e o teste que representa o report do TwoTracks: outro mod troca
+  -- SpriteBillboards.mesh DEPOIS do nosso patch, sem chamar shadowQuad nem
+  -- escrever em cardBlend (as duas hipoteses que a investigacao descartou).
+  modules.SpriteBillboards.mesh = function(def, frame) return { original = true } end
+  eq(statusRowValue(mod), "REPLACED",
+     "quando outro mod substitui SpriteBillboards.mesh depois de nos, STATUS vira REPLACED")
+  check(mod._logs.warn[#mod._logs.warn]
+        and mod._logs.warn[#mod._logs.warn]:find("replaced", 1, true),
+        "REPLACED loga uma vez")
+  local warnCount = #mod._logs.warn
+  statusRowValue(mod)
+  statusRowValue(mod)
+  eq(#mod._logs.warn, warnCount, "REPLACED nao loga de novo em leituras seguintes")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16, nil, nil, 1)
+  local mod = loadWith(makeMod(handle))
+  eq(statusRowValue(mod), "FIRST PERSON",
+     "com primeira pessoa ativa, STATUS vira FIRST PERSON")
+end
+
+do
+  -- as rows existentes continuam aparecendo na mesma ordem, depois do
+  -- STATUS.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle))
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  eq(#rows, 7, "com host, sete rows: STATUS mais as seis de sempre")
+  eq(rows[1].label, "STATUS", "STATUS vem primeiro")
+  eq(rows[2].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
+  eq(rows[3].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
+  eq(rows[4].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
+  eq(rows[5].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
+  eq(rows[6].label, "BLINK", "BLINK continua na mesma posicao relativa")
+  eq(rows[7].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
+end
+
+do
+  -- mascara que falha vira STATUS de erro e loga uma vez com a mensagem.
+  -- def sem image: maskFor devolve nil sem lancar, toda chamada, entao
+  -- consecutiveDrawFailures sobe em toda chamada, nao so na primeira.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 2 }))
+  local def = { frames = 6 }
+  for _ = 1, 10 do
+    modules.SpriteBillboards.mesh(def, 0)
+  end
+  eq(statusRowValue(mod), "MASK ERROR",
+     "mascara que falha repetidamente vira STATUS de erro")
+  check(mod._logs.warn[#mod._logs.warn]
+        and mod._logs.warn[#mod._logs.warn]:find("mask_failed", 1, true),
+        "mask_failed loga a mensagem")
+  local warnCount = #mod._logs.warn
+  modules.SpriteBillboards.mesh(def, 0)
+  eq(#mod._logs.warn, warnCount, "a mesma causa de mask_failed loga uma vez so")
+end
+
+do
+  -- malha que falha vira STATUS de erro e loga uma vez com a mensagem
+  -- original. Voxel3D.newMesh quebrado forca buildSlabMesh a lancar no
+  -- final da construcao, com maskFor ja tendo funcionado.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 2 }))
+  modules.Voxel3D.newMesh = function() error("boom from Voxel3D.newMesh") end
+  local def = { image = "sheet.png", frames = 1 }
+  for _ = 1, 10 do
+    modules.SpriteBillboards.mesh(def, 0)
+  end
+  eq(statusRowValue(mod), "BUILD ERROR",
+     "malha que falha repetidamente vira STATUS de erro")
+  check(mod._logs.warn[#mod._logs.warn]
+        and mod._logs.warn[#mod._logs.warn]:find("build_failed", 1, true)
+        and mod._logs.warn[#mod._logs.warn]:find("boom from Voxel3D.newMesh", 1, true),
+        "build_failed loga a mensagem original, mesmo vindo do cache")
+  local warnCount = #mod._logs.warn
+  modules.SpriteBillboards.mesh(def, 0)
+  eq(#mod._logs.warn, warnCount, "a mesma causa de build_failed loga uma vez so")
+end
+
+do
+  -- excecao no wrapper mais externo vira STATUS de erro e loga uma vez com
+  -- a mensagem original. Quebra cacheKey (upvalue de voxelMesh) para forcar
+  -- uma excecao que nenhum pcall interno de voxelMesh pega, so o wrapper.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 2 }))
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMeshFn
+  for i = 1, 20 do
+    local n, v = debug.getupvalue(wrapper, i)
+    if n == "voxelMesh" then voxelMeshFn = v; break end
+  end
+  check(type(voxelMeshFn) == "function", "teste encontra voxelMesh no wrapper")
+  local found = false
+  for i = 1, 40 do
+    local n = debug.getupvalue(voxelMeshFn, i)
+    if n == "cacheKey" then
+      debug.setupvalue(voxelMeshFn, i, function() error("boom from cacheKey") end)
+      found = true
+      break
+    end
+  end
+  check(found, "teste encontra cacheKey em voxelMesh")
+  local def = { image = "sheet.png", frames = 1 }
+  for _ = 1, 10 do
+    modules.SpriteBillboards.mesh(def, 0)
+  end
+  eq(statusRowValue(mod), "DRAW ERROR",
+     "excecao no wrapper externo repetida vira STATUS de erro")
+  check(mod._logs.warn[#mod._logs.warn]
+        and mod._logs.warn[#mod._logs.warn]:find("exception", 1, true)
+        and mod._logs.warn[#mod._logs.warn]:find("boom from cacheKey", 1, true),
+        "exception loga a mensagem original")
+  local warnCount = #mod._logs.warn
+  modules.SpriteBillboards.mesh(def, 0)
+  eq(#mod._logs.warn, warnCount, "a mesma causa de exception loga uma vez so")
+end
+
+do
+  -- item C: um sprite que falha no meio de varios que funcionam nao deixa
+  -- o STATUS preso em erro. Uma folha ruim a cada quatro boas, 20 desenhos
+  -- no total (4 ruins, 16 bons): dentro de QUALQUER janela de 8 desenhos
+  -- consecutivos deste padrao ha no maximo 2 falhas, 25%, bem abaixo dos
+  -- 50% que escalam o STATUS.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 2 }))
+  local goodDef = { image = "sheet.png", frames = 1 }
+  local badDef = { frames = 6 }
+  for i = 1, 20 do
+    modules.SpriteBillboards.mesh(goodDef, 0)
+    if i % 4 == 0 then
+      modules.SpriteBillboards.mesh(badDef, 0)
+    end
+  end
+  eq(statusRowValue(mod), "ACTIVE",
+     "uma folha ruim isolada no meio de varias boas nao deixa o STATUS preso em erro")
+end
+
+do
+  -- pente fino, item 1: um contador de falhas SEGUIDAS e derrotavel por
+  -- intercalacao (o sprite do jogador desenha bem a cada quadro, um NPC de
+  -- fonte quebrada falha intercalado, e nenhuma sequencia de falhas chega
+  -- ao limite, mesmo com metade da tela caindo pra card plano). Alternancia
+  -- estrita bom/ruim, 16 desenhos (8 bons, 8 ruins): a janela dos ultimos 8
+  -- fica com metade de falha, e o STATUS escala mesmo sem nenhuma sequencia
+  -- ininterrupta de falhas.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 2 }))
+  local goodDef = { image = "sheet.png", frames = 1 }
+  local badDef = { frames = 6 }
+  for _ = 1, 8 do
+    modules.SpriteBillboards.mesh(goodDef, 0)
+    modules.SpriteBillboards.mesh(badDef, 0)
+  end
+  eq(statusRowValue(mod), "MASK ERROR",
+     "alternancia estrita ok, falha, ok, falha com maioria de falhas escala o STATUS")
+end
+
+do
+  -- causas distintas (duas folhas quebradas de jeitos diferentes) logam
+  -- cada uma a sua vez, nao colapsam numa so.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 2 }))
+  local defA = { image = "a.png", frames = 1 }
+  local defB = { image = "b.png", frames = 1 }
+  local callCount = 0
+  modules.Voxel3D.newMesh = function()
+    callCount = callCount + 1
+    error("boom " .. callCount)
+  end
+  modules.SpriteBillboards.mesh(defA, 0)
+  modules.SpriteBillboards.mesh(defB, 0)
+  local buildWarnings = 0
+  for _, msg in ipairs(mod._logs.warn) do
+    if msg:find("build_failed", 1, true) then buildWarnings = buildWarnings + 1 end
+  end
+  eq(buildWarnings, 2,
+     "duas causas distintas de build_failed logam cada uma a sua vez")
+end
+
+do
+  -- pente fino, item 2: o rotulo do STATUS mostra a causa DOMINANTE da
+  -- janela, nao a mais recente. Sete falhas de mask_failed e uma de
+  -- exception por ultimo (numa folha diferente): o rotulo tem que ser
+  -- MASK ERROR (a causa de 7 dos 8 desenhos da janela), nao DRAW ERROR (a
+  -- ultima, mas so 1 dos 8). O rotulo e o produto desta row: e ele que diz
+  -- pro jogador o que esta acontecendo sem precisar pedir log.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 2 }))
+  local badDef = { frames = 6 } -- sem image: mask_failed toda vez
+  for _ = 1, 7 do
+    modules.SpriteBillboards.mesh(badDef, 0)
+  end
+  -- quebra cacheKey (upvalue de voxelMesh) so pra forcar uma excecao no
+  -- oitavo desenho, numa folha diferente das sete primeiras.
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMeshFn
+  for i = 1, 20 do
+    local n, v = debug.getupvalue(wrapper, i)
+    if n == "voxelMesh" then voxelMeshFn = v; break end
+  end
+  check(type(voxelMeshFn) == "function",
+        "teste encontra voxelMesh no wrapper (dominante da janela)")
+  local found = false
+  for i = 1, 40 do
+    local n = debug.getupvalue(voxelMeshFn, i)
+    if n == "cacheKey" then
+      debug.setupvalue(voxelMeshFn, i, function() error("boom from cacheKey") end)
+      found = true
+      break
+    end
+  end
+  check(found, "teste encontra cacheKey em voxelMesh (dominante da janela)")
+  local otherDef = { image = "sheet.png", frames = 1 }
+  modules.SpriteBillboards.mesh(otherDef, 0)
+  eq(statusRowValue(mod), "MASK ERROR",
+     "STATUS mostra a causa dominante da janela (7 mask_failed), nao a mais recente (1 exception)")
 end
 
 T.finish("voxel_chars_test")

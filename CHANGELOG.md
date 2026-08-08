@@ -6,6 +6,217 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
+## [1.5.0] - 2026-08-08
+
+### Added
+
+- **A `STATUS` row says why voxel rendering is or is not happening.** The
+  options menu always registers its rows now: with no supported host it
+  shows a single `STATUS: NO HOST` row instead of showing nothing at all,
+  and with a host it shows `STATUS` first, read fresh every time the menu
+  opens, never cached. It reads one of `ACTIVE`; `NO HOST`; `FIRST PERSON`,
+  meaning this mod is intentionally returning the flat card because a solid
+  does not inherit the camera's cylindrical billboard contract, not a
+  defect; `REPLACED`, when another mod swaps `SpriteBillboards.mesh` after
+  this one has already patched it, which `warnChainedMesh` cannot see
+  because it only catches patching that happens before; or `MASK ERROR`,
+  `BUILD ERROR` or `DRAW ERROR`, when a sprite's mask cannot be built, its
+  mesh fails to build, or its draw call throws inside the outermost
+  wrapper. Every one of those failure paths used to fail silently with the
+  error discarded; each now logs its message once per distinct cause.
+
+  Escalating to a named error tracks the proportion of failures across a
+  sliding window of the last 8 draw results, at half or more, rather than a
+  run of consecutive failures: a sprite that fails every other frame still
+  escalates even though it never fails twice in a row, and a single bad
+  sheet among many working ones still cannot escalate on its own. The label
+  names whichever failure kind is most common across that window, not just
+  the most recent one.
+
+  `patch()` is atomic: it builds every reference in local variables and
+  writes to the host's table before committing anything to this mod's own
+  state, and `STATUS` and the options rows gate on an explicit "patch
+  completed" flag, never on whether a reference happens to be set. A host
+  whose table rejects a write, such as one that protects `mesh` but allows
+  new keys, a plausible way to guard a public API without blocking
+  extension, fails the whole patch cleanly: any partial write already made
+  to the host's table is rolled back to what it held before, and `STATUS`
+  reports `NO HOST` rather than a `REPLACED` pointing at a conflict that
+  does not exist.
+
+  Reported by **AngelusRole**, whose flicker and host reports both landed
+  in this version; by **Tyler Durden**, whose host reported itself as
+  version `7.0`; and by **TwoTracks**, who reported a host that is
+  accepted, whose options menu appears, and which still draws nothing.
+  TwoTracks' case is not solved by this change. The mods on the list they
+  gave do not replace `SpriteBillboards.mesh`, and the first person path
+  only reads `cardBlend`, it does not write it, so both leading hypotheses
+  were ruled out during the investigation. What this change adds is the
+  `STATUS` row itself, so the next report from that machine can say which
+  silent path is actually happening instead of just "nothing draws."
+
+- **Characters can blink while walking, not only standing.** SLAB blinks on
+  the front and side standing frames and, when a sheet's eye mark survives
+  the walk, the front and side walking frames too. Whether a walking pose
+  blinks is decided at mesh build time, sheet by sheet and pose by pose,
+  never by a hand written list: the eye mark used is the standing frame's
+  mark shifted by that sheet's `poseOffset` between the two frames, and
+  before that mark is used its tone at the shifted coordinate is checked
+  against the tone at the source coordinate. If any eye mark on a sheet
+  does not survive that check, that sheet stays open in that pose, exactly
+  like a sheet with no eye entry at all; there is no half closed eye.
+
+  This is the fix for the defect the v1.4.1 `BLINK` option shipped with:
+  validating only the standing frame closed the "eye" over skin on the
+  walking frame, because the face shifts down a row while walking, and
+  walking blink was disabled entirely as the workaround. Measured on the
+  already validated eye marks: reading a mark at the same raw coordinate
+  transfers on only 4 of 38 sheets for the front pose and 15 of 34 for the
+  side pose; compensating by `poseOffset` raises that to 35 of 38 and 33 of
+  34. The sheets that still do not transfer, `girl`, `lance`, `seel` and
+  `middle_aged_woman`, are the ones whose head is genuinely redrawn between
+  poses, the same sheets already known from the top of the head fix below.
+
+  The blink option's cache key still carries no blink bit, on purpose, and
+  does not need one here either: whether a pose blinks is decided from
+  `frame`, the sprite's base name and its own pixels, all of which are
+  already part of the mesh cache key, so a walking pose and a standing pose
+  for the same sheet always land in separate cache entries and can never
+  share blink state.
+
+  Adds eye marks for `lorelei` (front `{5,7} {6,7} {9,7} {10,7}`, side
+  `{5,6}`) and for `gramps` (side `{5,7}`, alongside its existing front
+  mark), all derived from the same signature already validated across 174
+  front marks and 57 side marks: a single dominant column and row, at the
+  same relative position as other validated marks. `monster` and
+  `bike_shop_clerk` are deliberately left without any mark, and `bird`,
+  `fairy`, `fisher`, `granny`, `gym_guide` and `seel` without a side mark:
+  each scored a tie or an off center candidate with no clear winner, so
+  there is no evidence to add one, and every one of them keeps the default
+  open eye rather than a guessed mark.
+
+  Reported by **Kim** after testing v1.4.1 in game.
+
+### Changed
+
+- **Voxel Characters now accepts a host by what it can do, not by its
+  version number.** A capability probe checks that `exports.lib` exists and
+  that its `require` returns the three modules this mod actually calls,
+  `Voxel3D`, `ImageCache` and `SpriteBillboards`, with `SpriteBillboards.mesh`
+  a function. A host that passes the probe is accepted no matter what
+  version it reports; the version is logged always and only earns a
+  warning when it falls outside the range this mod has been tested
+  against. A host that fails the probe is rejected with a message naming
+  the module that was missing, and a required module whose `require` call
+  throws no longer takes the whole mod load down with it. The accepted
+  host ids are `DRAMATIC_SHAPE`, the original Dramatic Shape Voxel Mod;
+  `BATTLE_ART_VOXEL_FORK`, the fork by absol89; and `DRAMALESS_SHAPE`, the
+  fork by artyrambles. That id list is still written by hand, because the
+  mod API only offers `find(id)` and has no way to list every loaded mod,
+  so an id has to be known before its capability can even be probed.
+
+  The version gate this replaces had inverted itself. Measured before this
+  change: a host reporting an unreadable version string such as `banana`
+  was accepted, while a host reporting a readable but old version such as
+  `1.3.1` was rejected, even with a complete and working API. The host
+  lineages version independently and inconsistently: a suffixed tag a
+  parser cannot read, a tag that parses higher than a newer release by
+  date, a release whose manifest reports one version while its own code
+  reports another. A version gate over that keeps failing in a new way
+  with every release; deciding by capability instead removes the whole
+  class of failure.
+
+  Requested by **Colonel_Aureliano**, who asked about compatibility with
+  the "stalthiem drama less voxel" fork; **absol** had also warned earlier
+  about the `DS Voxelmod - Stahl's Edit` lineage before it was public.
+  Reported by **AngelusRole**, who found that disabling Wilds of Kanto no
+  longer worked around the problem in v1.4.1, because the host he runs,
+  Dramaless Shape Voxel Mod `1.6.2.ST`, was not recognized by that release
+  at all. Also reported by **Tyler Durden**, whose host reported itself as
+  version `7.0` and was rejected by every known range even though its
+  exported API was complete.
+
+- **`TOP EDGE` now defaults to ON.** This is intentionally not the conservative
+  default from v1.4.1. With `SIDE COLOR: BODY`, `TOP EDGE: OFF` is not neutral:
+  the highest exposed SLAB top face can sample body color below the outline and
+  draw a bright hat-colored cap above the dark contour. Turning the edge on by
+  default removes that artifact instead of adding a new effect. Players can
+  still choose OFF when they want the pure host top shade.
+
+  Reported by **Kim** in game on Red's hat. Suggested earlier by **Jirai
+  Gumo**, who described the same need for a darker top edge before the field
+  report existed.
+
+- **Credits reworded so the viability statement is not read as ranking one
+  host lineage over another.** The wording named one specific project as
+  what made this mod possible, while a player could be running any of the
+  three accepted hosts. Crediting the Dramatic Shape Voxel Mod as the
+  original author of the lineage is a fact, not a side taken, so that
+  credit stays explicit; the viability statement is now about the lineage
+  and its exported API in general, not about one project by name.
+
+### Fixed
+
+- **The top of the head no longer flickers while walking with `SIDE COLOR:
+  BODY`.** The walking pose is the standing pose moved down one row in the
+  sprite art, a deliberate step. SLAB read the reference frame for new top
+  and side faces at the same coordinate as the walking frame instead of
+  compensating for that shift, so the top of a hat resolved to a different
+  band of the art on every other step. A new `poseOffset` measures the shift
+  between two frames by opaque mask overlap and compensates the reference
+  lookup in `verticalUv` and `sideUv` before falling back to the previous,
+  uncompensated read. Measured on `red.png`: 306 of 2194 top face pixels
+  (13.9%) changed color between the standing and walking frame at the same
+  screen position before this fix, 0 after.
+
+  CARVED's `topUv` and `sideUv` had the same defect in their own reference
+  search. The fix there compares frames only within the same view, the
+  front pose against the front pose or the profile pose against the profile
+  pose, never front against profile: a visual hull's profile silhouette is
+  a different shape than its front silhouette by nature of the art, and
+  comparing them would measure that shape difference, not the walk offset.
+  `poseOffset` now refuses to compensate at all between two frames of
+  different views.
+
+  Reported by **AngelusRole** on Discord.
+
+- **A single misbehaving entity mod no longer disables voxel rendering for
+  the whole play session.** The host's `SpriteBillboards.mesh` builds a
+  cache key with `def.image .. "#" .. frame` and has no type guard on
+  either value; a `nil` frame coming from any entity mod threw there,
+  uncaught, inside the host's draw loop. The exception reached the mod
+  pipeline's error boundary, which marked the whole Voxel Characters patch
+  as broken for the rest of the session. One entity with a bad pose, on a
+  single frame, turned off voxel rendering for every character until the
+  game restarted. All five places in this mod that fall back to the host's
+  original mesh function now go through a wrapper that catches that
+  failure and returns `nil` instead of letting it propagate, so only the
+  misbehaving entity's billboard is skipped for that frame; every other
+  character stays voxel. A dropped billboard is logged once per session,
+  not once per frame, since the failure can repeat every frame at 60 Hz.
+
+  Reported by **AngelusRole** on Discord, who had to disable Wilds of Kanto
+  for Voxel Characters to keep working. Disabling it only helped because it
+  restarted the mod set, not because anything on its side was at fault.
+
+- **`poseOffset(a, b)` is now symmetric: always the exact negative of
+  `poseOffset(b, a)`.** On a genuine score tie between a positive and a
+  negative vertical shift, the "prefer the smaller value" tie-break rule
+  chose the negative shift in both directions when each direction scanned
+  independently, since each scan applied the same rule without knowing
+  what the other had chosen. Blink's eye compensation above calls
+  `poseOffset` in the opposite direction from the geometry color
+  compensation, so this could silently disable a blink that should have
+  transferred; the tone check already caught the resulting bad coordinate
+  and fell back to an open eye, so no closed eye ever pointed at the wrong
+  texel, but a transfer that should have worked did not. The scan now
+  always runs for the pair in a canonical order, from the lower frame index
+  to the higher one, and negates the result when asked for the reverse
+  direction, so the two directions can never disagree. The scan itself also
+  no longer recomputes the source frame's opacity for every candidate
+  offset, only the target frame's, since only the target side depends on
+  the candidate.
+
 ## [1.4.1] - 2026-08-07
 
 ### Added
@@ -22,13 +233,14 @@ the direction is named in the entry their contribution landed in.
 ### Fixed
 
 - **Voxel Characters now finds the active fork host.** The bootstrap accepts
-  `BATTLE_ART_VOXEL_FORK` from absol89's Battle Art Voxel Fork as the reference
-  host, while keeping `DRAMATIC_SHAPE` as the legacy fallback. If both host ids
-  are installed and supported, the fork is chosen. The mod now checks each host
-  for both `exports.lib` and the supported version range before choosing it, so
-  an out-of-range fork no longer blocks a valid legacy host from loading. If no
-  usable host exists, the warning says what it found and why each candidate was
-  rejected.
+  `BATTLE_ART_VOXEL_FORK` from absol89's Battle Art Voxel Fork as an accepted
+  host id alongside `DRAMATIC_SHAPE`. If both host ids are installed and
+  supported, the fork is chosen first; that is deterministic list order for
+  when more than one host is present, not a ranking of the hosts. The mod
+  now checks each host for both `exports.lib` and the supported version
+  range before choosing it, so an out-of-range fork no longer blocks another
+  valid host from loading. If no usable host exists, the warning says what
+  it found and why each candidate was rejected.
 
 - **The fork id is now an optional dependency too.** This gives the loader the
   same soft ordering edge for `BATTLE_ART_VOXEL_FORK` that it already had for
