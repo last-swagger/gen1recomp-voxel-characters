@@ -29,3 +29,14 @@ docs/images/ground.png
 docs/images/blink.png
 docs/images/itemball.png
 docs/images/exposure.png
+
+# O gate in-game: um driver POKEPORT_DRIVER e o runner que o dispara. Roda o
+# jogo de verdade para fotografar o mod em varios angulos de camera, contra o
+# mundo real e na escala real de tela, que e o que o harness offline nao
+# consegue mostrar. Ferramenta de desenvolvimento, nao conteudo do mod.
+tools/ingame/driver.lua
+tools/ingame/run.sh
+
+# Mais renders de comparacao para as notas de release.
+docs/images/walk-offset.png
+docs/images/blink-walk.png

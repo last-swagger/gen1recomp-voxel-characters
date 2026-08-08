@@ -1046,6 +1046,20 @@ end
 
 local function drawCell(row, yaw, x, y, size, asProvenance, asCellId)
   if not row.mesh then return end
+  -- ARMADILHA 12, achada por um agente que prototipou e conferiu, e que eu
+  -- reproduzi: uma forma FUNDA transborda a propria celula e invade a
+  -- vizinha, contaminando a medicao dela. `red.png` no CARVED vai a z = -13
+  -- num sprite de 16 de largura, e no `cell` grande a projecao disso passa da
+  -- borda. Medido: com `cell=220`, que e o DEFAULT, o SLAB media 73.4%
+  -- sozinho e 70.7% num contact sheet ao lado do CARVED. Em 140, 100, 80 e
+  -- 60 nao vazava, o que e pior do que vazar sempre: o defeito so aparecia no
+  -- default, e sumia assim que alguem tentava reproduzir com celula menor.
+  --
+  -- O recorte fecha isso por construcao, para toda medicao e todo desenho,
+  -- em vez de virar mais uma regra de uso que alguem precisa lembrar. Cada
+  -- celula so pode pintar dentro dela mesma.
+  local prevScissor = { love.graphics.getScissor() }
+  love.graphics.setScissor(x, y, size, size)
   local b = bounds(row.mesh.verts)
   -- Pivot on the sprite CELL, and on z = 0, the plane the flat card occupies.
   --
@@ -1137,6 +1151,7 @@ local function drawCell(row, yaw, x, y, size, asProvenance, asCellId)
   mesh:setTexture(row.texture)
   love.graphics.draw(mesh)
   mesh:release()
+  love.graphics.setScissor(unpack(prevScissor))
 end
 
 -- Render the same sheet with identity colours instead of art, read it back,
