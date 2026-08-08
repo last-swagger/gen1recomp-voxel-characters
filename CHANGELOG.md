@@ -6,6 +6,49 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
+## [1.6.0] - 2026-08-08
+
+### Added
+
+- **`FRONT SHAPE: OFF / LOW / MED / HIGH` steps the SLAB front face into shade
+  toward each run's edges, for false roundness without a gradient.** The front
+  face is flat: every pixel bakes the same shade, and on a typical overworld
+  camera angle it is the largest surface the player actually sees, roughly
+  three quarters of the pixels on screen. A continuous gradient was tried
+  first, dark at the edges and bright in the middle, and it read as a bright
+  stripe floating over the art rather than volume: hard edged pixel art and a
+  smooth gradient fight each other. Stepping the shade into a fixed number of
+  constant tones instead, the same way the source art already implies volume
+  with a handful of tones, reads as intended.
+
+  Each horizontal front run picks a shade per pixel from that pixel's
+  distance to the run's own edges, quantized into three constant tones,
+  mirrored around the run's own center. The center and half width used for
+  that are both relative to the run's own bounds, never to an absolute
+  screen coordinate, so a mirrored character keeps a mirrored shade with no
+  east or west special case. Runs under 3 pixels wide have no middle pixel
+  to distinguish from either edge, so nothing splits there: dividing would
+  only add a quad with no possible step. The `BLINK` eye quad carved out of
+  a front run is unaffected: it stays its own quad at the flat front shade,
+  never stepped, and blinking keeps working in every pose that already
+  blinks today.
+
+  Default is OFF, so this release changes nothing for players who do not opt
+  in. LOW is the strength measured against the silhouette gate: IoU 1.000
+  against the flat card at pitch 0 on `red`, `blue`, `snorlax`, `poke_ball`
+  and `nurse`, frames 0 through 5, with `red.png` frame 0 moving from 105 to
+  259 quads, inside the mesh's 300 quad budget. HIGH is the same measured
+  strength that already reads as heavier than intended on its own, kept
+  available as a ceiling for players who want more contrast anyway.
+  Splitting a run only changes its baked shade, never a vertex position, so
+  the silhouette and the quad count are identical for any strength above
+  zero; MED sits between the two measured strengths by construction, not a
+  separate render pass.
+
+  The mesh cache key now carries the selected strength, so switching
+  `FRONT SHAPE` in the options menu changes what is on screen immediately
+  instead of waiting on an unrelated cache invalidation.
+
 ## [1.5.0] - 2026-08-08
 
 ### Added

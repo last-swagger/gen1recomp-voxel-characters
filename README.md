@@ -51,7 +51,7 @@ once a host is found.
 
 ## Options
 
-Seven rows, under **OPTIONS**:
+Eight rows, under **OPTIONS**:
 
 ```
 STATUS:        read only, see below
@@ -61,6 +61,7 @@ SHAPE:         SLAB / CARVED / CARVED+
 GROUND SHADE:  OFF / ON
 BLINK:         OFF / ON
 TOP EDGE:      OFF / ON
+FRONT SHAPE:   OFF / LOW / MED / HIGH
 ```
 
 `STATUS` is read only and recomputed live every time the menu opens, never
@@ -150,12 +151,32 @@ can sample body color below the top outline and draw a bright cap above a dark
 contour. ON keeps that top contour reading as an edge. Players can still turn
 it OFF when they want the host-matching `+Y up = 1.00` shade on character tops.
 
+`FRONT SHAPE` steps the **SLAB** front face into shade toward each horizontal
+run's edges, in three pixel aligned tones, instead of the single flat shade
+every run baked before. Default is **OFF**. The front face is the largest
+surface the player actually sees, and on its own it is completely flat; this
+gives it false roundness the same way the source art already implies volume
+with a handful of tones, without introducing a smooth gradient that would
+fight the hard edged pixel art. Runs under 3 pixels wide never split: there is
+no middle pixel to distinguish from either edge, so dividing one would only
+add a quad with no possible step. **LOW** (strength 0.12) is the strength
+measured against the silhouette gate and is the recommended level to start
+with. **MED** (0.17) and **HIGH** (0.22) add more contrast; HIGH already reads
+as heavier than intended on its own, so most players will prefer LOW or MED.
+Splitting a run only changes its baked shade, never a vertex position, so the
+silhouette is identical to `FRONT SHAPE: OFF` at every strength.
+
 The carved modes do not merge horizontal runs yet. On `red.png` frame 0, **SLAB**
-now builds 104 quads: the exposed top and bottom faces are 16 quads each instead
-of 176 each, and the `side_e` and `side_w` faces are 17 quads each instead of
-176 each. On `red.png` frame 3, **CARVED** builds 1,044 and **CARVED+** builds
-1,018. The unconditional eye split adds 542 quads across the 303 measured SLAB
-meshes, 0.27%, so it is not tied to the `BLINK` option.
+now builds 104 quads with `FRONT SHAPE: OFF`, unchanged from every earlier
+version: the exposed top and bottom faces are 16 quads each instead of 176
+each, and the `side_e` and `side_w` faces are 17 quads each instead of 176
+each. With `FRONT SHAPE: LOW` or higher, the same frame builds 259 quads,
+inside the mesh's 300 quad budget; the extra quads come entirely from front
+runs of 3 pixels or more splitting into one quad per pixel, which is why the
+count does not grow further between LOW, MED and HIGH. On `red.png` frame 3,
+**CARVED** builds 1,044 and **CARVED+** builds 1,018. The unconditional eye
+split adds 542 quads across the 303 measured SLAB meshes, 0.27%, so it is not
+tied to the `BLINK` option.
 
 ## Compatibility
 
@@ -291,6 +312,29 @@ bottom: 0.55
 ```
 
 With `TOP EDGE: ON`, exposed SLAB top faces use `1.00 * 0.82`.
+
+With `FRONT SHAPE` above OFF, a front run of 3 pixels or more no longer emits
+one quad at the flat `0.90` front shade. Each pixel in that run gets its own
+quad instead, and its shade is chosen from the run's own center and half
+width, both computed from the run's own local bounds, never from an absolute
+screen coordinate:
+
+```lua
+local center, half = (a + b) / 2, (b - a) / 2
+local t = math.abs(sx - center) / half        -- 0 at the center, 1 at either edge
+local level = math.floor(t * (STEPS - 0.001)) -- 0, 1 or 2 with STEPS = 3
+local shade = 0.90 * (1 - strength * level / (STEPS - 1))
+```
+
+Because `a` and `b` are the run's own left and right edges, this is symmetric
+by construction: the run's first and last pixel always land on the same
+`level`, and a mirrored character mirrors its shade along with its geometry.
+Eye pixels split out of a front run for `BLINK` are carved out before this
+step runs and keep the flat `0.90` shade, so a stepped run around a blinking
+eye still blinks normally. Runs under 3 pixels wide, and every run when
+`FRONT SHAPE: OFF`, take the single flat quad path unchanged from every
+earlier version. The mesh cache key includes the selected strength, so it is
+never possible for a stale cached mesh to hide a strength change.
 
 The two side directions intentionally share one value. The host mirrors sprite
 cards after asking `SpriteBillboards.mesh(def, frame)` for geometry, so a mesh

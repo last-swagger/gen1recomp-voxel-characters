@@ -297,6 +297,36 @@ local function frontVertexShadeAt(mesh, x, y)
   end
 end
 
+-- v1.6.0: como frontFaceZAt, mas sem exigir shade == 0.90, porque um quad
+-- de FRONT SHAPE em degrau pode sair mais escuro que o shade plano de
+-- sempre. Acha o quad frontal (z1, plano em z = 0) pelas bordas X/Y e
+-- devolve o shade que ele levou, para comparar bordas e centro de um run.
+local function frontQuadShadeAt(mesh, minX, maxX, minY, maxY)
+  for i = 1, #mesh.verts, 4 do
+    local b = quadBoundsAt(mesh, i)
+    if close(b.minX, minX) and close(b.maxX, maxX)
+        and close(b.minY, minY) and close(b.maxY, maxY)
+        and close(b.minZ, b.maxZ) and close(b.minZ, 0) then
+      return mesh.verts[i][6]
+    end
+  end
+end
+
+-- v1.6.0: conta quantos quads frontais (z1, plano em z = 0) tem alguma
+-- borda dentro de [minX, maxX], para provar que um segmento se dividiu
+-- (mais de um quad) ou nao (um so).
+local function countFrontQuadsInRange(mesh, minX, maxX)
+  local count = 0
+  for i = 1, #mesh.verts, 4 do
+    local b = quadBoundsAt(mesh, i)
+    if close(b.minZ, b.maxZ) and close(b.minZ, 0)
+        and b.minX >= minX - 0.0001 and b.maxX <= maxX + 0.0001 then
+      count = count + 1
+    end
+  end
+  return count
+end
+
 local function setDepthWithoutClearing(modules, value)
   local wrapper = modules.SpriteBillboards.mesh
   local voxelMesh
@@ -423,6 +453,27 @@ local function setTopEdgeWithoutClearing(modules, value)
   return check(false, "teste encontra topEdgeValue em voxelMesh")
 end
 
+local function setFrontShapeWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 90 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "frontShapeValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra frontShapeValue em voxelMesh")
+end
+
 local function blinkHashName(name)
   local h = 5381
   name = tostring(name or "")
@@ -504,6 +555,22 @@ local function paintBlinkSideRedrawn(pixels, sheetW, cellW, frame, dy)
   for lx = 4, 8 do paint(pixels, sheetW, cellW, frame, lx, 7 + dy, skin) end
   paint(pixels, sheetW, cellW, frame, 5, 7 + dy, skin)
   paint(pixels, sheetW, cellW, frame, 5, 8 + dy, skin)
+end
+
+-- v1.6.0: mesma folha de paintBlinkFace, mas com a faixa de pele esticada
+-- pela celula inteira nos dois lados dos olhos, para garantir que pelo
+-- menos um segmento em volta de um olho passe do limiar de 3 pixels e
+-- realmente entre no caminho de degrau do FRONT SHAPE (paintBlinkFace
+-- sozinha so produz segmentos de 1 e 2 pixels, curtos demais para dividir).
+local function paintBlinkFaceWide(pixels, sheetW, cellW, frame, dy)
+  dy = dy or 0
+  local skin = rgba(0.80, 0.55, 0.40, 1)
+  local eye = rgba(0.05, 0.05, 0.05, 1)
+  for lx = 0, cellW - 1 do paint(pixels, sheetW, cellW, frame, lx, 7 + dy, skin) end
+  paint(pixels, sheetW, cellW, frame, 6, 7 + dy, eye)
+  paint(pixels, sheetW, cellW, frame, 9, 7 + dy, eye)
+  paint(pixels, sheetW, cellW, frame, 6, 8 + dy, skin)
+  paint(pixels, sheetW, cellW, frame, 9, 8 + dy, skin)
 end
 
 local function fakeMesh(verts, map)
@@ -1020,7 +1087,7 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 8, "hook anexa as rows do voxel characters, mais STATUS")
+  eq(#rows, 9, "hook anexa as rows do voxel characters, mais STATUS")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
   local option = rows[3]
   eq(rows[4].label, "SIDE COLOR", "hook anexa a row de cor lateral")
@@ -1028,6 +1095,7 @@ do
   eq(rows[6].label, "GROUND SHADE", "hook anexa a row de ground shade")
   eq(rows[7].label, "BLINK", "hook anexa a row de blink")
   eq(rows[8].label, "TOP EDGE", "hook anexa a row de top edge")
+  eq(rows[9].label, "FRONT SHAPE", "hook anexa a row de front shape")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -1073,6 +1141,47 @@ do
   eq(game.mods.modOptions.voxel_characters.top_edge, "off",
      "TOP EDGE persiste no loader")
   eq(emitted[1].payload.value, "off", "TOP EDGE emite o valor novo")
+end
+
+do
+  -- v1.6.0: a row de FRONT SHAPE, no mesmo padrao das outras: default OFF
+  -- (regra da casa), quatro degraus (OFF, LOW 0.12, MED 0.17, HIGH 0.22),
+  -- step troca e persiste no save e no loader.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 1 }))
+  local emitted = {}
+  local game = {
+    save = { options = {} },
+    mods = {
+      modOptions = {},
+      events = {
+        emit = function(_, name, payload)
+          emitted[#emitted + 1] = { name = name, payload = payload }
+          if mod._events[name] then mod._events[name](payload) end
+        end,
+      },
+    },
+  }
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
+  local option = rows[8]
+  eq(option.label, "FRONT SHAPE", "row de FRONT SHAPE fica depois de TOP EDGE")
+  eq(option.value(), "OFF", "FRONT SHAPE default e OFF")
+  check(option.step(game, 1), "step de FRONT SHAPE informa mudanca")
+  eq(option.value(), "LOW", "FRONT SHAPE alterna para LOW")
+  eq(game.save.options.modOptions.voxel_characters.front_shape, 0.12,
+     "FRONT SHAPE persiste no save")
+  eq(game.mods.modOptions.voxel_characters.front_shape, 0.12,
+     "FRONT SHAPE persiste no loader")
+  eq(emitted[1].payload.value, 0.12, "FRONT SHAPE emite o valor novo")
+  check(option.step(game, 1), "FRONT SHAPE segue avancando")
+  eq(option.value(), "MED", "FRONT SHAPE alterna para MED")
+  check(option.step(game, 1), "FRONT SHAPE segue avancando")
+  eq(option.value(), "HIGH", "FRONT SHAPE alterna para HIGH")
+  check(option.step(game, 1), "FRONT SHAPE da a volta")
+  eq(option.value(), "OFF", "FRONT SHAPE volta para OFF depois de HIGH")
 end
 
 do
@@ -2486,6 +2595,45 @@ do
 end
 
 do
+  -- v1.6.0, teste obrigatorio 5: "a chave de cache muda com a forca". Sem
+  -- isso a opcao nao muda nada na tela: e literalmente o defeito que o
+  -- Colonel_Aureliano reportou na v1.4.0 (trocar a opcao no menu nao mudava
+  -- nada, porque a malha continuava vindo do cache antigo).
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", front_shape = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local off = modules.SpriteBillboards.mesh(def, 0)
+  setFrontShapeWithoutClearing(modules, 0.12)
+  local low = modules.SpriteBillboards.mesh(def, 0)
+  setFrontShapeWithoutClearing(modules, 0.22)
+  local high = modules.SpriteBillboards.mesh(def, 0)
+  check(off ~= low and low ~= high and off ~= high,
+        "cacheKey separa FRONT SHAPE mesmo sem limpar o cache")
+  eq(modules.Voxel3D.created, 3,
+     "cacheKey cria uma entrada propria para cada FRONT SHAPE")
+end
+
+do
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved", front_shape = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setFrontShapeWithoutClearing(modules, 0.12)
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  eq(a, b, "cacheKey ignora FRONT SHAPE quando SHAPE e CARVED")
+  eq(modules.Voxel3D.created, 1,
+     "CARVED nao duplica malha identica ao trocar FRONT SHAPE")
+end
+
+do
   local cellW, cellH = 1, 7
   local pixels = {}
   for ly = 0, cellH - 1 do paint(pixels, cellW, cellW, 0, 0, ly, 1) end
@@ -3636,7 +3784,7 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 7, "com host, sete rows: STATUS mais as seis de sempre")
+  eq(#rows, 8, "com host, oito rows: STATUS mais as sete de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
   eq(rows[2].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
   eq(rows[3].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
@@ -3644,6 +3792,7 @@ do
   eq(rows[5].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
   eq(rows[6].label, "BLINK", "BLINK continua na mesma posicao relativa")
   eq(rows[7].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
+  eq(rows[8].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
 end
 
 do
@@ -3839,6 +3988,209 @@ do
   modules.SpriteBillboards.mesh(otherDef, 0)
   eq(statusRowValue(mod), "MASK ERROR",
      "STATUS mostra a causa dominante da janela (7 mask_failed), nao a mais recente (1 exception)")
+end
+
+-- v1.6.0: FRONT SHAPE. Volume na face frontal do SLAB em degraus alinhados
+-- ao pixel, opcao nova de menu com default OFF. Os cinco testes abaixo sao
+-- os obrigatorios da spec da rodada; a row/step/persist e as duas variantes
+-- de cacheKey (SLAB separa, CARVED ignora) ja foram cobertas mais acima,
+-- junto das rows e cacheKeys das outras opcoes.
+
+do
+  -- teste obrigatorio 1: "com a opcao desligada, a malha e byte a byte a de
+  -- hoje". Um run de largura 6 (bem acima do limiar de degrau) continua
+  -- saindo como UM quad so, no shade OBJ_SHADE.front de sempre, tanto com
+  -- front_shape = "off" explicito quanto sem a chave (default). Se o degrau
+  -- vazasse por baixo do OFF, este run quebraria em varios quads ou mudaria
+  -- de shade.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 4, 9 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local def = { image = "sheet.png", frames = 1 }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", front_shape = "off" }))
+  local gotOff = modulesOff.SpriteBillboards.mesh(def, 0)
+
+  local handleDefault, modulesDefault = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleDefault, { depth = 2, shape = "slab" }))
+  local gotDefault = modulesDefault.SpriteBillboards.mesh(def, 0)
+
+  check(frontQuadIndexAt(gotOff, 4, 10, 8, 9) ~= nil,
+        "FRONT SHAPE desligado mantem o run inteiro num quad so, shade de sempre")
+  eq(countFrontQuadsInRange(gotOff, 4, 10), 1,
+     "FRONT SHAPE desligado nao divide o run em mais de um quad")
+  eq(vertexSignature(gotOff), vertexSignature(gotDefault),
+     "FRONT SHAPE OFF explicito e o default (sem a chave) produzem a mesma malha, byte a byte")
+end
+
+do
+  -- teste obrigatorio 2: "run de 2 pixels nao se divide -- contagem exata".
+  -- A mesma linha tem dois runs separados por um vao: um de 2 pixels (1 a
+  -- 2) e um de 6 pixels (6 a 11, bem acima do limiar de degrau). O teste
+  -- prova que excluir runs curtos e uma REGRA (largura < 3), nao apenas
+  -- "nada divide": o run de 6 pixels tem que se dividir em degraus e o de
+  -- 2, na mesma folha com a mesma opcao ligada, nao. Nao ha um pixel "do
+  -- meio" distinto das duas bordas num run de largura 2: dividir so
+  -- custaria quad sem nenhum degrau possivel.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paint(pixels, cellW, cellW, 0, 1, 7, 1)
+  paint(pixels, cellW, cellW, 0, 2, 7, 1)
+  for lx = 6, 11 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", front_shape = 0.12 }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  check(frontQuadIndexAt(got, 1, 3, 8, 9) ~= nil,
+        "run de 2 pixels continua inteiro num quad so, mesmo com FRONT SHAPE ligado")
+  eq(countFrontQuadsInRange(got, 1, 3), 1,
+     "run de 2 pixels nao se divide -- contagem exata")
+  eq(countFrontQuadsInRange(got, 6, 12), 6,
+     "run de 2 pixels nao se divide -- contagem exata (controle: o run de 6 pixels na mesma folha se divide)")
+end
+
+do
+  -- teste obrigatorio 3: "o shade e simetrico em torno do centro do run".
+  -- Run de largura impar (5 pixels, 4 a 8): a borda esquerda (pixel 4) e a
+  -- borda direita (pixel 8) tem que sair no MESMO shade, e o centro (pixel
+  -- 6) tem que sair mais claro que as bordas, senao o degrau nao aconteceu
+  -- de verdade.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 4, 8 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", front_shape = 0.12 }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local left = frontQuadShadeAt(got, 4, 5, 8, 9)
+  local right = frontQuadShadeAt(got, 8, 9, 8, 9)
+  local center = frontQuadShadeAt(got, 6, 7, 8, 9)
+  check(left ~= nil and right ~= nil and center ~= nil,
+        "teste encontra os tres quads do run (borda esquerda, centro, borda direita)")
+  eq(left, right, "o primeiro e o ultimo pixel do run tem o mesmo shade")
+  check(center and left and center > left,
+        "o centro do run sai mais claro que as bordas -- o degrau aconteceu")
+end
+
+do
+  -- v1.6.0: a mesma simetria vale espelhada (mascara desenhada do lado
+  -- direito da celula em vez do esquerdo), provando que o shade depende so
+  -- do centro do PROPRIO run (a e b), nunca de uma coordenada absoluta de
+  -- tela nem de estar no lado leste ou oeste da celula.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 9, 13 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", front_shape = 0.12 }))
+  local got = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local left = frontQuadShadeAt(got, 9, 10, 8, 9)
+  local right = frontQuadShadeAt(got, 13, 14, 8, 9)
+  check(left ~= nil and right ~= nil,
+        "teste encontra as duas bordas do run espelhado")
+  eq(left, right,
+     "o shade simetrico nao depende de estar no lado leste ou oeste da celula")
+end
+
+do
+  -- teste obrigatorio 4 (pose 1 de 4: frente, parado, frame 0): a piscada
+  -- continua funcionando com FRONT SHAPE ligado. O olho continua seu
+  -- proprio quad (main.lua ~1417-1428), com shade plano, nunca escalonado;
+  -- o segmento de 6 pixels antes dele se divide em degraus ao redor dele.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paintBlinkFaceWide(pixels, cellW, cellW, 0)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle,
+    { depth = 2, shape = "slab", blink = "on", front_shape = 0.12 }))
+  local def = { image = "red.png", frames = 1 }
+  withLoveTime(openTime, function()
+    local got = modules.SpriteBillboards.mesh(def, 0)
+    local leftEye = frontQuadIndexAt(got, 6, 7, 8, 9)
+    check(leftEye ~= nil,
+          "de frente parado: olho continua proprio quad com FRONT SHAPE ligado")
+    check(allUvAt(got, leftEye, 6.5 / 16, 7.5 / 16),
+          "de frente parado, olho aberto aponta para o proprio texel")
+  end)
+  withLoveTime(closedTime, function()
+    local got = modules.SpriteBillboards.mesh(def, 0)
+    local leftEye = frontQuadIndexAt(got, 6, 7, 8, 9)
+    check(allUvAt(got, leftEye, 6.5 / 16, 8.5 / 16),
+          "de frente parado, a piscada continua acontecendo com a opcao ligada")
+  end)
+  local got = modules.SpriteBillboards.mesh(def, 0)
+  check(countFrontQuadsInRange(got, 0, 6) > 1,
+        "o segmento antes do olho se divide em degraus sem quebrar a piscada")
+end
+
+do
+  -- teste obrigatorio 4 (pose 2 de 4: frente, andando, frame 3). Frame 3 e
+  -- o frame 0 descido uma linha, o mesmo passo de caminhada que o resto da
+  -- suite ja usa para BLINK.
+  local cellW, cellH = 16, 18
+  local sheetW = cellW * 6
+  local pixels = {}
+  paintBlinkFaceWide(pixels, sheetW, cellW, 0, 0)
+  paintBlinkFaceWide(pixels, sheetW, cellW, 3, 1)
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle,
+    { depth = 2, shape = "slab", blink = "on", front_shape = 0.12 }))
+  local def = { image = "red.png", frames = 6, frameWidth = cellW }
+  withLoveTime(openTime, function()
+    local walk = modules.SpriteBillboards.mesh(def, 3)
+    local eye = frontQuadIndexAt(walk, 6, 7, 9, 10)
+    check(eye ~= nil,
+          "de frente andando: olho continua proprio quad com FRONT SHAPE ligado")
+    check(allUvAt(walk, eye, (3 * cellW + 6.5) / sheetW, 8.5 / cellH),
+          "de frente andando, olho aberto aponta para o proprio texel")
+  end)
+  withLoveTime(closedTime, function()
+    local walk = modules.SpriteBillboards.mesh(def, 3)
+    local eye = frontQuadIndexAt(walk, 6, 7, 9, 10)
+    check(allUvAt(walk, eye, (3 * cellW + 6.5) / sheetW, 9.5 / cellH),
+          "de frente andando, a piscada continua acontecendo com a opcao ligada")
+  end)
+end
+
+do
+  -- teste obrigatorio 4 (pose 3 de 4 e 4 de 4: perfil parado, frame 2, e
+  -- perfil andando, frame 5). paintBlinkSide ja produz um segmento de 3
+  -- pixels depois do olho (6 a 8), no limiar de degrau, sem precisar de
+  -- fixture nova.
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paintBlinkSide(pixels, sheetW, cellW, frame) end
+  local closedTime, openTime = blinkTimes("red")
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle,
+    { depth = 2, shape = "slab", blink = "on", front_shape = 0.12 }))
+  local def = { image = "red.png", frames = 6, frameWidth = cellW }
+  withLoveTime(openTime, function()
+    local side = modules.SpriteBillboards.mesh(def, 2)
+    local sideEye = frontQuadIndexAt(side, 5, 6, 8, 9)
+    check(sideEye ~= nil,
+          "de perfil parado: olho continua proprio quad com FRONT SHAPE ligado")
+    check(allUvAt(side, sideEye, (2 * cellW + 5.5) / sheetW, 7.5 / cellH),
+          "de perfil parado, olho aberto aponta para o proprio texel")
+    local sideWalk = modules.SpriteBillboards.mesh(def, 5)
+    local sideWalkEye = frontQuadIndexAt(sideWalk, 5, 6, 8, 9)
+    check(allUvAt(sideWalk, sideWalkEye, (5 * cellW + 5.5) / sheetW, 7.5 / cellH),
+          "de perfil andando, olho aberto aponta para o proprio texel")
+  end)
+  withLoveTime(closedTime, function()
+    local side = modules.SpriteBillboards.mesh(def, 2)
+    local sideEye = frontQuadIndexAt(side, 5, 6, 8, 9)
+    check(allUvAt(side, sideEye, (2 * cellW + 5.5) / sheetW, 8.5 / cellH),
+          "de perfil parado, a piscada continua acontecendo com a opcao ligada")
+    local sideWalk = modules.SpriteBillboards.mesh(def, 5)
+    local sideWalkEye = frontQuadIndexAt(sideWalk, 5, 6, 8, 9)
+    check(allUvAt(sideWalk, sideWalkEye, (5 * cellW + 5.5) / sheetW, 8.5 / cellH),
+          "de perfil andando, a piscada continua acontecendo com a opcao ligada")
+  end)
+  local side = modules.SpriteBillboards.mesh(def, 2)
+  check(countFrontQuadsInRange(side, 6, 9) > 1,
+        "o segmento depois do olho de perfil se divide em degraus sem quebrar a piscada")
 end
 
 T.finish("voxel_chars_test")

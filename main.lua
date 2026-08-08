@@ -55,6 +55,7 @@ local SHAPE_KEY = "shape"
 local GROUND_SHADE_KEY = "ground_shade"
 local BLINK_KEY = "blink"
 local TOP_EDGE_KEY = "top_edge"
+local FRONT_SHAPE_KEY = "front_shape"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
 local SIDE_COLOR_VALUES = { "body", "outline" }
@@ -67,6 +68,21 @@ local BLINK_VALUES = { "off", "on" }
 local BLINK_LABELS = { "OFF", "ON" }
 local TOP_EDGE_VALUES = { "off", "on" }
 local TOP_EDGE_LABELS = { "OFF", "ON" }
+-- DECISAO v1.6.0: os tres niveis sao forca de sombreamento em degraus na
+-- face frontal, nao contagem de poligonos. A geometria (posicao de
+-- vertice, logo IoU e contagem de quads) e identica para qualquer forca >
+-- 0: emitFrontRun so usa a forca para escalar o multiplicador de shade de
+-- cada degrau, nunca a posicao de um vertice. 0.12 e o valor medido e
+-- validado por Kim (IoU 1.000 contra o card plano em red, blue, snorlax,
+-- poke_ball e nurse, frames 0-5; 259 quads no red.png frame 0, dentro do
+-- orcamento de 300) e e o primeiro nivel ligado. 0.22 tambem foi medido e
+-- ja "pesa demais" na leitura do Kim, mas fica disponivel como teto para
+-- quem preferir mais contraste. 0.17 (MED) e o ponto medio entre os dois
+-- extremos medidos: como a geometria independe da magnitude da forca, os
+-- dois numeros medidos ja cobrem esse terceiro nivel por construcao, sem
+-- exigir uma rodada extra de render.
+local FRONT_SHAPE_VALUES = { "off", 0.12, 0.17, 0.22 }
+local FRONT_SHAPE_LABELS = { "OFF", "LOW", "MED", "HIGH" }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 local DEFAULT_SIDE_COLOR = "body"
@@ -84,6 +100,8 @@ local DEFAULT_BLINK_INDEX = 1
 -- escura ajustavel para quem quiser voltar ao host shade puro.
 local DEFAULT_TOP_EDGE = "on"
 local DEFAULT_TOP_EDGE_INDEX = 2
+local DEFAULT_FRONT_SHAPE = "off"
+local DEFAULT_FRONT_SHAPE_INDEX = 1
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -98,6 +116,13 @@ local TOP_EDGE_SHADE = 0.82
 -- z-fighting entre faces internas que agora nao sao mais emitidas.
 local SIDE_INSET = 0
 local RUN_UV_INSET = 0.05
+-- DECISAO v1.6.0: tres degraus de shade e o mesmo numero de tons que o
+-- artista ja usa para volume nos sprites Gen 1 fonte. Um gradiente
+-- continuo foi prototipado antes e leu como uma listra brilhante solta por
+-- cima da arte, porque arte de pixel duro e degrade suave brigam entre si;
+-- shade constante por pixel, quantizado nestes degraus, e o que combina
+-- com o resto do desenho.
+local FRONT_SHAPE_STEPS = 3
 local PITCH_BUCKET = math.pi / 180
 local MAX_MESHES = 64
 -- DECISAO v1.4.2, pente fino (item 1): STATUS decide por PROPORCAO numa
@@ -304,6 +329,16 @@ mod.options:define({
     default = DEFAULT_TOP_EDGE,
     help = "Darkens only exposed SLAB top faces for a false top-down edge.",
   },
+  {
+    key = FRONT_SHAPE_KEY,
+    type = "choice",
+    label = "FRONT SHAPE",
+    choices = {
+      { "OFF", "off" }, { "LOW", 0.12 }, { "MED", 0.17 }, { "HIGH", 0.22 },
+    },
+    default = DEFAULT_FRONT_SHAPE,
+    help = "Steps the SLAB front face into three pixel aligned shade tones toward each run's edges, for false roundness without a gradient.",
+  },
 })
 
 local SpriteBillboards, Voxel3D, ImageCache
@@ -317,6 +352,7 @@ local shapeValue
 local groundShadeValue
 local blinkValue
 local topEdgeValue
+local frontShapeValue
 local optionsRegistered = false
 local meshBlink = setmetatable({}, { __mode = "k" })
 local blinkVertexWarned = false
@@ -405,6 +441,13 @@ local function topEdgeIndexOf(value)
   return DEFAULT_TOP_EDGE_INDEX
 end
 
+local function frontShapeIndexOf(value)
+  for i, v in ipairs(FRONT_SHAPE_VALUES) do
+    if v == value then return i end
+  end
+  return DEFAULT_FRONT_SHAPE_INDEX
+end
+
 local function readDepth()
   local ok, value = pcall(mod.options.get, mod.options, KEY)
   if ok then return VALUES[indexOf(value)] end
@@ -439,6 +482,12 @@ local function readTopEdge()
   local ok, value = pcall(mod.options.get, mod.options, TOP_EDGE_KEY)
   if ok then return TOP_EDGE_VALUES[topEdgeIndexOf(value)] end
   return DEFAULT_TOP_EDGE
+end
+
+local function readFrontShape()
+  local ok, value = pcall(mod.options.get, mod.options, FRONT_SHAPE_KEY)
+  if ok then return FRONT_SHAPE_VALUES[frontShapeIndexOf(value)] end
+  return DEFAULT_FRONT_SHAPE
 end
 
 local function releaseMesh(mesh)
@@ -496,12 +545,23 @@ local function setTopEdge(value)
   return topEdgeValue
 end
 
+-- A forca entra na cacheKey (ver cacheKey abaixo), mas clearMeshCache aqui
+-- tambem, no mesmo padrao de SIDE COLOR/SHAPE/GROUND SHADE/TOP EDGE:
+-- libera as malhas velhas na hora em vez de esperar o LRU reciclar.
+local function setFrontShape(value)
+  local nextValue = FRONT_SHAPE_VALUES[frontShapeIndexOf(value)]
+  if frontShapeValue ~= nextValue then clearMeshCache() end
+  frontShapeValue = nextValue
+  return frontShapeValue
+end
+
 setDepth(readDepth())
 setSideColor(readSideColor())
 setShape(readShape())
 setGroundShade(readGroundShade())
 setBlink(readBlink())
 setTopEdge(readTopEdge())
+setFrontShape(readFrontShape())
 Assets.register(clearCache)
 
 local function writeOption(game, key, value)
@@ -619,6 +679,23 @@ local function topEdgeRow()
       i = ((i + (dir or 1) - 1) % #TOP_EDGE_VALUES) + 1
       local value = setTopEdge(TOP_EDGE_VALUES[i])
       writeOption(game, TOP_EDGE_KEY, value)
+      return true
+    end,
+  }
+end
+
+local function frontShapeRow()
+  return {
+    id = mod.id .. ":" .. FRONT_SHAPE_KEY,
+    label = "FRONT SHAPE",
+    value = function()
+      return FRONT_SHAPE_LABELS[frontShapeIndexOf(frontShapeValue or readFrontShape())]
+    end,
+    step = function(game, dir)
+      local i = frontShapeIndexOf(frontShapeValue or readFrontShape())
+      i = ((i + (dir or 1) - 1) % #FRONT_SHAPE_VALUES) + 1
+      local value = setFrontShape(FRONT_SHAPE_VALUES[i])
+      writeOption(game, FRONT_SHAPE_KEY, value)
       return true
     end,
   }
@@ -1098,7 +1175,7 @@ local function shadeAtHeight(shade, y, groundShade)
 end
 
 local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
-                             groundShade, baseName, topEdge)
+                             groundShade, baseName, topEdge, frontShape)
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -1391,6 +1468,12 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   -- novo vem desse corpo em vez de exigir que o run horizontal inteiro combine.
   -- A partir da v1.2.2, essa decisao roda em frames de referencia fixos para
   -- o SLAB nao piscar.
+  -- FRONT SHAPE (v1.6.0): forca constante para a malha inteira, lida uma
+  -- unica vez fora do laco. "off" vira 0 (tonumber("off") == nil), o mesmo
+  -- branch do quad unico de sempre dentro de emitFrontRun; qualquer forca >
+  -- 0 liga o escalonamento em degraus.
+  local frontStep = tonumber(frontShape) or 0
+
   for ly = m.minY, m.maxY do
     local lx = m.minX
     while lx <= m.maxX do
@@ -1407,12 +1490,43 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
         -- 1 pixel a esquerda do card que ela substitui. X agora usa lx puro.
         local x, y = lx, cellBottom - ly
         local w = lx2 - lx + 1
+        -- FEATURE FRONT SHAPE (v1.6.0): degraus alinhados ao pixel na face
+        -- frontal, no lugar do shade constante de sempre, quando a opcao
+        -- esta ligada. Um gradiente continuo foi prototipado antes disto e
+        -- leu como uma listra brilhante solta por cima da arte (arte de
+        -- pixel duro e degrade suave brigam entre si); aqui cada pixel do
+        -- run recebe um shade CONSTANTE, escolhido entre FRONT_SHAPE_STEPS
+        -- niveis pela distancia ate a borda do run, do mesmo jeito que o
+        -- artista ja faz volume nos sprites fonte.
         local function emitFrontRun(a, b)
           if a > b then return end
-          local rx, rw = a, b - a + 1
-          quad(p(rx, y, z1), p(rx + rw, y, z1),
-               p(rx + rw, y + 1, z1), p(rx, y + 1, z1),
-               rectUv(a, ly, b), OBJ_SHADE.front)
+          -- Runs com menos de 3 pixels nao tem um pixel "do meio" distinto
+          -- das duas bordas: nao ha degrau possivel, e dividir so custaria
+          -- quad. Ficam no quad unico de sempre, igual a opcao desligada.
+          if frontStep <= 0 or b - a < 2 then
+            local rx, rw = a, b - a + 1
+            quad(p(rx, y, z1), p(rx + rw, y, z1),
+                 p(rx + rw, y + 1, z1), p(rx, y + 1, z1),
+                 rectUv(a, ly, b), OBJ_SHADE.front)
+            return
+          end
+          -- `center` e `half` sao relativos apenas a `a` e `b`, os limites
+          -- DESTE run (que ja chega aqui recortado pelos olhos, se algum
+          -- cair no meio). Nunca uma coordenada absoluta de tela: e o que
+          -- garante a simetria em X exigida, o run espelha junto com o
+          -- personagem e o shade espelha junto com ele, sem depender de
+          -- estar no lado leste ou oeste.
+          local center = (a + b) / 2
+          local half = (b - a) / 2
+          for sx = a, b do
+            local t = math.abs(sx - center) / half
+            local level = math.floor(t * (FRONT_SHAPE_STEPS - 0.001))
+            local sh = OBJ_SHADE.front
+              * (1 - frontStep * level / (FRONT_SHAPE_STEPS - 1))
+            quad(p(sx, y, z1), p(sx + 1, y, z1),
+                 p(sx + 1, y + 1, z1), p(sx, y + 1, z1),
+                 rectUv(sx, ly, sx), sh)
+          end
         end
         local cursor = lx
         for sx = lx, lx2 do
@@ -1852,21 +1966,26 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
 end
 
 local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape,
-                                 groundShade, baseName, topEdge)
+                                 groundShade, baseName, topEdge, frontShape)
   if shape == "carved" or shape == "carved_plus" then
     local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m,
       sideColor, shape, groundShade)
     if ok and mesh then return mesh end
   end
   return buildSlabMesh(def, frame, depth, correction, m, sideColor, groundShade,
-    baseName, topEdge)
+    baseName, topEdge, frontShape)
 end
 
+-- FRONT SHAPE, como TOP EDGE, so existe para SLAB: CARVED/CARVED+ constroem
+-- a partir do casco visual em voxels, sem o run frontal continuo que
+-- emitFrontRun escalona. Fora do SLAB, a chave ignora a forca de proposito,
+-- para nao duplicar malhas identicas so porque o menu trocou de nivel.
 local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
-                        groundShade, topEdge)
+                        groundShade, topEdge, frontShape)
   local depthPart = (shape == "carved" or shape == "carved_plus") and "art"
     or tostring(depth)
   local topEdgePart = shape == "slab" and tostring(topEdge or "") or ""
+  local frontShapePart = shape == "slab" and tostring(frontShape or "") or ""
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
@@ -1876,6 +1995,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
     tostring(shape or ""),
     tostring(groundShade or ""),
     topEdgePart,
+    frontShapePart,
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -2067,6 +2187,7 @@ local function registerOptionsRows()
       out[#out + 1] = groundShadeRow()
       out[#out + 1] = blinkRow()
       out[#out + 1] = topEdgeRow()
+      out[#out + 1] = frontShapeRow()
     end
     return out
   end)
@@ -2084,6 +2205,8 @@ local function registerOptionsRows()
       setBlink(payload.value)
     elseif payload and payload.mod == mod.id and payload.key == TOP_EDGE_KEY then
       setTopEdge(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == FRONT_SHAPE_KEY then
+      setFrontShape(payload.value)
     end
   end)
 end
@@ -2102,6 +2225,7 @@ local function voxelMesh(def, frame)
   local shape = shapeValue or readShape()
   local groundShade = groundShadeValue or readGroundShade()
   local topEdge = topEdgeValue or readTopEdge()
+  local frontShape = frontShapeValue or readFrontShape()
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then
@@ -2111,12 +2235,12 @@ local function voxelMesh(def, frame)
   end
   local baseName = spriteBaseName(def and def.image)
   local key = cacheKey(def, frame, depth, correction, m, sideColor, shape,
-    groundShade, topEdge)
+    groundShade, topEdge, frontShape)
   if meshes[key] ~= nil then
     touchMeshKey(key)
   else
     local ok, mesh = pcall(buildSelectedMesh, def, frame, depth, correction,
-      m, sideColor, shape, groundShade, baseName, topEdge)
+      m, sideColor, shape, groundShade, baseName, topEdge, frontShape)
     if ok and mesh then
       meshFailureReasons[key] = nil
     else
