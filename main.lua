@@ -334,6 +334,48 @@ local OPTIONS = {
     defaultIndex = 1,
     help = "Squashes the solid on each footfall and stretches it at the top of the step, so the walk cycle's weight transfer reaches the body.",
   },
+  {
+    key = "first_person",
+    label = "FIRST PERSON",
+    levels = { { "CARD", "card" }, { "SOLID", "solid" } },
+    defaultIndex = 1,
+    -- POR QUE ISTO EXISTE, E POR QUE SO AGORA.
+    --
+    -- Desde a v1.3.0 este mod devolve o card plano sempre que
+    -- FirstPerson.cardBlend() > 0. Nao foi preguica, foi conserto: o
+    -- Colonel_Aureliano reportou espetos pretos com Dramatic Shape 1.7.0 mais
+    -- Kanto First Person, e o card plano nao tem o defeito.
+    --
+    -- Lendo o host, o mecanismo e este e nao e "primeira pessoa":
+    --
+    --   o shader move CADA VERTICE ao longo do proprio raio ate o olho, por
+    --   `pull` unidades (Voxel3D.lua:122-130);
+    --   primeira pessoa e o degrau 6, e ANGLES_DEG[7] = 75 graus, entao
+    --   VoxelScene.pull(rad 75) = 6 unidades de mundo, com o tile valendo 16;
+    --   o near plane fica em max(1, |olho-foco| * 0.05), ou seja 1 unidade
+    --   quando olho e foco estao juntos, que e o caso aqui.
+    --
+    -- Um vertice a distancia d do olho vai parar em d - 6: atravessa o near
+    -- plane com d < 7 e passa para TRAS do olho com d < 6. O card plano
+    -- sobrevive porque seus vertices estao todos a mesma distancia e cruzam
+    -- juntos; num solido os cantos estao a distancias diferentes, os da frente
+    -- cruzam primeiro, e o que sobra na tela e o espeto.
+    --
+    -- ENTAO O DEFEITO E DE PROXIMIDADE, NAO DE CAMERA. O caso catastrofico e o
+    -- card do proprio jogador durante a transicao, porque a camera esta
+    -- entrando na cabeca dele e d vai a zero; o host so esconde esse card
+    -- depois de blend > 0.9, entao toda entrada e toda saida passa pela faixa
+    -- quebrada. Um NPC a um tile esta a 16 unidades e nunca chega perto.
+    --
+    -- Por isso desligar o solido na camera inteira sempre foi grosso demais, e
+    -- por isso a correcao mora no wrap de desenho e nao aqui: limitar o `pull`
+    -- que a gente repassa tira a travessia do near plane por construcao, sem
+    -- abrir mao do volume. Ver fpPullSeguro.
+    --
+    -- Nasce em CARD pela regra da casa. Que os jogadores tenham pedido conta
+    -- como pedido, nao como aprovacao: ninguem viu ainda.
+    help = "Keeps characters solid in first person instead of falling back to the flat card. Needs the host's draw channel.",
+  },
 }
 
 local OPTION_BY_KEY = {}
@@ -343,8 +385,11 @@ end
 
 -- As opcoes que dependem do SEGUNDO ponto de patch (Voxel3D.draw). Sem esse
 -- canal elas nao aparecem no menu: ver registerOptionsRows.
+-- FIRST PERSON entra aqui apesar de nao ser animacao: o que ela promete e o
+-- pull limitado, que so existe se a gente conseguir envolver Voxel3D.draw.
+-- Oferecer SOLID num host sem esse canal seria oferecer os espetos de volta.
 local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
-  footfall = true }
+  footfall = true, first_person = true }
 
 -- Sentinela de SIDE COLOR usado por bodyTexelInFrame/blinkBodyTexel (mais
 -- abaixo) para decidir se a busca de corpo entra em jogo. Fica como
@@ -2231,10 +2276,13 @@ local function statusValue()
     return "REPLACED"
   end
   if (optionState.depth or readOption(OPTION_BY_KEY.depth)) == "off" then return "OFF" end
-  -- Intencional, nao defeito: um solido nao herda o contrato de billboard
-  -- cilindrico da primeira pessoa, entao devolvemos o card original de
-  -- proposito enquanto isto for verdade (main.lua, firstPersonCardActive).
-  if firstPersonCardActive() then return "FIRST PERSON" end
+  -- Intencional, nao defeito: em CARD devolvemos o card original de proposito
+  -- em primeira pessoa (ver a opcao first_person e fpPullSeguro). Em SOLID
+  -- nada disso acontece e a linha nao deve mentir dizendo que aconteceu.
+  if firstPersonCardActive() then
+    local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
+    if fp ~= "solid" or installedDraw == nil then return "FIRST PERSON" end
+  end
   if drawWindowFailures * 2 >= DRAW_WINDOW_SIZE then
     return STATUS_FAILURE_LABELS[dominantFailureKind()] or "ACTIVE"
   end
@@ -2289,7 +2337,10 @@ local function lifeStatusValue()
     end
     return "REPLACED"
   end
-  if firstPersonCardActive() then return "FIRST PERSON" end
+  if firstPersonCardActive() then
+    local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
+    if fp ~= "solid" then return "FIRST PERSON" end
+  end
   local on = {}
   if optionState.breath ~= "off" then on[#on + 1] = "BREATH" end
   if optionState.sway ~= "off" then on[#on + 1] = "SWAY" end
@@ -2715,10 +2766,53 @@ end
 -- Quando m[1] nao e +-1, o host esta misturando o yaw de primeira pessoa
 -- (billboardMatrix, ramo cardBlend > 0) e px deixa de ser recuperavel. Ali este
 -- mod ja devolve card plano de proposito, entao a animacao tambem sai fora.
+-- Raio conservador do personagem a partir da ancora da matriz: meia celula em
+-- x e z, mais a profundidade maxima que o menu oferece. Serve para perguntar
+-- pelo vertice MAIS PROXIMO em vez de pelo centro, que e o que decide se algum
+-- canto atravessa o near plane.
+local FP_RAIO = 14
+-- Folga acima do near plane (1 unidade quando olho e foco estao juntos). Dois
+-- e o menor numero que ainda deixa margem para a respiracao e a inercia
+-- moverem o corpo depois desta conta, ja que elas mexem a matriz e nao o pull.
+local FP_FOLGA = 2
+
+-- O CONSERTO. `pull` e um vies de profundidade: o shader empurra cada vertice
+-- na direcao do olho por essa distancia. Perto demais, isso joga o vertice
+-- para tras do olho e o que aparece e um espeto preto.
+--
+-- Entao a gente nao desliga o volume, a gente entrega um pull que a distancia
+-- aguenta. Errar para menos e seguro por construcao: pull menor so significa
+-- menos vies de profundidade, e a razao de existir do vies (nao brigar em z
+-- com o terreno LONGE) nao se aplica a quem esta colado na camera.
+local function fpPullSeguro(model, pull)
+  if type(pull) ~= "number" or pull <= 0 then return pull end
+  local eye = Voxel3D and Voxel3D.eye
+  if type(eye) ~= "table" then return pull end
+  local ex, ey, ez = eye[1], eye[2], eye[3]
+  if type(ex) ~= "number" or type(ey) ~= "number" or type(ez) ~= "number" then
+    return pull
+  end
+  local dx = ex - (model[4] or 0)
+  local dy = ey - (model[8] or 0)
+  local dz = ez - (model[12] or 0)
+  local d = math.sqrt(dx * dx + dy * dy + dz * dz) - FP_RAIO
+  local teto = d - FP_FOLGA
+  if teto < 0 then teto = 0 end
+  return math.min(pull, teto)
+end
+
 local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   local info = ourMeshes[mesh]
   if not info or type(model) ~= "table" then
     return originalDraw(mesh, texture, model, pull, sunModel)
+  end
+
+  -- Antes de qualquer saida antecipada, porque isto nao e animacao: e a
+  -- condicao para o solido poder existir em primeira pessoa, e vale mesmo com
+  -- todas as opcoes de vida desligadas.
+  local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
+  if fp == "solid" and firstPersonCardActive() then
+    pull = fpPullSeguro(model, pull)
   end
 
   local breath = optionState.breath
@@ -2815,9 +2909,17 @@ local function voxelMesh(def, frame)
     recordDrawResult("off")
     return safeOriginal(def, frame)
   end
+  -- Em primeira pessoa o solido so sai se DUAS coisas forem verdade: a pessoa
+  -- pediu, e o canal de desenho existe para limitar o pull. Sem o canal,
+  -- installedDraw fica nil e SOLID prometeria exatamente os espetos que a
+  -- v1.3.0 consertou; a opcao nem chega a aparecer no menu nesse host, mas um
+  -- save antigo pode carregar o valor, entao a checagem e aqui e nao no menu.
   if firstPersonCardActive() then
-    recordDrawResult("first_person")
-    return safeOriginal(def, frame)
+    local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
+    if fp ~= "solid" or installedDraw == nil then
+      recordDrawResult("first_person")
+      return safeOriginal(def, frame)
+    end
   end
   local sideColor = optionState.side_color or readOption(OPTION_BY_KEY.side_color)
   local shape = optionState.shape or readOption(OPTION_BY_KEY.shape)

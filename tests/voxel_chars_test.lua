@@ -5197,8 +5197,8 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 16,
-     "com canal, dezesseis rows: STATUS, LIFE, CAMERA FIT e as treze opcoes")
+  eq(#rows, 17,
+     "com canal, dezessete rows: STATUS, LIFE, CAMERA FIT e as catorze opcoes")
   eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
   eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
@@ -5995,6 +5995,144 @@ do
   check(closePercent(peakGuard, peakPlain, 0.01),
         "guard (na tabela, mas sem campo footfall) achata igual a uma folha ausente: "
         .. "o multiplicador ausente vale 1 nos dois casos")
+end
+
+-- ==========================================================================
+-- PRIMEIRA PESSOA
+-- ==========================================================================
+-- Desde a v1.3.0 o mod devolvia o card plano sempre que a primeira pessoa
+-- estivesse ativa, para nao produzir os espetos pretos que o Colonel_Aureliano
+-- reportou. Isso agora e uma OPCAO, porque lendo o host o defeito nao e da
+-- camera, e da distancia: o shader empurra cada vertice ao longo do proprio
+-- raio ate o olho por `pull` unidades, e quem esta a menos de `pull` do olho
+-- vai parar atras dele.
+--
+-- Entao o contrato desta secao e:
+--   CARD continua exatamente como era, e e o padrao;
+--   SOLID so existe se o canal de desenho existir para limitar o pull;
+--   e o pull repassado NUNCA pode chegar no olho, para nenhuma distancia.
+
+do
+  -- 1. CARD em primeira pessoa devolve o card original, como sempre devolveu.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, 1, nil, nil, true)
+  loadWith(makeMod(handle, soEsta()))
+  local def = { image = "sheet.png", frames = 1 }
+  local mesh = modules.SpriteBillboards.mesh(def, 0)
+  check(mesh and mesh.original == true,
+        "FIRST PERSON CARD (o padrao) devolve o card original, contrato da v1.3.0")
+  local _ = original
+end
+
+do
+  -- 2. SOLID com canal devolve a NOSSA malha, que e a feature pedida.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, 1, nil, nil, true)
+  loadWith(makeMod(handle, soEsta({ first_person = "solid" })))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  check(mesh and mesh.original ~= true,
+        "FIRST PERSON SOLID devolve o solido em primeira pessoa")
+end
+
+do
+  -- 3. SOLID SEM canal continua caindo no card. Sem Voxel3D.draw nao ha como
+  --    limitar o pull, e prometer solido ali seria devolver os espetos.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, 1, nil, nil, nil)
+  loadWith(makeMod(handle, soEsta({ first_person = "solid" })))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  check(mesh and mesh.original == true,
+        "SOLID num host sem canal de desenho ainda devolve o card: sem o canal "
+        .. "nao ha como limitar o pull")
+end
+
+do
+  -- 4. A CONTA DO PULL, amarrada na geometria e nao num numero escolhido.
+  --
+  --    O olho fica a D unidades da ancora da matriz. O teto do pull e
+  --    D - raio - folga, porque o vertice mais proximo esta a D - raio e ele
+  --    precisa sobrar folga depois de andar `pull` na direcao do olho.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, 1, nil, nil, true)
+  loadWith(makeMod(handle, soEsta({ first_person = "solid" })))
+  local def = { image = "sheet.png", frames = 1 }
+  local mesh = modules.SpriteBillboards.mesh(def, 0)
+  local model = lifeModel(0, 0, false)
+
+  local function pullEm(D, pedido)
+    modules.Voxel3D.drawCalls = {}
+    modules.Voxel3D.eye = { model[4], model[8], model[12] + D }
+    modules.Voxel3D.draw(mesh, "tex", model, pedido, nil)
+    return modules.Voxel3D.drawCalls[1].pull
+  end
+
+  check(close(pullEm(100, 6), 6),
+        "longe do olho o pull passa inteiro: a 100 unidades nada precisa ceder")
+  check(close(pullEm(30, 6), 6),
+        "a 30 unidades o teto ainda e 14, maior que o pull real de 6")
+  check(close(pullEm(20, 6), 4),
+        "a 20 unidades o teto e 4 e o pull cede para 4")
+  check(close(pullEm(16, 6), 0),
+        "a 16 unidades o teto e zero: o pull acaba antes de empurrar")
+  check(close(pullEm(3, 6), 0),
+        "colado no olho, que e o card do proprio jogador na transicao, o pull e "
+        .. "zero e nao negativo")
+
+  -- E a invariante, varrida, que e o que impede uma edicao futura de reabrir o
+  -- defeito: para NENHUMA distancia o pull repassado pode alcancar o olho.
+  local furou = nil
+  for D = 0, 80 do
+    local p = pullEm(D, 6)
+    local vertice = D - 14
+    if p > 6 + 1e-9 or p > math.max(0, vertice - 2) + 1e-9 or p < 0 then
+      furou = furou or D
+    end
+  end
+  check(furou == nil,
+        "varrendo 0 a 80 unidades, o pull repassado nunca passa do pedido nem "
+        .. "alcanca o olho (primeira falha em D=" .. tostring(furou) .. ")")
+end
+
+do
+  -- 5. FORA da primeira pessoa nada muda. O conserto nao pode custar nada a
+  --    quem nunca entrou nessa camera, que e quase todo mundo.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, 0, nil, nil, true)
+  loadWith(makeMod(handle, soEsta({ first_person = "solid" })))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model = lifeModel(0, 0, false)
+  modules.Voxel3D.eye = { 0, 8, 9 }
+  modules.Voxel3D.draw(mesh, "tex", model, 6, nil)
+  check(close(modules.Voxel3D.drawCalls[1].pull, 6),
+        "fora da primeira pessoa o pull passa intocado, mesmo com o olho colado")
+end
+
+do
+  -- 6. STATUS nao pode dizer FIRST PERSON quando o solido esta saindo: a linha
+  --    existe para contar o que esta acontecendo, e em SOLID nao esta.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, 1, nil, nil, true)
+  local modCard = loadWith(makeMod(handle, soEsta()))
+  eq(statusRowValue(modCard), "FIRST PERSON",
+     "em CARD a row de STATUS avisa que o card plano esta saindo")
+
+  local handle2 = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, 1, nil, nil, true)
+  local modSolid = loadWith(makeMod(handle2, soEsta({ first_person = "solid" })))
+  check(statusRowValue(modSolid) ~= "FIRST PERSON",
+        "em SOLID a row de STATUS nao diz FIRST PERSON, porque o card nao saiu")
 end
 
 T.finish("voxel_chars_test")

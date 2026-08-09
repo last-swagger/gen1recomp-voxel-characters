@@ -76,3 +76,31 @@ print("RELEASE OK: o proprio parser do jogo aceita esta release.")
 echo ""
 echo "conferido com src/mods/ModUpdate.lua, o codigo que o jogo roda de verdade,"
 echo "nao com a nossa suposicao sobre o que ele aceita."
+
+# ------------------------------------------------------------------
+# QUEM ASSINA A RELEASE.
+#
+# O autor de uma release e a conta cujo token a criou, e o GitHub NAO deixa
+# troca-lo depois: PATCH em releases aceita tag, nome, corpo, draft,
+# prerelease e make_latest, e nada mais. As nove releases publicadas ate agora
+# aparecem assinadas por kimsfigueredo, que e a conta pessoal do Kim, porque o
+# `gh` desta maquina esta logado nela. Os COMMITS estao certos: os 32 do
+# origin/main sao todos last-swagger.
+#
+# Entao isto nao conserta o passado, impede o proximo. Publicar com a conta
+# errada e o tipo de erro que so aparece depois de publicado, que e tarde.
+ESPERADO="${VC_RELEASE_AUTHOR:-last-swagger}"
+AUTOR=$(python3 -c "import json,sys; print(json.load(open('$TMP')).get('author',{}).get('login',''))" 2>/dev/null)
+echo ""
+if [ "$AUTOR" = "$ESPERADO" ]; then
+  echo "AUTOR OK: assinada por $AUTOR"
+else
+  echo "AUTOR ERRADO: esta release esta assinada por '$AUTOR', esperado '$ESPERADO'."
+  echo ""
+  echo "  O autor e definido na CRIACAO e o GitHub nao deixa editar depois."
+  echo "  Para as proximas: exporte um token da conta $ESPERADO antes de publicar"
+  echo "    GH_TOKEN=<token de $ESPERADO> gh release create ..."
+  echo "  Para esta: so apagando e recriando com o token certo, o que zera a"
+  echo "  contagem de downloads e derruba o link por alguns segundos."
+  exit 1
+fi
