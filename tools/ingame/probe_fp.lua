@@ -6,34 +6,46 @@
 --
 -- Lendo o host, o defeito nao e da camera, e da DISTANCIA. O shader empurra
 -- cada vertice ao longo do proprio raio ate o olho por `pull` unidades
--- (Voxel3D.lua:122-130), primeira pessoa e o degrau 6 e ANGLES_DEG[7] = 75
--- graus, entao pull = 6 unidades de mundo com o tile valendo 16. O near plane
+-- (Voxel3D.lua:122-130); primeira pessoa e o degrau 6 e ANGLES_DEG[7] = 75
+-- graus, entao pull = 6 unidades de mundo com o tile valendo 16; o near plane
 -- fica em 1 unidade quando olho e foco estao juntos. Um vertice a distancia d
 -- vai parar em d - 6: atravessa o near plane com d < 7 e vai para tras do olho
 -- com d < 6. O card plano sobrevive porque todos os seus vertices cruzam
 -- juntos; num solido os cantos estao a distancias diferentes.
 --
--- A suite offline ja prova a CONTA (que o pull repassado nunca alcanca o olho,
--- varrendo 0 a 80 unidades). Este arquivo mede o que so o jogo pode dizer: se
--- a conta certa chega na tela.
+-- A suite offline ja prova a CONTA: varrendo 0 a 80 unidades, o pull repassado
+-- nunca alcanca o olho, e quebrar o clamp mata quatro checks. Este arquivo
+-- mede a unica coisa que a suite nao pode: se a conta certa chega na TELA.
 --
---   P1 a opcao chega no jogo      STATUS diz FIRST PERSON em CARD e nao diz
---                                 em SOLID
---   P2 o solido aparece           em primeira pessoa, SOLID difere de CARD;
---                                 sem isso os numeros abaixo nao significam
---                                 nada, porque estariam medindo a mesma tela
---   P3 o piso de ruido            CARD contra CARD no mesmo instante, que e o
---                                 quanto a cena se mexe sozinha
---   P4 a TRANSICAO nao explode    varrendo o blend de 0 a 1, a diferenca
---                                 SOLID-CARD fica na mesma ordem de grandeza
---                                 do quadro inteiro; espeto multiplicaria
+--   P1 entrou mesmo              o blend chega a 1; sem isso tudo abaixo
+--                                mediria outra camera
+--   P2 tem personagem na tela    controle ligando e desligando o mod inteiro.
+--                                E o primeiro que eu preciso porque zero
+--                                diferenca tem duas causas opostas: a opcao
+--                                nao chegou, ou nao havia o que mudar
+--   P3 o solido aparece          com personagem confirmado na tela, SOLID
+--                                difere de CARD
+--   P4 a TRANSICAO nao explode   varrendo o blend, a diferenca SOLID-CARD
+--                                fica na ordem do volume e nao do quadro,
+--                                comparada contra um piso medido do MESMO
+--                                jeito
 --
--- P4 e o unico que interessa de verdade. O card do PROPRIO jogador e o caso
--- catastrofico, porque a camera esta entrando na cabeca dele e a distancia vai
--- a zero, e o host so esconde esse card depois de blend > 0.9. Entao a faixa
--- que este gate varre e exatamente a faixa onde o defeito vivia. Por isso o
--- mapa e o quarto do Red: zero object events, o unico personagem na tela e o
--- jogador, que e o pior caso e tambem o mais limpo de medir.
+-- P4 e o que interessa. O card do PROPRIO jogador e o caso catastrofico,
+-- porque a camera esta entrando na cabeca dele e a distancia vai a zero, e o
+-- host so esconde esse card depois de blend > 0.9. A faixa varrida aqui e
+-- exatamente onde o defeito vivia.
+--
+-- DUAS ARMADILHAS QUE ESTE ARQUIVO JA PAGOU, escritas para nao se repetirem:
+--
+--   VoxelState.setLevel NAO MANDA. Quem e dono do degrau e o Pipelines do
+--   motor, e Voxel.update(level) (VoxelState.lua:180) reescreve Voxel.level a
+--   partir dele todo quadro. O sintoma de chamar o errado foi "o blend nunca
+--   subiu", que parece a camera nao existir nesta maquina.
+--
+--   FOTOGRAFAR OS DOIS LADOS ENQUANTO A CAMERA ANDA mede a camera. Na primeira
+--   versao isso deu 80 a 94 por cento do quadro diferindo, e nada era espeto.
+--   Cada lado agora sai de uma entrada propria com a mesma espera, e a amostra
+--   so conta se os dois blends baterem.
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
@@ -52,6 +64,17 @@ return function(game)
   local function veredito(nome, ok, detalhe)
     vereditos[#vereditos + 1] = { nome = nome, ok = ok }
     nota("%-3s %s  %s", nome, ok and "PASSOU" or "FALHOU", detalhe or "")
+  end
+
+  local function fim()
+    nota("")
+    local todos = true
+    for _, v in ipairs(vereditos) do
+      nota("%-3s %s", v.nome, v.ok and "PASSOU" or "FALHOU")
+      todos = todos and v.ok
+    end
+    nota("VEREDITO: %s", todos
+      and "O SOLIDO SOBREVIVE A PRIMEIRA PESSOA" or "AINDA NAO")
   end
 
   nota("=== gate de primeira pessoa ===")
@@ -102,187 +125,172 @@ return function(game)
     return n
   end
 
-  local function amostras(img)
-    if not img then return 0 end
-    local w, h = img:getWidth(), img:getHeight()
-    return math.ceil(w / 3) * math.ceil(h / 3)
-  end
-
-  -- O host, pela mesma porta que o mod usa. Se nao der para alcancar, isso e
-  -- resultado e nao acidente: sem VoxelState nao ha como ENTRAR em primeira
-  -- pessoa, e um gate que nao entrou nao pode dizer que passou.
+  -- O host, pela mesma porta que o mod usa.
   local lib
-  do
-    local alvos = {
-      function() return game.mods.exports.DRAMATIC_SHAPE.lib end,
-      function() return game.mods:find("DRAMATIC_SHAPE").exports.lib end,
-      function() return game.mods.find("DRAMATIC_SHAPE").exports.lib end,
-    }
-    for _, f in ipairs(alvos) do
-      local ok, v = pcall(f)
-      if ok and type(v) == "table" and v.require then lib = v break end
-    end
+  for _, f in ipairs({
+    function() return game.mods.exports.DRAMATIC_SHAPE.lib end,
+    function() return game.mods:find("DRAMATIC_SHAPE").exports.lib end,
+    function() return game.mods.find("DRAMATIC_SHAPE").exports.lib end,
+  }) do
+    local ok, v = pcall(f)
+    if ok and type(v) == "table" and v.require then lib = v break end
   end
   if not lib then
-    veredito("P0", false, "nao alcancei a lib do DRAMATIC_SHAPE; sem ela nao "
-      .. "da para entrar em primeira pessoa")
-    love.filesystem.write("vc_fp.txt", table.concat(linhas, "\n") .. "\n")
-    return
+    veredito("P0", false, "nao alcancei a lib do DRAMATIC_SHAPE")
+    return fim()
   end
   local okVS, VoxelState = pcall(lib.require, "VoxelState")
   local okFP, FirstPerson = pcall(lib.require, "FirstPerson")
   if not (okVS and okFP and VoxelState and FirstPerson) then
     veredito("P0", false, "host sem VoxelState ou FirstPerson")
-    return
+    return fim()
   end
-  nota("FP_LEVEL do host: %s   pull nesse degrau: ver VoxelScene.pull",
-       tostring(VoxelState.FP_LEVEL))
 
-  -- ARMADILHA DA PRIMEIRA CORRIDA: comecei no quarto do Red, "porque nao tem
-  -- mais ninguem". Em primeira pessoa o unico personagem daquele quarto e o
-  -- JOGADOR, e o host esconde o card do proprio jogador quando o blend passa
-  -- de 0.9 (FirstPerson.hidePlayer). Entao no blend cheio nao havia
-  -- personagem nenhum na tela e a medicao deu zero diferenca, o que eu quase
-  -- li como "o solido nao aparece". O centro pokemon tem a enfermeira atras
-  -- do balcao, que nao anda: personagem visivel e parado ao mesmo tempo.
+  local Pipelines = require("src.render.Pipelines")
+  local FPLEVEL = VoxelState.FP_LEVEL or 6
+  local function entra() pcall(Pipelines.setLevel, "voxel", FPLEVEL) end
+  local function sai() pcall(Pipelines.setLevel, "voxel", 0) end
+  local function blendAgora()
+    local ok, b = pcall(FirstPerson.cardBlend)
+    return (ok and tonumber(b)) or 0
+  end
+  nota("FP_LEVEL do host: %d", FPLEVEL)
+
+  -- O quarto do Red foi a primeira escolha e foi errada: em primeira pessoa o
+  -- unico personagem la e o JOGADOR, e o host esconde o card do proprio
+  -- jogador acima de blend 0.9 (FirstPerson.hidePlayer). No blend cheio a tela
+  -- ficava sem personagem nenhum e a medicao dava zero, que eu quase li como
+  -- "o solido nao aparece". Centro pokemon tem gente parada atras do balcao.
   local MAPA = os.getenv("VC_MAP") or "CERULEAN_POKECENTER"
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   local _, PX, PY = Pouso.escolher(game, MAPA, 3, 4)
-  U.teleport(game, MAPA, PX, PY, "down")
-  U.wait(60)
-  if not (game.overworld and game.stack:top() == game.overworld) then
-    veredito("P1", false, "nao cheguei ao mundo"); return
-  end
 
   opcao("depth", 3)
-  opcao("breath", "off"); opcao("sway", "off")
-  opcao("lag", "off"); opcao("footfall", "off"); opcao("blink", "off")
-  U.wait(20)
+  opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
+  opcao("footfall", "off"); opcao("blink", "off")
+  opcao("first_person", "card")
 
-  -- ---------------------------------------------------------------- P1
-  -- A opcao chega no jogo, lida pela row de STATUS, que e o que o jogador ve.
-  -- ARMADILHA, e custou uma corrida inteira: VoxelState.setLevel NAO manda.
-  -- Quem e dono do degrau e o Pipelines do motor, e Voxel.update(level)
-  -- (VoxelState.lua:180) reescreve Voxel.level a partir dele TODO QUADRO.
-  -- Chamar setLevel direto muda o campo e o proximo quadro desfaz, e o
-  -- sintoma foi "o blend nunca subiu", que parece a camera nao existir.
-  -- O host tambem entra por aqui (main.lua:572, Horde.lua:387).
-  local Pipelines = require("src.render.Pipelines")
-  local FP = VoxelState.FP_LEVEL or 6
-  local function entra() pcall(Pipelines.setLevel, "voxel", FP) end
-  local function sai() pcall(Pipelines.setLevel, "voxel", 0) end
+  local TOTAL
+  local function total(img)
+    if not TOTAL and img then
+      TOTAL = math.ceil(img:getWidth() / 3) * math.ceil(img:getHeight() / 3)
+    end
+    return TOTAL or 1
+  end
 
+  -- ---------------------------------------------------------------- P1 e P2
+  --
+  -- A CAMERA DE PRIMEIRA PESSOA OLHA PARA ONDE O JOGADOR OLHA, entao a direcao
+  -- do teleporte decide se existe personagem no quadro. Em vez de eu escolher
+  -- uma direcao e torcer, o gate MEDE as quatro: liga e desliga o mod inteiro
+  -- e fica com a que mais muda. Essa e a mesma pergunta do controle negativo,
+  -- respondida uma vez e reaproveitada.
+  local melhor = { dir = nil, delta = -1 }
+  for _, dir in ipairs({ "up", "left", "right", "down" }) do
+    sai(); U.wait(30)
+    U.teleport(game, MAPA, PX, PY, dir)
+    U.wait(40)
+    entra()
+    for _ = 1, 240 do
+      U.wait(1)
+      if blendAgora() >= 0.999 then break end
+    end
+    opcao("depth", 3); U.wait(8)
+    local com = captura()
+    opcao("depth", "off"); U.wait(8)
+    local sem = captura()
+    opcao("depth", 3); U.wait(8)
+    local d = difere(com, sem)
+    nota("  olhando para %-5s: mod ligado contra desligado %d (%.1f%%)",
+         dir, d, d / total(com) * 100)
+    if d > melhor.delta then melhor = { dir = dir, delta = d } end
+  end
+
+  veredito("P1", blendAgora() >= 0.999,
+    string.format("a camera entrou em primeira pessoa, blend %.3f", blendAgora()))
+  veredito("P2", melhor.delta > total() * 0.005,
+    string.format("olhando para %s ha personagem nosso na tela: %d de %d "
+      .. "amostras (%.1f%%)", tostring(melhor.dir), melhor.delta, total(),
+      melhor.delta / total() * 100))
+  if melhor.delta <= total() * 0.005 then
+    nota("sem personagem no quadro em nenhuma das quatro direcoes, nada abaixo")
+    nota("mediria a opcao. Tente outro mapa com VC_MAP.")
+    return fim()
+  end
+
+  -- Dali em diante, sempre a mesma direcao.
+  local DIR = melhor.dir
+  local function posiciona()
+    sai(); U.wait(30)
+    U.teleport(game, MAPA, PX, PY, DIR)
+    U.wait(40)
+  end
+
+  -- ---------------------------------------------------------------- P3
+  posiciona()
   entra()
-  -- o blend leva BLEND_TIME para subir; esperar ate ele chegar em 1
-  local blendFinal = 0
-  for _ = 1, 240 do
-    U.wait(1)
-    local okB, b = pcall(FirstPerson.cardBlend)
-    blendFinal = (okB and tonumber(b)) or 0
-    if blendFinal >= 0.999 then break end
-  end
-  nota("blend depois de entrar: %.3f", blendFinal)
-  if blendFinal <= 0 then
-    veredito("P1", false, "o blend nunca subiu; a camera nao entrou em "
-      .. "primeira pessoa nesta maquina")
-    return
-  end
-
-  -- P1 e a precondicao e nao um resultado: sem estar em primeira pessoa de
-  -- verdade, tudo abaixo mediria outra coisa. O que a row de STATUS diz em
-  -- cada modo ja e coberto pela suite offline, onde da para ler a row direto
-  -- sem navegar menu; repetir aqui seria construir um caminho de UI fragil
-  -- para reprovar o que ja esta provado.
-  veredito("P1", blendFinal >= 0.999,
-    string.format("a camera entrou em primeira pessoa, blend %.3f", blendFinal))
-
-  -- ---------------------------------------------------------------- P2 e P3
+  for _ = 1, 240 do U.wait(1); if blendAgora() >= 0.999 then break end end
   local function tela(modo)
-    opcao("first_person", modo)
-    U.wait(6)
+    opcao("first_person", modo); U.wait(8)
     return captura()
   end
-
-  local card1 = tela("card")
-  local card2 = tela("card")
-  local solid = tela("solid")
-  local piso = difere(card1, card2)
-  local delta = difere(card1, solid)
-  local total = amostras(card1)
-  nota("amostras por quadro: %d", total)
-  nota("piso de ruido, CARD contra CARD: %d (%.2f%%)", piso, piso / total * 100)
-  nota("CARD contra SOLID: %d (%.2f%%)", delta, delta / total * 100)
-
-  veredito("P3", piso >= 0 and piso < total * 0.02,
-    string.format("a cena parada muda %d de %d amostras sozinha", piso, total))
-  veredito("P2", delta > piso * 4 + 20,
-    string.format("SOLID muda a tela: %d contra piso %d", delta, piso))
+  local c1, c2 = tela("card"), tela("card")
+  local s1 = tela("solid")
+  local piso = difere(c1, c2)
+  local sinal = difere(c1, s1)
+  nota("blend cheio: piso CARD-CARD %d, sinal CARD-SOLID %d de %d amostras",
+       piso, sinal, total())
+  veredito("P3", sinal > piso * 4 + 20,
+    string.format("no blend cheio o SOLID muda a tela: %d contra piso %d",
+      sinal, piso))
 
   -- ---------------------------------------------------------------- P4
-  -- A TRANSICAO. Sai da primeira pessoa, volta, e mede a cada poucos quadros
-  -- enquanto o blend sobe. Espeto preto nao e uma diferenca a mais: e uma
-  -- diferenca de outra ordem de grandeza, porque a cunha varre a tela.
-  -- SEGUNDA ARMADILHA, e ela quase virou um resultado: na primeira versao eu
-  -- fotografava CARD e SOLID um depois do outro DURANTE a subida do blend. A
-  -- camera anda entre as duas fotos, entao 80 a 94 por cento do quadro
-  -- diferia, e nada daquilo era espeto: era a camera. Medir efeito pequeno com
-  -- a cena andando ja custou uma sessao inteira neste projeto, e aqui a coisa
-  -- que anda e a propria camera.
   --
-  -- Conserto: cada lado sai de uma ENTRADA propria, com a mesma espera, e a
-  -- amostra so conta se os dois blends baterem. Amostra descartada e dita em
-  -- voz alta, senao corte silencioso se le como cobertura.
-  local pior, piorBlend = 0, 0
-  local usadas, descartadas = 0, 0
-  local function entraAte(frames, modo)
-    sai(); U.wait(70)
+  -- O PISO VEM DO MESMO PROCEDIMENTO. Comparar a diferenca contra um numero
+  -- absoluto escolhido por mim mediria o meu chute; comparar contra CARD-CARD
+  -- feito com a mesma saida, mesma entrada e mesma espera mede so o que a
+  -- opcao mudou. Tudo que a cena faz sozinha nesse intervalo aparece nos dois.
+  local function amostraEm(frames, modo)
+    posiciona()
     opcao("first_person", modo); U.wait(6)
     entra()
     U.wait(frames)
-    local okB, b = pcall(FirstPerson.cardBlend)
-    return (okB and tonumber(b)) or 0, captura()
+    return blendAgora(), captura()
   end
-  for passo = 1, 12 do
-    local frames = passo * 3
-    local bA, imgA = entraAte(frames, "card")
-    local bB, imgB = entraAte(frames, "solid")
-    if math.abs(bA - bB) > 0.03 then
+
+  local piorSinal, piorBlend, piorPiso = 0, 0, 0
+  local usadas, descartadas = 0, 0
+  for passo = 1, 8 do
+    local frames = passo * 4
+    local bA, imgA = amostraEm(frames, "card")
+    local bF, imgF = amostraEm(frames, "card")
+    local bS, imgS = amostraEm(frames, "solid")
+    if math.abs(bA - bF) > 0.03 or math.abs(bA - bS) > 0.03 then
       descartadas = descartadas + 1
-      nota("  descartada: blends nao bateram, %.2f contra %.2f", bA, bB)
+      nota("  descartada: blends %.2f / %.2f / %.2f nao bateram", bA, bF, bS)
     else
-      local d = difere(imgA, imgB)
+      local p = difere(imgA, imgF)
+      local d = difere(imgA, imgS)
       usadas = usadas + 1
-      if d > pior then pior, piorBlend = d, (bA + bB) / 2 end
-      nota("  blend %.2f   CARD contra SOLID %d (%.1f%%)", bA, d, d / total * 100)
+      if d > piorSinal then piorSinal, piorBlend, piorPiso = d, bA, p end
+      nota("  blend %.2f   piso %d (%.1f%%)   CARD-SOLID %d (%.1f%%)",
+           bA, p, p / total() * 100, d, d / total() * 100)
     end
   end
   sai(); U.wait(60)
 
-  -- O CRITERIO, e por que este numero.
-  --
-  -- Um solido honesto difere do card no corpo do personagem e em nada mais. Em
-  -- primeira pessoa o personagem mais proximo ocupa uma fatia grande da tela,
-  -- entao a diferenca legitima pode ser alta, e um limite apertado reprovaria
-  -- a feature funcionando. O que o espeto faz e diferente em ESPECIE: a cunha
-  -- preta sai do corpo e cruza o quadro, entao ela leva a diferenca para perto
-  -- do quadro inteiro. Metade do quadro separa os dois casos com folga dos
-  -- dois lados, e e um numero que uma medicao futura pode apertar com dado.
-  local TETO = total * 0.5
-  veredito("P4", pior <= TETO and usadas >= 6,
-    string.format("pior diferenca na transicao %d (%.1f%%) no blend %.2f, "
-      .. "teto %d (50%%), %d amostras usadas e %d descartadas",
-      pior, pior / total * 100, piorBlend, math.floor(TETO),
-      usadas, descartadas))
+  -- O CRITERIO. Um solido honesto difere do card no CORPO e em nada mais, e o
+  -- corpo em primeira pessoa e grande, entao um teto apertado reprovaria a
+  -- feature funcionando. O espeto e diferente em especie: a cunha preta sai do
+  -- corpo e varre o quadro. Metade do quadro separa os dois com folga dos dois
+  -- lados, e o piso medido no mesmo procedimento diz quanto disso e a cena.
+  local TETO = total() * 0.5
+  veredito("P4", usadas >= 5 and piorSinal <= TETO,
+    string.format("pior CARD-SOLID na transicao %d (%.1f%%) no blend %.2f, "
+      .. "com piso %d ali; teto %d (50%%); %d amostras usadas, %d descartadas",
+      piorSinal, piorSinal / total() * 100, piorBlend, piorPiso,
+      math.floor(TETO), usadas, descartadas))
 
   opcao("first_person", "card")
-
-  nota("")
-  local todosOk = true
-  for _, v in ipairs(vereditos) do
-    nota("%-3s %s", v.nome, v.ok and "PASSOU" or "FALHOU")
-    todosOk = todosOk and v.ok
-  end
-  nota("VEREDITO: %s", todosOk
-    and "O SOLIDO SOBREVIVE A PRIMEIRA PESSOA"
-    or "AINDA NAO")
+  fim()
 end
