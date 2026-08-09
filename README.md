@@ -24,9 +24,9 @@ own, because it works by extending a voxel mod that is already running.
    - **Battle Art Voxel Fork** by absol89
    - **Dramaless Shape Voxel Mod** by artyrambles
 
-2. **Download `voxel_characters-1.6.0.modpkg`** from the
+2. **Download `voxel_characters-1.6.0.zip`** from the
    [latest release](https://github.com/last-swagger/gen1recomp-voxel-characters/releases/latest).
-   It is a zip with a different extension; do not unzip it.
+   Do not unzip it.
 
 3. **In game: `MODS`, then `Import mod .zip`.** Pick the file you downloaded.
 
@@ -37,6 +37,14 @@ own, because it works by extending a voxel mod that is already running.
    yours to play with.
 
 You need gen1recomp `0.1.51` or newer.
+
+**Updating later is easier.** From 1.6.0 on, the game's own `MODS` screen finds
+new versions and installs them for you. Before 1.6.0 it never could, and that
+was our fault: the release carried the package under a `.modpkg` name, and the
+in game updater only looks at assets ending in `.zip`
+(`src/mods/ModUpdate.lua`). Every release from 1.0.0 to 1.6.0 was invisible to
+it, which is a large part of why so many people asked how to install this by
+hand. **absol** worked it out after hitting the same thing on their own fork.
 
 ### It is installed and nothing looks different
 
@@ -153,6 +161,7 @@ luajit mods/voxel_characters/tests/voxel_chars_test.lua     480 checks
 bash mods/voxel_characters/tools/render/check.sh            the offline ruler, checking itself
 bash mods/voxel_characters/tools/ingame/run.sh <dir>        drives the real game, 11 screenshots
 bash mods/voxel_characters/tools/ingame/clip.sh <dir> <k=v> side by side video of any option
+bash mods/voxel_characters/tools/release_check.sh           asks the GAME whether a release is installable
 ```
 
 All from the gen1recomp root. The offline harness measures geometry in two

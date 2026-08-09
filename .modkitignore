@@ -54,6 +54,10 @@ tools/ingame/pouso.lua
 tools/ingame/clip.lua
 tools/ingame/clip.sh
 
+# O gate do menu de verdade e o conferidor de release. Ferramentas.
+tools/ingame/menu.lua
+tools/release_check.sh
+
 # Mais renders de comparacao para as notas de release.
 docs/images/walk-offset.png
 docs/images/blink-walk.png

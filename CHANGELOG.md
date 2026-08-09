@@ -212,6 +212,24 @@ the direction is named in the entry their contribution landed in.
 
 ### Fixed
 
+- **The game's own mod updater could never see any release of this mod.** The
+  package was attached as `voxel_characters-<version>.modpkg`, which is what
+  `modkit pack` names it, and the file genuinely is a zip inside. But
+  `ModUpdate.pickZipAsset` (`src/mods/ModUpdate.lua:17-45`) only considers
+  assets whose **name** ends in `.zip`, and `parseReleases` (`:155`) discards a
+  release outright when it finds none. Every release from 1.0.0 to 1.6.0 was
+  invisible to the in game updater, and everyone who wanted this mod had to
+  download and import it by hand, which is a large part of why "how do I
+  install this" is the most repeated question in the thread. **absol** worked
+  it out after hitting the same thing on their own fork. The 1.6.0 release now
+  carries `voxel_characters-1.6.0.zip`, verified by feeding the live GitHub
+  response to the game's own parser, and `tools/release_check.sh` now asks the
+  game that question instead of us assuming the answer.
+
+  For the record, the other half of the report was not the problem: the tag may
+  keep its `v`, because `stripV` (`src/mods/ModUpdate.lua:12-14`) removes a
+  leading `v` or `V` before the semver check.
+
 - **Pressing A on the `STATUS` or `LIFE` row closed the options menu.** The
   engine resolves A, Left and Right in one branch, in this order: call
   `activate` if the row has one, else cycle `step` if it has one, else treat A
