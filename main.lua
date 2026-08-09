@@ -118,7 +118,13 @@ local OPTIONS = {
     key = "blink",
     label = "BLINK",
     levels = { { "OFF", "off" }, { "ON", "on" } },
-    defaultIndex = 1,
+    -- DECISAO DO KIM, 2026-08-09: ligado por padrao. A regra da casa e que toda
+    -- mudanca visual nova nasce desligada, e ela continua valendo para o que e
+    -- NOVO. Piscar nao e novo: saiu na v1.4.0, a comunidade usou e gostou, e
+    -- ninguem reportou que incomoda. O default conservador existe para nao
+    -- surpreender quem instala; depois que a feature foi vista e aprovada, o
+    -- conservador passa a ser entregar o que as pessoas ja escolheriam.
+    defaultIndex = 2,
     help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
   },
   {
@@ -236,7 +242,18 @@ local OPTIONS = {
       { "OFF", "off" }, { "SUBTLE", 0.010 }, { "NORMAL", 0.020 },
       { "STRONG", 0.035 },
     },
-    defaultIndex = 1,
+    -- DECISAO DO KIM, 2026-08-09: ligado por padrao, no nivel MAIS BAIXO.
+    --
+    -- E a primeira vez que este mod entrega movimento sem ninguem pedir, entao
+    -- vale registrar o que sustenta a escolha. SUBTLE desloca a cabeca em 0.16
+    -- px de mundo, menos de um pixel de tela na camera do jogo; o custo do
+    -- canal inteiro ficou abaixo do piso de ruido da regua; e o efeito some
+    -- sozinho num host sem o canal, sem quebrar nada. O que ele compra e a
+    -- ausencia da sensacao de estatua, que e o motivo de o mod existir.
+    --
+    -- SUBTLE e nao NORMAL de proposito: o default certo para uma coisa que a
+    -- pessoa nao escolheu e o menor que ainda faz diferenca.
+    defaultIndex = 2,
     help = "Breathes the solid by scaling it vertically from the feet, out of phase per character, so a room of NPCs stops reading as frozen.",
   },
   {

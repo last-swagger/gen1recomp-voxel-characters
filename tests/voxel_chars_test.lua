@@ -768,6 +768,20 @@ local function loadWith(mod)
   return mod
 end
 
+-- SO_ESTA: fixa todas as opcoes de vida em OFF e liga apenas as pedidas.
+--
+-- Existe porque mudar um DEFAULT do produto quebrou oito checks de uma vez, e
+-- eles quebraram pelo motivo certo: testavam uma opcao e deixavam as outras no
+-- default, entao o dia em que BREATH passou a nascer ligado, um teste sobre
+-- FOOTFALL passou a medir os dois somados. Teste sobre uma coisa fixa todas as
+-- outras; default e assunto do teste que cobre default, e de mais nenhum.
+local function soEsta(extra)
+  local o = { blink = "off", breath = "off", sway = "off", lag = "off",
+              footfall = "off" }
+  for k, v in pairs(extra or {}) do o[k] = v end
+  return o
+end
+
 -- v1.4.2: le o valor atual da row de STATUS, recalculado toda vez (nunca
 -- cacheado), do mesmo jeito que o menu de opcoes leria.
 local function statusRowValue(mod)
@@ -5026,7 +5040,7 @@ do
   pixels[0] = 1
   local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  local mod = loadWith(makeMod(handle))
+  local mod = loadWith(makeMod(handle, soEsta()))
   eq(lifeRowValue(mod), "OFF",
      "host com canal, as tres opcoes desligadas: LIFE diz OFF")
 end
@@ -5060,7 +5074,7 @@ do
   pixels[0] = 1
   local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  local mod = loadWith(makeMod(handle, { footfall = 0.35 }))
+  local mod = loadWith(makeMod(handle, soEsta({ footfall = 0.35 })))
   eq(lifeRowValue(mod), "STEP", "so FOOTFALL ligado: LIFE diz STEP")
 end
 
@@ -5093,6 +5107,44 @@ do
 end
 
 do
+  -- OS DEFAULTS QUE O JOGADOR RECEBE SEM ESCOLHER NADA.
+  --
+  -- Nenhum teste cobria isto, e a falta apareceu do jeito mais caro possivel:
+  -- mudar BLINK e BREATH para ligados quebrou oito checks de uma vez, todos de
+  -- testes que falavam de OUTRA coisa e so dependiam do default por preguica.
+  -- Agora os defaults tem um dono: este bloco. Qualquer mudanca neles falha
+  -- AQUI, que e onde a decisao mora, e em lugar nenhum mais.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle))
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  local valor = {}
+  for _, row in ipairs(rows) do
+    if row.value then valor[row.label] = row.value({}) end
+  end
+  eq(valor["VOXEL CHARS"], "3", "default de VOXEL CHARS: 3")
+  eq(valor["SIDE COLOR"], "BODY", "default de SIDE COLOR: BODY")
+  eq(valor["SHAPE"], "SLAB", "default de SHAPE: SLAB")
+  eq(valor["GROUND SHADE"], "OFF", "default de GROUND SHADE: OFF")
+  eq(valor["TOP EDGE"], "ON", "default de TOP EDGE: ON")
+  -- Ligados por decisao do Kim em 2026-08-09: os dois ja tinham sido vistos e
+  -- aprovados pela comunidade, entao entregar desligado passou a ser entregar
+  -- menos do que a pessoa escolheria.
+  eq(valor.BLINK, "ON", "default de BLINK: ON, a comunidade aprovou a feature")
+  eq(valor.BREATH, "SUBTLE",
+     "default de BREATH: SUBTLE, o menor nivel que ainda faz diferenca")
+  -- Estas continuam desligadas: mudam a LEITURA da forma ou do movimento de um
+  -- jeito que ninguem julgou ainda.
+  for _, chave in ipairs({ "FRONT SHAPE", "TOP DOME", "STEP WEIGHT", "SWAY",
+                           "MOTION LAG", "FOOTFALL" }) do
+    eq(valor[chave], "OFF", "default de " .. chave .. ": OFF")
+  end
+end
+
+do
   -- item 3: com canal, as tres rows aparecem depois de STEP WEIGHT, nesta
   -- ordem, com os rotulos certos.
   local pixels = {}
@@ -5118,13 +5170,13 @@ do
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle))
+  loadWith(makeMod(handle, soEsta()))
   local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local model = lifeModel(32, 48, false)
   modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
   local call = modules.Voxel3D.drawCalls[1]
   check(call.model == model,
-        "as tres opcoes desligadas: o original recebe a mesma tabela de model")
+        "as quatro opcoes desligadas: o original recebe a mesma tabela de model")
 end
 
 do
@@ -5668,7 +5720,7 @@ do
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle, { footfall = 0.7 }))
+  loadWith(makeMod(handle, soEsta({ footfall = 0.7 })))
   local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local maxDevS, maxDevSx = 0, 0
   withDrivenClock(function(setClock)
@@ -5702,7 +5754,7 @@ do
     pixels[0] = 1
     local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
       nil, nil, nil, nil, nil, true)
-    loadWith(makeMod(handle, { footfall = level.value }))
+    loadWith(makeMod(handle, soEsta({ footfall = level.value })))
     local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
     local peak = 0
     withDrivenClock(function(setClock)
@@ -5741,7 +5793,7 @@ do
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle, { footfall = 0.7 }))
+  loadWith(makeMod(handle, soEsta({ footfall = 0.7 })))
   local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local worstGap = 0
   withDrivenClock(function(setClock)
@@ -5779,7 +5831,7 @@ do
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle, { footfall = 0.7 }))
+  loadWith(makeMod(handle, soEsta({ footfall = 0.7 })))
   local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local model, out
   withDrivenClock(function(setClock)
@@ -5818,7 +5870,7 @@ do
     pixels[0] = 1
     local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
       nil, nil, nil, nil, nil, true)
-    loadWith(makeMod(handle, { footfall = 0.7 }))
+    loadWith(makeMod(handle, soEsta({ footfall = 0.7 })))
     local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
     local s
     withDrivenClock(function(setClock)
@@ -5845,7 +5897,7 @@ do
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle, { footfall = 0.7 }))
+  loadWith(makeMod(handle, soEsta({ footfall = 0.7 })))
   local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local sA, sB
   withLoveTime(0, function()
@@ -5878,7 +5930,7 @@ do
     pixels[0] = 1
     local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
       nil, nil, nil, nil, nil, true)
-    loadWith(makeMod(handle, { footfall = 0.7 }))
+    loadWith(makeMod(handle, soEsta({ footfall = 0.7 })))
     local mesh = modules.SpriteBillboards.mesh({ image = image, frames = 1 }, 0)
     local peak = 0
     withDrivenClock(function(setClock)

@@ -74,9 +74,13 @@ that fork.
 
 ## What you can turn on
 
-Fourteen rows under `OPTIONS`. The first two are read only. **Everything that
-changes how the game looks starts turned off**, so installing this mod never
-changes your game until you decide it should.
+Fifteen rows under `OPTIONS`. The first two are read only.
+
+**Anything new starts turned off.** Two things are on out of the box, `BLINK`
+and `BREATH`, and both earned it: they were shipped off, people used them, and
+nobody wanted them back off. `BREATH` is on at its lowest level, which is under
+a pixel of movement. If you want the mod to change nothing at all, both are one
+button away.
 
 ```
 STATUS         read only, see above
@@ -86,16 +90,17 @@ VOXEL CHARS    OFF / 1 / 2 / 3 / 5 / 10          default 3      how thick
 SIDE COLOR     BODY / OUTLINE                    default BODY   what the new faces are painted with
 SHAPE          SLAB / CARVED / CARVED+           default SLAB   how the body is built
 GROUND SHADE   OFF / ON                          default OFF    contact shadow at the feet
-BLINK          OFF / ON                          default OFF    they blink
+BLINK          OFF / ON                          default ON     they blink
 TOP EDGE       OFF / ON                          default ON     darkens exposed top faces
 
 FRONT SHAPE    OFF / LOW / MED / HIGH            default OFF    false roundness on the front
 TOP DOME       OFF / LOW / HIGH                  default OFF    a domed head instead of a flat lid
 STEP WEIGHT    OFF / LOW / HIGH                  default OFF    the body follows the step
 
-BREATH         OFF / SUBTLE / NORMAL / STRONG    default OFF    they breathe
+BREATH         OFF / SUBTLE / NORMAL / STRONG    default SUBTLE they breathe
 SWAY           OFF / SUBTLE / NORMAL             default OFF    idle weight shift
 MOTION LAG     OFF / SUBTLE / NORMAL             default OFF    the body arrives after the step
+FOOTFALL       OFF / SUBTLE / NORMAL             default OFF    it compresses on each step
 ```
 
 **If you only try one thing, try `BREATH: SUBTLE`.** It is half a pixel of
