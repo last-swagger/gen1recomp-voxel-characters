@@ -5063,8 +5063,9 @@ do
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
   local labels = {}
   for _, row in ipairs(rows) do labels[row.label] = true end
-  check(not (labels.BREATH or labels.SWAY or labels["MOTION LAG"]),
-        "sem canal, BREATH/SWAY/MOTION LAG nao aparecem no menu")
+  check(not (labels.BREATH or labels.SWAY or labels["MOTION LAG"]
+             or labels.FOOTFALL),
+        "sem canal, nenhuma row de vida aparece no menu")
 end
 
 do
@@ -5077,12 +5078,13 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 14,
-     "com canal, catorze rows: STATUS, LIFE e as doze opcoes (nove de sempre mais vida)")
+  eq(#rows, 15,
+     "com canal, quinze rows: STATUS, LIFE e as treze opcoes")
   eq(rows[11].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[12].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
   eq(rows[13].label, "SWAY", "SWAY aparece depois de BREATH")
   eq(rows[14].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
+  eq(rows[15].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
 end
 
 do

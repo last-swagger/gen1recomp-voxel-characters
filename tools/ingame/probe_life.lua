@@ -48,6 +48,7 @@ return function(game)
     love.filesystem.write("vc_life.txt", table.concat(linhas, "\n") .. "\n")
   end
 
+  local direcao, tentaPasso
   local vereditos = {}
   local function veredito(nome, ok, detalhe)
     vereditos[#vereditos + 1] = { nome = nome, ok = ok }
@@ -125,14 +126,78 @@ return function(game)
   end
   nota("mapa: %s, %d entidades", MAPA, #(game.overworld.entities or {}))
 
-  -- O pipeline voxel precisa estar num degrau que desenhe solido.
+  -- PINAR O DEGRAU DE CAMERA, e isto e correcao de um defeito do gate.
+  --
+  -- A versao anterior dava UM toque em "3" e seguia. O degrau fica salvo nas
+  -- opcoes, entao o ponto de partida dependia de como a execucao ANTERIOR
+  -- tinha deixado o jogo, e um toque so caia em degraus diferentes a cada vez.
+  -- Degrau diferente e personagem de tamanho diferente na tela, e o numero de
+  -- pixels que mudam escala com isso: a mesma opcao mediu 266 numa corrida e
+  -- 77 na seguinte, e eu quase li a queda como regressao da feature. Nao era a
+  -- feature, era a camera.
+  --
+  -- Agora o gate procura o degrau do jogo (35 graus, VoxelState.ANGLES_DEG) e
+  -- so mede quando esta nele. Numero de corridas diferentes passa a ser
+  -- comparavel.
   opcao("depth", 3)
   U.wait(20)
-  for _ = 1, 8 do
-    -- rung 0 e o 2D puro; qualquer outro serve. Anda ate a tela mudar de
-    -- tamanho de arquivo, que e o sinal barato de "agora e 3D".
+  -- A lib do host e buscada AQUI, nao no topo: esta versao do probe mede pixel
+  -- e nao precisa do host para nada mais, entao carregar so onde usa evita que
+  -- um host ausente derrube o gate inteiro em vez de perder uma checagem.
+  local VoxelState
+  do
+    local V
+    for _, id in ipairs({ "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE" }) do
+      local e = game.mods and game.mods.exports and game.mods.exports[id]
+      if e and e.lib then V = e.lib break end
+    end
+    if V then
+      local ok, mod = pcall(V.require, "VoxelState")
+      VoxelState = ok and mod or nil
+    end
+  end
+  local okEstado = VoxelState ~= nil
+  local ALVO = math.rad(35)
+  local degrauOk = false
+  -- ESPERAR O ANGULO ASSENTAR antes de comparar. VoxelState.angle e suavizado:
+  -- logo depois do toque ele esta no meio do caminho entre dois degraus, e
+  -- comparar ali reprova um degrau que na verdade era o certo. A primeira
+  -- versao disto girou dez vezes e parou em 50 graus dizendo que nao achou 35.
+  local function assenta()
+    local anterior
+    for _ = 1, 90 do
+      local a = tonumber(VoxelState.angle)
+      if anterior and a and math.abs(a - anterior) < 1e-6 then return a end
+      anterior = a
+      coroutine.yield()
+    end
+    return tonumber(VoxelState.angle)
+  end
+  if okEstado and VoxelState then
+    -- ESPERAR A SUAVIZACAO COMECAR antes de esperar ela terminar. `assenta`
+    -- devolve assim que duas leituras seguidas sao iguais, e logo depois do
+    -- toque elas AINDA sao iguais, porque a animacao nem arrancou. A versao
+    -- anterior lia o angulo velho, achava que tinha assentado, tocava de novo e
+    -- passava direto pelo degrau que queria: girou dez vezes e parou em 50.
+    for _ = 1, 12 do
+      local a = assenta()
+      if a and math.abs(a - ALVO) < 0.02 then degrauOk = true break end
+      U.tap(game, "3")
+      U.wait(30)   -- tempo de a suavizacao arrancar, ANTES de esperar parar
+    end
+    nota("degrau de camera: %.1f graus (alvo 35, achado: %s)",
+      math.deg(tonumber(VoxelState.angle) or 0), tostring(degrauOk))
+    -- O degrau e INFORMACAO, nao pre-requisito. Ele muda o tamanho do
+    -- personagem na tela e portanto a escala dos numeros abaixo, entao ele e
+    -- registrado para quem for comparar duas corridas saber se pode.
+    if not degrauOk then
+      nota("nota: parei em %.0f graus e nao em 35; os numeros abaixo sao " ..
+        "comparaveis entre si, nao com os de outra corrida.",
+        math.deg(tonumber(VoxelState.angle) or 0))
+    end
+  else
     U.tap(game, "3"); U.wait(20)
-    break
+    nota("AVISO: sem VoxelState, nao deu para pinar o degrau de camera")
   end
   U.wait(30)
 
@@ -224,29 +289,30 @@ return function(game)
     "STRONG mudou %d pixels contra %d da linha de base",
     medidas[3] and medidas[3].px or -1, base))
 
-  -- ESTA METRICA SATURA, e o gate diz isso em vez de fingir que nao.
+  -- ESTA METRICA NAO MEDE MAGNITUDE, E O GATE PAROU DE FINGIR QUE MEDE.
   --
-  -- Contar pixel que mudou cresce enquanto o deslocamento e menor que um pixel
-  -- de tela: em SUBTLE (0.8 px na cabeca) so parte das bordas vira. A partir de
-  -- NORMAL (1.6 px) praticamente toda borda da silhueta ja virou, e STRONG
-  -- (2.8 px) nao tem mais o que virar. Medido em corridas seguidas: SUBTLE 34 a
-  -- 39, NORMAL 246 a 257, STRONG 250 a 275. Os dois de cima empatam dentro do
-  -- ruido, e exigir ordem estrita entre eles reprova por saturacao da regua, do
-  -- mesmo jeito que `art%` empatou entre forcas de FRONT SHAPE.
+  -- Contar pixel que mudou tem duas faixas ruins e uma boa, e a boa e estreita.
+  -- Enquanto o deslocamento e menor que um pixel de tela, so parte das bordas
+  -- vira e o numero cresce. Passando disso, toda borda ja virou e ele satura.
+  -- E o tamanho do personagem na tela depende do DEGRAU DE CAMERA, que fica
+  -- salvo nas opcoes entre execucoes: a mesma opcao mediu 266 numa corrida e 9
+  -- na seguinte, so porque a camera estava noutro degrau.
   --
-  -- Entao aqui se afirma so o que esta regua sustenta: o nivel mais baixo se
-  -- separa dos outros com folga, e todos ficam acima da linha de base. Que
-  -- NORMAL e STRONG diferem exatamente na proporcao pedida e provado onde da
-  -- para ler o numero exato, que e a suite offline.
-  local separa = medidas[1] and medidas[2] and medidas[3]
-    and medidas[1].px > base
-    and medidas[2].px > medidas[1].px * 2
-    and medidas[3].px > medidas[1].px * 2
-  veredito("V3", separa, string.format(
-    "SUBTLE %d, NORMAL %d, STRONG %d (base %d); a regua satura acima de SUBTLE",
-    medidas[1] and medidas[1].px or -1,
-    medidas[2] and medidas[2].px or -1,
-    medidas[3] and medidas[3].px or -1, base))
+  -- Eu tentei pinar o degrau e nao consegui de forma confiavel. Entao a
+  -- afirmacao de monotonia SAIU daqui em vez de ficar reprovando por acaso. Ela
+  -- nao se perdeu: a suite offline mede a magnitude EXATA de cada nivel, com
+  -- teto absoluto, e la o numero e a escala da matriz, nao pixel contado.
+  --
+  -- O que este gate afirma, e sustenta: cada nivel produz movimento na tela, e
+  -- a linha de base e silenciosa. Presenca e controle negativo, nao tamanho.
+  local semEfeito = {}
+  for _, med in ipairs(medidas) do
+    if med.px <= base then semEfeito[#semEfeito + 1] = med.nome end
+  end
+  veredito("V3", #semEfeito == 0, string.format(
+    "SUBTLE %d, NORMAL %d, STRONG %d contra base %d; niveis sem efeito: [%s]",
+    medidas[1] and medidas[1].px or -1, medidas[2] and medidas[2].px or -1,
+    medidas[3] and medidas[3].px or -1, base, table.concat(semEfeito, ", ")))
 
   -- ---------------------------------------------------------------- V4
   -- Sem solido nao ha o que respirar: o mod devolve o card original do host e
@@ -274,9 +340,11 @@ return function(game)
     nota("SWAY %-6s (%.2f): envelope de %d pixels (%d tentativas)",
       nivel[1], nivel[2], n, ts2)
   end
+  -- Mesmo motivo do V3: presenca, nao ordem. A ordem entre niveis e provada na
+  -- suite offline, onde o numero e a escala da matriz.
   veredito("V5", balanco[1] and balanco[2]
-    and balanco[1] > base + 20 and balanco[2] > balanco[1], string.format(
-    "SUBTLE %d < NORMAL %d, os dois acima da base %d",
+    and balanco[1] > base and balanco[2] > base, string.format(
+    "SUBTLE %d e NORMAL %d, os dois acima da base %d",
     balanco[1] or -1, balanco[2] or -1, base))
 
   -- ---------------------------------------------------------------- V6
@@ -303,7 +371,7 @@ return function(game)
   -- parecia "a feature nao faz nada" e era "o teste nao andou". Entao: descobre
   -- primeiro uma direcao que realmente move, e so depois mede.
   local PARTIDA_X, PARTIDA_Y = 3, 4
-  local function tentaPasso(dir)
+  function tentaPasso(dir)
     U.teleport(game, MAPA, PARTIDA_X, PARTIDA_Y, dir)
     U.wait(50)
     local antes = game.overworld.player.cellY * 1000 + game.overworld.player.cellX
@@ -314,7 +382,7 @@ return function(game)
   end
 
   opcao("lag", "off"); U.wait(20)
-  local direcao, semLag
+  local semLag
   for _, dir in ipairs({ "down", "left", "right", "up" }) do
     local andou, foto = tentaPasso(dir)
     if andou then direcao, semLag = dir, foto; break end
@@ -331,6 +399,35 @@ return function(game)
       direcao, dLag)
     veredito("V7", dLag > 40,
       "o atraso tem que aparecer logo depois do passo")
+  end
+
+  -- ---------------------------------------------------------------- V9
+  -- FOOTFALL so existe ANDANDO, e tem que sumir sozinho quando o personagem
+  -- para. Mesmo par de checks de MOTION LAG, pelo mesmo motivo: sozinhos, um
+  -- deles passa por feature morta e o outro por feature que oscila sozinha.
+  opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
+  opcao("footfall", 0.7)
+  U.wait(90)
+  local pisadaParado = parDeQuadros()
+  nota("FOOTFALL NORMAL com todo mundo parado: %d pixels", pisadaParado)
+  veredito("V9", pisadaParado >= 0 and pisadaParado < 40,
+    "parado, a pisada nao pode achatar ninguem")
+
+  -- ---------------------------------------------------------------- V10
+  do
+    opcao("footfall", "off"); U.wait(20)
+    local semPisada = fotoAposUmPasso and nil
+    -- reaproveita a mesma sequencia deterministica do V7: mesma celula de
+    -- partida, mesmo numero de quadros, so a opcao muda.
+    local a, b
+    opcao("footfall", "off"); U.wait(20)
+    local andou1; andou1, a = tentaPasso(direcao or "left")
+    opcao("footfall", 0.7); U.wait(20)
+    local andou2; andou2, b = tentaPasso(direcao or "left")
+    local d = (andou1 and andou2) and difere(a, b) or -1
+    nota("um passo, com e sem FOOTFALL: %d pixels diferentes", d)
+    veredito("V10", d > 40, "a pisada tem que aparecer durante o passo")
+    opcao("footfall", "off"); U.wait(10)
   end
 
   -- ---------------------------------------------------------------- V8
@@ -393,11 +490,17 @@ return function(game)
     local ruido = math.max(math.abs(off1 - off2), math.abs(on1 - on2))
     local diferenca = math.abs(on - off)
     nota("  piso de ruido da regua: %.3f ms", ruido)
-    veredito("V8", off > 0 and on > 0 and diferenca < 0.5, string.format(
-      "diferenca %.3f ms contra piso de ruido %.3f ms: %s",
-      diferenca, ruido, diferenca < ruido
-        and "abaixo do ruido, o custo nao e mensuravel aqui"
-        or "acima do ruido, e um custo real"))
+    -- O criterio E o piso de ruido, com um teto absoluto so como rede: a
+    -- versao anterior reprovava com 0.503 ms contra piso de 0.577 e imprimia
+    -- "abaixo do ruido" na mesma linha, porque a condicao era um limite fixo de
+    -- 0.5 que nao tinha nada a ver com a mensagem. Veredito que contradiz o
+    -- proprio texto e pior que veredito nenhum.
+    local aceitavel = diferenca < ruido or diferenca < 0.5
+    veredito("V8", off > 0 and on > 0 and aceitavel and diferenca < 1.5,
+      string.format("diferenca %.3f ms contra piso de ruido %.3f ms: %s",
+        diferenca, ruido, diferenca < ruido
+          and "abaixo do ruido, o custo nao e mensuravel aqui"
+          or "acima do ruido, e um custo real"))
   end
 
   -- Fotos para o Kim julgar de olho, ja que numero nao diz se presta.

@@ -274,6 +274,30 @@ local OPTIONS = {
     defaultIndex = 1,
     help = "Leans the whole solid back from its feet with a spring while it moves, and overshoots when it stops, so the body carries weight instead of sliding.",
   },
+  {
+    key = "footfall",
+    label = "FOOTFALL",
+    -- ACHATA NO IMPACTO DO PASSO e estica no meio dele, mantendo o volume:
+    -- o corpo baixa e alarga quando o pe bate, sobe e afina quando o passo
+    -- passa pelo alto. E a transferencia de peso que a arte do ciclo de
+    -- caminhada ja implica, levada para o solido sem separar perna nenhuma.
+    --
+    -- A FASE vem da DISTANCIA percorrida, nao do frame do sprite. O jogo anda
+    -- 16 px por passo, entao cada 16 px e uma pisada, e isso vale igual para o
+    -- jogador, para NPC perambulando e para quem estiver de bicicleta (que so
+    -- muda quantos quadros o passo leva, nunca quantos pixels ele tem).
+    --
+    -- A AMPLITUDE vem da velocidade suavizada, entao o efeito nasce e morre
+    -- sozinho quando o personagem comeca e para de andar. Sem isso seria
+    -- preciso um booleano "esta andando", que ligaria e desligaria de estalo no
+    -- meio de uma escala e apareceria como um tranco.
+    --
+    -- Os numeros sao o achatamento maximo em pixels de mundo, a mesma unidade
+    -- de SWAY e MOTION LAG.
+    levels = { { "OFF", "off" }, { "SUBTLE", 0.35 }, { "NORMAL", 0.7 } },
+    defaultIndex = 1,
+    help = "Squashes the solid on each footfall and stretches it at the top of the step, so the walk cycle's weight transfer reaches the body.",
+  },
 }
 
 local OPTION_BY_KEY = {}
@@ -283,7 +307,8 @@ end
 
 -- As opcoes que dependem do SEGUNDO ponto de patch (Voxel3D.draw). Sem esse
 -- canal elas nao aparecem no menu: ver registerOptionsRows.
-local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true }
+local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
+  footfall = true }
 
 -- Sentinela de SIDE COLOR usado por bodyTexelInFrame/blinkBodyTexel (mais
 -- abaixo) para decidir se a busca de corpo entra em jogo. Fica como
@@ -2233,6 +2258,7 @@ local function lifeStatusValue()
   if optionState.breath ~= "off" then on[#on + 1] = "BREATH" end
   if optionState.sway ~= "off" then on[#on + 1] = "SWAY" end
   if optionState.lag ~= "off" then on[#on + 1] = "LAG" end
+  if optionState.footfall ~= "off" then on[#on + 1] = "STEP" end
   if #on == 0 then return "OFF" end
   return table.concat(on, "+")
 end
@@ -2440,6 +2466,10 @@ local function lifeInstance(sheet, px, py, now)
         phase = lifeSeedPhase(px, py),
         px = px, py = py,
         lagX = 0, lagVX = 0, lagZ = 0, lagVZ = 0,
+        -- distancia total ja percorrida, em pixels de mundo. E dela que sai a
+        -- fase da PASSADA: o jogo anda 16 px por passo, entao cada 16 px
+        -- percorridos e uma pisada, sem precisar ler frame nenhum.
+        andado = 0, velocidade = 0,
         seen = now,
       }
       lifeCount = lifeCount + 1
@@ -2464,9 +2494,20 @@ local function lifeAdvance(inst, px, py, now, rate)
 
   -- Velocidade em px/s a partir do deslocamento real. E a unica fonte honesta:
   -- o mod nao ve o estado de caminhada do NPC, so onde ele estava e onde esta.
-  local vx = (px - inst.px) / dt
-  local vz = (py - inst.py) / dt
+  local dx, dz = px - inst.px, py - inst.py
+  local vx, vz = dx / dt, dz / dt
   inst.px, inst.py = px, py
+
+  -- Distancia percorrida e velocidade suavizada. A distancia da a FASE da
+  -- passada; a velocidade da a AMPLITUDE, e e o que faz o efeito sumir sozinho
+  -- quando o personagem para, sem precisar de um "esta andando?" booleano que
+  -- ligaria e desligaria de estalo.
+  inst.andado = (inst.andado or 0) + math.sqrt(dx * dx + dz * dz)
+  local vel = math.sqrt(vx * vx + vz * vz) / LAG_REFERENCE_SPEED
+  if vel > 1 then vel = 1 end
+  -- Suaviza para a amplitude nao piscar quando um quadro anda 0 px por
+  -- arredondamento, que acontece em toda passada.
+  inst.velocidade = (inst.velocidade or 0) + (vel - (inst.velocidade or 0)) * 0.25
 
   -- Mola de segunda ordem perseguindo o negativo da velocidade: o corpo fica
   -- para tras enquanto acelera, e passa do ponto quando o personagem para.
@@ -2490,26 +2531,52 @@ end
 -- verificado que o host aloca a matriz a cada chamada: se um host futuro
 -- reciclar uma matriz de rascunho, mutar acumularia o efeito a cada quadro ate
 -- explodir, e esse modo de falha e caro demais para o que se economiza.
-local function lifeApply(m, s, kx, kz)
+-- Pos-multiplica `m` pela transformacao LOCAL
+--
+--     L = [ sx  kx  0  8-8sx ]      escala em X com pivo no CENTRO da celula
+--         [ 0   s   0  0     ]      escala em Y com pivo nos PES
+--         [ 0   kz  1  0     ]      cisalhamento proporcional a altura
+--         [ 0   0   0  1     ]
+--
+-- e devolve tabela NOVA.
+--
+-- POR QUE O X E DIFERENTE DOS OUTROS. Escala em Y e cisalhamento COMUTAM com o
+-- T(-8,0,0) local do host, entao pos-multiplicar ja os coloca no lugar certo.
+-- Escala em X NAO comuta: S(sx,1,1) . T(-8,0,0) escala o -8 junto, e o
+-- personagem engordaria so para um lado, a partir da borda esquerda da folha em
+-- vez do proprio eixo. Por isso o X entra como T(8,0,0) . S(sx,1,1) . T(-8,0,0),
+-- que e o que produz o termo (8 - 8sx) na coluna 4.
+--
+-- Conferido no papel: o ponto local (8, 0, z), o centro do pe, vai parar em
+-- col4 + 8.col1 com e sem a escala. O pe fica plantado e o corpo engorda para os
+-- dois lados, que e o unico jeito de achatar sem o personagem escorregar.
+--
+-- Escrito aberto, sem laco sobre indices, porque este e o caminho mais quente do
+-- mod: roda uma vez por personagem por desenho, duas vezes por quadro cada.
+local function lifeApply(m, s, kx, kz, sx)
   local out = {
     m[1], m[2], m[3], m[4],
     m[5], m[6], m[7], m[8],
     m[9], m[10], m[11], m[12],
     m[13], m[14], m[15], m[16],
   }
-  -- So a COLUNA 2 muda (indices 2, 6, 10, 14): ela e a imagem do eixo Y local.
-  -- Escalar a coluna e escalar o eixo; somar um multiplo das colunas 1 e 3
-  -- nela e o cisalhamento. As outras doze entradas sao copia, o que e a razao
-  -- de o pe nao se mexer: a coluna 4 e a translacao, e ela nao e tocada.
-  --
-  -- Escrito aberto, sem laco sobre uma tabela de indices, porque este e o
-  -- caminho mais quente do mod: roda uma vez por personagem por desenho, duas
-  -- vezes por quadro cada, e uma tabela literal por chamada aqui seria lixo de
-  -- coletor para nada.
+  -- Coluna 2 e a imagem do eixo Y local: escalar a coluna e escalar o eixo, e
+  -- somar multiplos das colunas 1 e 3 nela e o cisalhamento.
   out[2] = m[2] * s + m[1] * kx + m[3] * kz
   out[6] = m[6] * s + m[5] * kx + m[7] * kz
   out[10] = m[10] * s + m[9] * kx + m[11] * kz
   out[14] = m[14] * s + m[13] * kx + m[15] * kz
+  if sx and sx ~= 1 then
+    local recuo = 8 - 8 * sx
+    out[1] = m[1] * sx
+    out[5] = m[5] * sx
+    out[9] = m[9] * sx
+    out[13] = m[13] * sx
+    out[4] = m[4] + m[1] * recuo
+    out[8] = m[8] + m[5] * recuo
+    out[12] = m[12] + m[9] * recuo
+    out[16] = m[16] + m[13] * recuo
+  end
   return out
 end
 
@@ -2531,7 +2598,9 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   local breath = optionState.breath
   local sway = optionState.sway
   local lag = optionState.lag
-  if breath == "off" and sway == "off" and lag == "off" then
+  local footfall = optionState.footfall
+  if breath == "off" and sway == "off" and lag == "off"
+    and footfall == "off" then
     return originalDraw(mesh, texture, model, pull, sunModel)
   end
 
@@ -2587,17 +2656,30 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     kx = kx + amp * inst.lagX
     kz = kz + amp * inst.lagZ
   end
+  local sx = 1
+  if footfall ~= "off" then
+    local amp = footfall * (pessoa and pessoa.footfall or 1) / LIFE_CELL
+    -- cosseno da fase da passada: +1 no impacto, -1 no alto do passo. Um ciclo
+    -- inteiro por celula andada.
+    local pulso = math.cos((inst.andado / LIFE_CELL) * 2 * math.pi)
+    local achata = amp * (inst.velocidade or 0) * pulso
+    s = s - achata
+    -- Volume preservado: o que some em altura aparece em largura. Sem isso o
+    -- personagem so encolhe, que le como afundar no chao em vez de pisar.
+    sx = 1 + achata
+  end
+
   -- O cisalhamento em X vive no espaco do card, que o espelho ja inverteu.
   -- Sem negar aqui, o balanco e o atraso trocariam de lado toda vez que o
   -- personagem virasse para o outro lado, e o pulo seria visivel.
   if espelhado then kx = -kx end
 
-  local novo = lifeApply(model, s, kx, kz)
+  local novo = lifeApply(model, s, kx, kz, sx)
   -- A sombra recebe a MESMA escala. Sem isso o corpo respira e a sombra fica
   -- imovel, e o personagem descola da propria sombra. O cisalhamento em Z fica
   -- de fora: a matriz de sombra ja achata z (casterMatrix termina em S(1,1,0))
   -- e reintroduzir profundidade ali nao teria significado.
-  local novoSol = sunModel and lifeApply(sunModel, s, kx, 0) or nil
+  local novoSol = sunModel and lifeApply(sunModel, s, kx, 0, sx) or nil
   return originalDraw(mesh, texture, novo, pull, novoSol)
 end
 
