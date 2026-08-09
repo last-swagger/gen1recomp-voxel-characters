@@ -5054,6 +5054,30 @@ do
 end
 
 do
+  -- item 2, FOOTFALL: so FOOTFALL ligado, a row de LIFE diz STEP (o
+  -- rotulo curto que lifeStatusValue usa para footfall, main.lua).
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle, { footfall = 0.35 }))
+  eq(lifeRowValue(mod), "STEP", "so FOOTFALL ligado: LIFE diz STEP")
+end
+
+do
+  -- item 2, FOOTFALL: as quatro ligadas juntas, na ordem
+  -- BREATH+SWAY+LAG+STEP.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle,
+    { breath = 0.020, sway = 0.20, lag = 0.6, footfall = 0.35 }))
+  eq(lifeRowValue(mod), "BREATH+SWAY+LAG+STEP",
+     "as quatro ligadas: LIFE junta os nomes com +, FOOTFALL por ultimo")
+end
+
+do
   -- item 3: sem canal, as tres rows de vida nao aparecem no menu.
   local pixels = {}
   pixels[0] = 1
@@ -5528,23 +5552,27 @@ do
 end
 
 do
-  -- item 4: teto absoluto de seguranca, independente de nivel e
-  -- personalidade. As tres opcoes no maximo (BREATH STRONG, SWAY NORMAL,
-  -- MOTION LAG NORMAL) na folha mais agressiva de LIFE_PERSONALITY
-  -- (main.lua): swimmer tem a maior soma breath (1.10) + sway (1.60) =
-  -- 2.70 da tabela (a segunda maior, fisher, fica em 1.05 + 1.25 = 2.30);
-  -- MOTION LAG nao tem entrada customizada pra gente, entao vale
-  -- multiplicador 1 em qualquer folha de personagem, igual em todas.
+  -- item 4 (e item 9 da rodada de FOOTFALL): teto absoluto de seguranca,
+  -- independente de nivel e personalidade. As QUATRO opcoes no maximo
+  -- (BREATH STRONG, SWAY NORMAL, MOTION LAG NORMAL, FOOTFALL NORMAL) na
+  -- folha mais agressiva de LIFE_PERSONALITY (main.lua): swimmer tem a
+  -- maior soma breath (1.10) + sway (1.60) = 2.70 da tabela (a segunda
+  -- maior, fisher, fica em 1.05 + 1.25 = 2.30); MOTION LAG e FOOTFALL nao
+  -- tem entrada customizada pra gente, entao valem multiplicador 1 em
+  -- qualquer folha de personagem, igual em todas.
   -- Anda na diagonal por 500 quadros (cobre o ciclo inteiro de BREATH e
-  -- SWAY e mantem a mola de LAG excitada o tempo todo) e guarda o pico dos
-  -- tres, cada um em pixels de mundo.
+  -- SWAY, mantem a mola de LAG excitada o tempo todo, e passa por dezenas
+  -- de ciclos da passada de FOOTFALL) e guarda o pico dos quatro, cada um
+  -- em pixels de mundo. `sx` (a escala em X que FOOTFALL introduziu) e
+  -- lido de out[1] / model[1], igual ao contrato do pe (mais abaixo).
   local pixels = {}
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle, { breath = 0.035, sway = 0.45, lag = 1.2 }))
+  loadWith(makeMod(handle,
+    { breath = 0.035, sway = 0.45, lag = 1.2, footfall = 0.7 }))
   local mesh = modules.SpriteBillboards.mesh({ image = "swimmer.png", frames = 1 }, 0)
-  local maxS, maxKx, maxKz = 0, 0, 0
+  local maxS, maxKx, maxKz, maxSx = 0, 0, 0, 0
   withDrivenClock(function(setClock)
     for frame = 0, 500 do
       setClock(frame / 60)
@@ -5554,11 +5582,13 @@ do
       maxS = math.max(maxS, math.abs(out[6] - 1) * 16)
       maxKx = math.max(maxKx, math.abs(out[2]) * 16)
       maxKz = math.max(maxKz, math.abs(out[10]) * 16)
+      maxSx = math.max(maxSx, math.abs(out[1] / model[1] - 1) * 16)
     end
   end)
   check(maxS < 3, "teto de seguranca: |s - 1| * 16 fica abaixo de 3px mesmo no maximo")
   check(maxKx < 3, "teto de seguranca: |kx| * 16 fica abaixo de 3px mesmo no maximo")
   check(maxKz < 3, "teto de seguranca: |kz| * 16 fica abaixo de 3px mesmo no maximo")
+  check(maxSx < 3, "teto de seguranca: |sx - 1| * 16 fica abaixo de 3px mesmo no maximo")
 end
 
 do
@@ -5605,6 +5635,271 @@ do
         "controle: a folha sem personalidade realmente respirou alguma coisa neste teste")
   check(closePercent(bestGuardAmp, bestPlainAmp * 0.80, 0.05),
         "guard (breath 0.80 na tabela) respira proporcionalmente menos que uma folha ausente")
+end
+
+-- ========================================================================
+-- VIDA: FOOTFALL (quarta opcao, a primeira que mexe na coluna 1 e na
+-- coluna 4 da matriz)
+-- ========================================================================
+--
+-- O item 1 (a row aparecendo e sumindo com o canal, contagem em 15, ordem
+-- depois de MOTION LAG) ja esta coberto nos dois primeiros blocos da secao
+-- "VIDA: BREATH, SWAY, MOTION LAG" acima (e a linha de STATUS ganhou dois
+-- blocos extras logo depois do "as tres ligadas juntas", cobrindo STEP
+-- sozinho e as quatro juntas). O teto absoluto (item 9) foi incorporado
+-- direto no teste de teto ja existente na secao MAGNITUDE, que agora roda
+-- com FOOTFALL NORMAL ligado e mede tambem |sx - 1| * 16.
+--
+-- O que falta e o proprio de FOOTFALL: nao achatar parado, achatar andando
+-- na medida certa, preservar volume, e sobretudo o contrato de que a
+-- escala em X tem pivo no CENTRO da celula (o pe nao escorrega) e nao na
+-- borda (que tem que se mexer, senao o contrato anterior nao provaria
+-- nada). Ver o comentario de lifeApply em main.lua para a algebra completa.
+
+do
+  -- item 2: parado nao achata. Personagem sem se mover (mesma posicao em
+  -- todo quadro), relogio andando: sem deslocamento nao ha velocidade
+  -- (`inst.velocidade` fica em 0, nunca sai do 0 porque o filtro so
+  -- persegue o alvo que e a propria velocidade instantanea), e sem
+  -- velocidade `achata` e zero POR CONSTRUCAO (amp * 0 * pulso = 0). `s` e
+  -- `sx` tem que ficar EXATAMENTE 1 em todo quadro, sem folga nenhuma: e o
+  -- check que impede a feature de aparecer quando ninguem esta andando.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { footfall = 0.7 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local maxDevS, maxDevSx = 0, 0
+  withDrivenClock(function(setClock)
+    for frame = 0, 60 do
+      setClock(frame / 60)
+      local model = lifeProbeModel(50, 50, false)
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+      local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+      maxDevS = math.max(maxDevS, math.abs(out[6] - 1))
+      maxDevSx = math.max(maxDevSx, math.abs(out[1] / model[1] - 1))
+    end
+  end)
+  check(maxDevS < 1e-9,
+        "parado: s fica exatamente 1 em todo quadro, mesmo com o relogio andando")
+  check(maxDevSx < 1e-9,
+        "parado: sx fica exatamente 1 em todo quadro, mesmo com o relogio andando")
+end
+
+do
+  -- item 3: andando achata, e a amplitude bate com o nivel. Mesma rotina de
+  -- conducao da rodada de MOTION LAG (posicao andando 1 px por quadro, o
+  -- relogio avancando 1/60 por quadro), mas a leitura e diferente: a
+  -- formula usa `amp = footfall / LIFE_CELL` direto sobre a escala `s`
+  -- (nao existe um segundo "*16" de volta, como existe para o cisalhamento
+  -- de MOTION LAG), entao o desvio maximo de `s` em relacao a 1 tem que se
+  -- aproximar do proprio nivel dividido por 16, nao do nivel puro.
+  local levels = { { name = "SUBTLE", value = 0.35 }, { name = "NORMAL", value = 0.7 } }
+  local peaks = {}
+  for _, level in ipairs(levels) do
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { footfall = level.value }))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    local peak = 0
+    withDrivenClock(function(setClock)
+      -- 64 quadros cobrem quatro celulas inteiras de 16px andados (a fase
+      -- da passada da uma volta inteira por celula), tempo de sobra para a
+      -- velocidade suavizada (filtro de fator 0.25 por quadro) saturar bem
+      -- antes do primeiro pico do pulso, em andado = 8.
+      for frame = 0, 64 do
+        setClock(frame / 60)
+        local model = lifeProbeModel(frame, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+        local d = math.abs(out[6] - 1)
+        if d > peak then peak = d end
+      end
+    end)
+    peaks[level.name] = peak
+    local want = level.value / 16
+    check(peak <= want * 2,
+          "FOOTFALL " .. level.name .. ": pico de |s - 1| nao passa do dobro de nivel/16")
+    check(peak >= want * 0.5,
+          "FOOTFALL " .. level.name .. ": pico chega perto de nivel/16, nao fica muito abaixo")
+  end
+  check(closePercent(peaks.NORMAL / peaks.SUBTLE, 2.0, 0.05),
+        "FOOTFALL NORMAL sai 2x SUBTLE, a mesma proporcao dos dois niveis do menu")
+end
+
+do
+  -- item 4: o VOLUME e preservado. Em todo quadro da caminhada, o que `s`
+  -- perde em altura tem que reaparecer em `sx` como largura, exatamente:
+  -- main.lua faz `s = s - achata` e `sx = 1 + achata` a partir do MESMO
+  -- `achata`, entao (1 - s) e (sx - 1) tem que ser o mesmo numero. E o
+  -- check que impede alguem no futuro de mexer num lado da conta e
+  -- esquecer o outro.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { footfall = 0.7 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local worstGap = 0
+  withDrivenClock(function(setClock)
+    for frame = 0, 64 do
+      setClock(frame / 60)
+      local model = lifeProbeModel(frame, 0, false)
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+      local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+      local s = out[6]
+      local sx = out[1] / model[1]
+      local gap = math.abs((1 - s) - (sx - 1))
+      if gap > worstGap then worstGap = gap end
+    end
+  end)
+  check(worstGap < 0.0001,
+        "volume preservado: (1 - s) e (sx - 1) batem em todo quadro, dentro de erro numerico")
+end
+
+do
+  -- item 5 e 6: o PE NAO ESCORREGA (o contrato central de FOOTFALL) e a
+  -- BORDA ANDA (o complemento que prova que o teste anterior nao passaria
+  -- de gratis). Personagem andando ate um quadro com sx claramente fora de
+  -- 1 (o pico do pulso, em andado = 16, com a velocidade ja saturada).
+  --
+  -- O centro do pe, local (8, 0, z), e o PIVO da escala em X: tem que
+  -- mapear para o MESMO ponto de mundo com e sem a escala. Local
+  -- (x, y, z) vira mundo, por linha, como m[c+1]*x + m[c+2]*y + m[c+3]*z +
+  -- m[c+4] (c = 4*(linha-1)); com y = 0 isso e 8*col1 + z*col3 + col4 na
+  -- linha 1 (indices 1, 2, 3, 4). Confere para dois valores de z.
+  --
+  -- A borda esquerda, local (0, 0, 0), so sobra col4: ela TEM que se mexer
+  -- quando sx muda, senao o check do pe passaria com uma escala que na
+  -- pratica nao faz nada (ex.: sx preso em 1 por um bug em outro lugar).
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { footfall = 0.7 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model, out
+  withDrivenClock(function(setClock)
+    for frame = 0, 16 do
+      setClock(frame / 60)
+      model = lifeModel(frame, 0, false)
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+      out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+    end
+  end)
+  local sx = out[1] / model[1]
+  check(math.abs(sx - 1) > 0.01,
+        "controle: sx realmente saiu de 1 neste quadro, senao o contrato abaixo nao testa nada")
+
+  for _, z in ipairs({ 0, 5 }) do
+    local antes = 8 * model[1] + z * model[3] + model[4]
+    local depois = 8 * out[1] + z * out[3] + out[4]
+    check(close(antes, depois),
+          "pe nao escorrega (z=" .. z .. "): o centro do pe local (8,0,z) mapeia "
+          .. "para o mesmo ponto de mundo com e sem a escala em X")
+  end
+
+  check(not close(model[4], out[4]),
+        "a borda anda: o ponto local (0,0,0) SE MOVE quando sx muda, senao o check "
+        .. "do pe passaria com uma escala que nao faz nada")
+end
+
+do
+  -- item 7: a FASE vem da DISTANCIA, nao do relogio.
+  --
+  -- Parte 1: duas instancias, o MESMO tempo decorrido, distancias
+  -- percorridas diferentes (velocidades diferentes): pontos diferentes do
+  -- pulso, entao `s` sai diferente entre as duas.
+  local function walkS(speed, frames)
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { footfall = 0.7 }))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    local s
+    withDrivenClock(function(setClock)
+      for frame = 0, frames do
+        setClock(frame / 60)
+        local model = lifeProbeModel(frame * speed, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        s = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model[6]
+      end
+    end)
+    return s
+  end
+  local sSlow = walkS(1, 20)
+  local sFast = walkS(2.5, 20)
+  check(not close(sSlow, sFast),
+        "mesmo tempo decorrido, distancias percorridas diferentes: `s` sai diferente "
+        .. "(fases diferentes do pulso da passada)")
+
+  -- Parte 2, complemento da anterior (e do item 2 acima): a mesma instancia
+  -- PARADA nao muda de fase so porque o relogio andou. Mesma posicao, dois
+  -- relogios bem diferentes (os mesmos valores do teste de fase de BREATH,
+  -- mais acima nesta suite): `s` sai IGUAL, porque `andado` nunca mexeu.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { footfall = 0.7 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local sA, sB
+  withLoveTime(0, function()
+    local model = lifeProbeModel(0, 0, false)
+    modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+    sA = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model[6]
+  end)
+  withLoveTime(1.5, function()
+    local model = lifeProbeModel(0, 0, false)
+    modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+    sB = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model[6]
+  end)
+  check(close(sA, sB),
+        "parado, relogio bem diferente: `s` fica igual, a fase nao mexeu junto")
+end
+
+do
+  -- item 8: personalidade multiplica. Nenhuma folha de LIFE_PERSONALITY
+  -- (main.lua) tem uma entrada `footfall` ainda, entao o check aqui vai na
+  -- direcao oposta do de BREATH/guard mais acima nesta suite: confirma que
+  -- o multiplicador AUSENTE vale 1, tanto para uma folha de todo fora da
+  -- tabela (sheet.png) quanto para uma folha PRESENTE na tabela mas sem o
+  -- campo footfall (guard.png, que tem rate/breath/sway mas nao footfall).
+  -- A formula em main.lua e `pessoa and pessoa.footfall or 1`, e os dois
+  -- casos caem no mesmo `or 1` final. Se um dia alguma folha ganhar
+  -- footfall proprio na tabela, troque este check por um que compare a
+  -- amplitude escalada, no mesmo espirito do teste BREATH/guard.
+  local function peakS(image)
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { footfall = 0.7 }))
+    local mesh = modules.SpriteBillboards.mesh({ image = image, frames = 1 }, 0)
+    local peak = 0
+    withDrivenClock(function(setClock)
+      for frame = 0, 32 do
+        setClock(frame / 60)
+        local model = lifeProbeModel(frame, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+        local d = math.abs(out[6] - 1)
+        if d > peak then peak = d end
+      end
+    end)
+    return peak
+  end
+  local peakPlain = peakS("sheet.png")
+  local peakGuard = peakS("guard.png")
+  check(peakPlain > 0.001,
+        "controle: a folha sem personalidade realmente achatou alguma coisa neste teste")
+  check(closePercent(peakGuard, peakPlain, 0.01),
+        "guard (na tabela, mas sem campo footfall) achata igual a uma folha ausente: "
+        .. "o multiplicador ausente vale 1 nos dois casos")
 end
 
 T.finish("voxel_chars_test")
