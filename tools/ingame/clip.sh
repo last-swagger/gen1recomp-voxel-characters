@@ -14,6 +14,11 @@
 #   tools/ingame/clip.sh /tmp/clipe breath=0.020          OFF contra 0.020
 #   tools/ingame/clip.sh /tmp/clipe breath=0.010:0.035    dois niveis, A contra B
 #   VC_MAP=VIRIDIAN_CITY tools/ingame/clip.sh /tmp/clipe lag=0.70
+#   VC_CLIP_DEGRAU=primeira tools/ingame/clip.sh /tmp/clipe first_person=solid
+#
+# VC_CLIP_DEGRAU escolhe o degrau de camera do host:
+#   off baixo medio alto empe primeira terceira, ou o numero do nivel.
+# Sem ele, o clipe sai no degrau que o save tiver, que varia entre corridas.
 #
 # A segunda forma e para ESCOLHER, nao para verificar. Contra OFF a pergunta e
 # "faz alguma coisa?"; entre dois niveis e "qual deles?", que e a unica pergunta

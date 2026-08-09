@@ -76,6 +76,39 @@ return function(game)
   end
   log("mapa %s em (%d,%d)", mapa, x, y)
 
+  -- DEGRAU DE CAMERA, e primeira pessoa entre eles.
+  --
+  -- Ate agora todo clipe saiu no degrau que o save tinha, o que ja rescalou
+  -- contagem de pixel entre corridas neste projeto e, pior, deixou a primeira
+  -- pessoa sem NENHUM clipe: os jogadores pediram a feature e nao havia como
+  -- mostra-la lado a lado.
+  --
+  -- Pela mesma porta que o host usa, e nao por VoxelState.setLevel: quem e
+  -- dono do degrau e o Pipelines do motor, e Voxel.update reescreve
+  -- Voxel.level a partir dele todo quadro (VoxelState.lua:180). Chamar o
+  -- errado nao da erro, so nao faz nada, e o sintoma parece a camera nao
+  -- existir.
+  local DEGRAUS = { off = 0, baixo = 2, medio = 3, alto = 4, empe = 5,
+                    primeira = 6, terceira = 7 }
+  local pedido = os.getenv("VC_CLIP_DEGRAU")
+  if pedido and pedido ~= "" then
+    local nivel = DEGRAUS[pedido] or tonumber(pedido)
+    if not nivel then
+      log("VC_CLIP_DEGRAU=%s nao existe; use %s ou um numero", pedido,
+          "off/baixo/medio/alto/empe/primeira/terceira")
+      return
+    end
+    local ok = pcall(function()
+      require("src.render.Pipelines").setLevel("voxel", nivel)
+    end)
+    if not ok then log("nao consegui trocar o degrau de camera"); return end
+    -- O degrau faz tween e a primeira pessoa ainda tem o blend por cima dele.
+    -- Gravar antes de assentar poe o movimento da CAMERA dentro do clipe, e o
+    -- olho le isso como o efeito que a gente esta tentando mostrar.
+    U.wait(120)
+    log("degrau de camera: %s (nivel %d)", pedido, nivel)
+  end
+
   -- POR QUE FECHADO E NAO NA RUA. Na rua o ceu tem ciclo de dia, e como os dois
   -- lados sao gravados um depois do outro, o degrade do fundo muda entre eles:
   -- quem olha o lado a lado ve o ceu diferente antes de ver o personagem

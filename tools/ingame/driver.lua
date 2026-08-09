@@ -151,6 +151,52 @@ return function(game)
   end
   U.log("VC driver: angulos cobertos")
 
+  -- PRIMEIRA PESSOA, os dois modos, e por que ela precisa de tratamento
+  -- proprio mesmo estando na volta da tecla "3".
+  --
+  -- O degrau 6 do HOTKEY_ORDER ja e 1ST, entao camera5 acima ja e primeira
+  -- pessoa. Mas com o padrao (FIRST PERSON = CARD) essa foto mostra o card
+  -- plano, que e o comportamento antigo, e o gate contava a foto sem nunca
+  -- olhar o modo novo. Duas fotos do MESMO degrau, uma em cada modo, e o que
+  -- torna a diferenca visivel para quem abre a pasta.
+  --
+  -- Pelo Pipelines e nao por tecla: a volta da tecla depende de onde o save
+  -- parou, e o gate nao pode depender disso para chegar num degrau especifico.
+  do
+    local ok = pcall(function()
+      require("src.render.Pipelines").setLevel("voxel", 6)
+    end)
+    if ok then
+      U.wait(120)  -- o degrau faz tween e a primeira pessoa tem blend por cima
+      for _, modo in ipairs({ "card", "solid" }) do
+        local o = game.save and game.save.options
+        if o then
+          o.modOptions = o.modOptions or {}
+          o.modOptions.voxel_characters = o.modOptions.voxel_characters or {}
+          o.modOptions.voxel_characters.first_person = modo
+        end
+        if game.mods and game.mods.modOptions then
+          game.mods.modOptions.voxel_characters =
+            game.mods.modOptions.voxel_characters or {}
+          game.mods.modOptions.voxel_characters.first_person = modo
+        end
+        pcall(function()
+          game.mods.events:emit("mod.options_changed",
+            { mod = "voxel_characters", key = "first_person", value = modo })
+        end)
+        U.wait(25)
+        foto("primeira_" .. modo)
+      end
+      pcall(function()
+        require("src.render.Pipelines").setLevel("voxel", 4)
+      end)
+      U.wait(60)
+      U.log("VC driver: primeira pessoa coberta nos dois modos")
+    else
+      U.log("VC driver: sem Pipelines, primeira pessoa nao coberta")
+    end
+  end
+
   -- Andando. E a unica coisa que imagem parada de harness nao julga.
   for i = 1, 6 do
     U.hold(game, "down", 8)
