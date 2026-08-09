@@ -6,7 +6,7 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
-## [1.6.0] - 2026-08-08
+## [1.6.0] - 2026-08-09
 
 ### Added
 
@@ -48,6 +48,198 @@ the direction is named in the entry their contribution landed in.
   The mesh cache key now carries the selected strength, so switching
   `FRONT SHAPE` in the options menu changes what is on screen immediately
   instead of waiting on an unrelated cache invalidation.
+
+- **`TOP DOME: OFF / LOW / HIGH` steps the SLAB top face into shade toward
+  each run's edges, for a domed cap instead of a flat one.** At a typical
+  overworld camera angle the top face is a quarter of the pixels the player
+  sees, and it carries no art at all: it is colored by a body color search
+  and comes out flat. The side faces never contribute at this angle (the
+  card's tilt is a rotation around X, and a rotation around X exposes no
+  face whose normal is in X). The top face is therefore the one invented
+  surface left worth the effort, and it already comes out as one quad per
+  pixel, so shading it by position inside its run costs zero extra geometry.
+  As with `FRONT SHAPE`, a continuous gradient was tried first and read as a
+  bright stripe floating over the art; this steps the shade into a fixed
+  number of constant tones instead, quantized the same way the source art
+  already implies volume.
+
+  Each horizontal top run picks a shade per pixel from that pixel's distance
+  to the run's own edges, mirrored around the run's own center, the same
+  mechanism `FRONT SHAPE` uses on the front face. The center and half width
+  are both relative to the run's own bounds, never to an absolute screen
+  coordinate, so a mirrored character keeps a mirrored shade with no east or
+  west special case. Runs under 3 pixels wide have no middle pixel to
+  distinguish from either edge, so nothing splits there. `TOP EDGE` and
+  `TOP DOME` both shade the same face without stepping on each other: `TOP
+  DOME` steps the base shade `TOP EDGE` already produced, never replaces it,
+  so turning one on never cancels the other.
+
+  Default is OFF. LOW and HIGH are the two strengths measured against the
+  silhouette gate: IoU 1.000 against the flat card at pitch 0 on `red`,
+  `blue`, `snorlax`, `poke_ball` and `nurse`, frames 0 through 5, with the
+  quad count identical to the option off at every strength, unlike `FRONT
+  SHAPE`, which does add quads when it steps a front run: the top face was
+  already emitted per pixel before this option existed, so there was never a
+  run to split. Flicker between the standing and walking pose, the risk this
+  measurement was meant to catch, did not appear: the outline width changes
+  between poses mostly in the legs, which produce almost no top face, and
+  the top faces concentrate on the head, which stays 95% stable between
+  poses.
+
+  The mesh cache key now carries the selected strength, the same fix `FRONT
+  SHAPE` needed: without it, switching `TOP DOME` in the options menu would
+  change nothing on screen until an unrelated cache eviction happened to
+  clear the old mesh.
+
+- **`STEP WEIGHT: OFF / LOW / HIGH` shears the SLAB mesh toward the camera
+  on walking frames only, proportional to height, so the solid's weight
+  trails the art's own step.** When the character walks, only the sprite
+  art moves: the source art already drops a line on the walk frame, but the
+  solid this mod builds stayed rigid, the same shape at the same height in
+  both poses. This shears every vertex in Z by an amount proportional to
+  its own height above the foot, on walking frames only: the foot stays
+  put, the top of the mesh moves the most, and everything between scales
+  in a straight line.
+
+  The shear lands on Z on purpose, and that choice is what keeps it safe.
+  At pitch 0, the camera the silhouette gate renders from, Z points
+  straight at the camera, so shearing it does not move a single pixel of
+  the silhouette. At the game's own overworld camera, which looks down
+  from above, that same Z offset reads as vertical motion instead, adding
+  a touch of bounce to the step. There is no X component at all, so the
+  host's left/right mirror never sees this option. Default is OFF.
+
+  Which frames count as walking is read from the same six frame bucket the
+  mod's `CARVED` builder already uses (front, back and side standing,
+  then front, back and side walking), not a hardcoded frame list: a sheet
+  with fewer than six frames has no walking pose to begin with and this
+  option is a no-op on it, and a frame index past 5 folds back into the
+  standing bucket the same way `CARVED` already does, rather than being
+  guessed at.
+
+  LOW and HIGH are 0.25 and 0.5. The underlying shear is linear in
+  strength by construction, one multiplication with no shading steps or
+  quantization involved, so a strength halfway between two measured points
+  produces exactly half the measured effect, not an estimate. HIGH (0.5)
+  is the strength measured against the silhouette gate: IoU 1.000 against
+  the flat card at pitch 0, sampled from -1.0 to +1.0 in half steps, well
+  past the range exposed here, on `red`, `blue`, `snorlax`, `poke_ball` and
+  `nurse`, frames 0 through 5. It is also the ceiling of the useful range:
+  past it, the step starts reading as a crouch instead of a step, so
+  nothing higher is offered. LOW (0.25)
+  is exactly half that strength, inside the range that still reads as a
+  step. Only the positive direction is exposed: a negative strength
+  flattens the step instead of amplifying it, a different effect that is
+  out of scope for this change.
+
+  Calibrated honestly: measured on a 300 pixel test cell, the art alone
+  already shifts the walking pose 8 pixels from the standing pose, and
+  HIGH strength adds roughly 5 more. The character on screen during actual
+  play is a small fraction of that test cell, so the real addition is on
+  the order of a single pixel. This is a small amount of weight in the
+  animation, not a change anyone should expect to see as a new look for
+  the character.
+
+  The mesh cache key now carries the selected strength, the same fix
+  `FRONT SHAPE` and `TOP DOME` needed: without it, switching `STEP WEIGHT`
+  in the options menu would change nothing on screen until an unrelated
+  cache eviction happened to clear the old mesh. Quad count is unchanged
+  at every strength: this moves vertices that already existed, it never
+  adds a face.
+
+- **A life channel: `BREATH`, `SWAY` and `MOTION LAG`, each off by default.**
+  Until now every character was a solid that stood perfectly still, and a room
+  of them read as a diorama of statues. These three make the body do something.
+
+  `BREATH: OFF / SUBTLE / NORMAL / STRONG` scales the body vertically from the
+  feet. `SWAY: OFF / SUBTLE / NORMAL` shears it side to side at half the breath
+  rate with its own phase, so the two never reach their extremes together.
+  `MOTION LAG: OFF / SUBTLE / NORMAL` runs a spring per character that leans the
+  body back while it moves and overshoots when it stops.
+
+  **None of this writes a vertex.** The host builds a fresh transform matrix for
+  every character every frame, and this mod multiplies a small local transform
+  into it. That matters for two reasons. The mesh is created with the `static`
+  usage hint and is shared by every instance of a sheet, so rewriting its
+  vertices every frame would be both the misuse that hint exists to prevent and
+  a guarantee that two identical NPCs move in lockstep. Working in the matrix
+  avoids both: nothing is uploaded, and every instance gets its own transform
+  for free.
+
+  The algebra is what makes it legal. The host builds
+  `T(px+8, y, py+8) . Rx(lean - pi/2) . [mirror] . T(-8,0,0)`, and a local
+  `S(1,s,1)` commutes with both the mirror and that last translate, so
+  post-multiplying puts the scale exactly where it belongs: before the lean,
+  pivoted on the feet. Only column 2 of the matrix changes; the translation
+  column is copied untouched, which is why the feet stay planted by
+  construction rather than by care. The shadow matrix gets the same scale, so
+  the body never separates from its own shadow.
+
+  Each character keeps its own phase across frames, tracked by matching every
+  draw to a remembered instance by cell and then by nearest neighbour. The phase
+  advances with the **clock**, never with position. Deriving it from position
+  was the first design and it is wrong: a walking character would breathe at
+  double speed going one way and freeze going the other.
+
+  A small table gives some sheets their own temperament: a sleeping gambler
+  breathes slowly and does not sway, a swimmer sways more, a guard at attention
+  barely moves. `poke_ball` and `boulder` are pinned to zero, because an item
+  ball that breathes is the most obvious possible defect of the whole idea.
+
+  Measured cost, Viridian City with 25 characters on screen, vsync off, warmed
+  up and interleaved so warm-up drift cannot pass for effect: 0.166 ms against a
+  ruler noise floor of 0.261 ms. The honest statement is not that it is cheap,
+  but that this ruler cannot measure it.
+
+  What this is **not**: per part secondary motion. One matrix transforms the
+  whole mesh one way, so it cannot hold a bag back while the torso follows the
+  step. `MOTION LAG` is the whole body carrying weight, not hair moving
+  independently. That would need the mesh split into regions drawn with their
+  own matrices, and it is not started.
+
+- **A second patch point, and a capability probe that guards it.** The life
+  channel needs to wrap `Voxel3D.draw`, which is more of the host's surface than
+  this mod touched before. The probe now asks whether that function exists and
+  is callable, the wrap is installed only if it does and only after the
+  mandatory patch has committed, and a host without it loses the animation while
+  everything else keeps working. The three animation rows do not even appear in
+  the menu on such a host.
+
+- **A `LIFE` row, read only, next to `STATUS`.** Reports `NO HOST`,
+  `NO CHANNEL`, `REPLACED`, `FIRST PERSON`, `OFF`, or which of the three is on.
+  Same reasoning as `STATUS`: a channel that depends on a second host function
+  has more ways to be silently absent, so it says which one it is.
+
+### Fixed
+
+- **Pressing A on the `STATUS` or `LIFE` row closed the options menu.** The
+  engine resolves A, Left and Right in one branch, in this order: call
+  `activate` if the row has one, else cycle `step` if it has one, else treat A
+  as CANCEL and pop the menu (`src/ui/OptionsMenu.lua:549-566`). A read only row
+  offers `value` and neither of the other two, so it landed in the third case.
+  A is also the first key anyone presses on a row they do not recognise, which
+  is exactly the audience the `STATUS` row was built for. Both rows now carry an
+  empty `activate`, so A leaves the cursor where it is. Found by an independent
+  reading of the engine, not by any gate here: nothing in this mod's test suite
+  presses a key in the real menu, and that is the first thing the next version
+  fixes.
+
+- **`MOTION LAG` was shearing the body nearly 45 degrees.** The level number was
+  being used as a slope instead of a head displacement in pixels, because the
+  divide by the 16 pixel cell height that `SWAY` already had was missing. At the
+  old top level the head moved 11 world pixels, most of a tile, and the
+  character read as falling over rather than walking. Caught by watching a video
+  clip, after passing 465 offline checks and 8 in game checks that all asked
+  whether something changed and never asked by how much. The suite now carries
+  magnitude bounds, including an absolute ceiling no future level can exceed.
+
+- **The instance tracker could lose a character and restart its phase.** The
+  neighbour search covered eight cells while the match radius was 24 pixels, and
+  24 pixels over 16 pixel cells reaches two cells, not one. In that gap an
+  instance was not found and was reborn with a new phase, which is exactly the
+  slipping the tracker exists to prevent. The search range is now derived from
+  the radius so the two cannot drift apart again. Found by an independent review
+  of the code, not by a test.
 
 ## [1.5.0] - 2026-08-08
 

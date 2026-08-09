@@ -24,6 +24,18 @@ local ROOT = "./"
 -- release e afirmacao publica, e afirmacao publica precisa de medicao.
 local MAIN_PATH = os.getenv("VOXEL_CHARS_MAIN")
   or (ROOT .. "mods/voxel_characters/main.lua")
+-- Caminho errado nao pode virar processo pendurado. Sob o `love`, um assert
+-- que falha abre a janela de erro padrao em vez de sair, e quem chamou por
+-- pipe (o check.sh faz isso) nao recebe NADA: o processo trava e so morre com
+-- kill. Medido numa revisao. Entao a checagem e explicita e antes de tudo.
+do
+  local f = io.open(MAIN_PATH, "r")
+  if f then f:close() else
+    io.stderr:write("VOXEL_CHARS_MAIN aponta para arquivo inexistente: "
+      .. MAIN_PATH .. "\n")
+    os.exit(2)
+  end
+end
 local SPRITE_DIR = "assets/generated/sprites/"
 -- Sobrescrito por `spritedir=`, para uma folha candidata poder ser renderizada
 -- lado a lado com a original sem escrever nada no cache do jogador.
@@ -67,6 +79,7 @@ local opts = {
   blinkscan = "",
   selftest = "",
   topedge = "",
+  opt = "",
 }
 
 local function parseArgs(argv)
@@ -205,7 +218,7 @@ local function makeMod(handle, stored)
     events = {},
     log = { info = noop, warn = noop, error = noop },
   }
-  function mod.options:define(s) schema = s end
+  function mod.options:define(s) schema = s; mod._schema = s end
   function mod.options:get(key)
     if stored and stored[key] ~= nil then return stored[key] end
     for _, row in ipairs(schema or {}) do
@@ -246,14 +259,55 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
   package.loaded["src.render.Assets"] = nil
   package.loaded["src.mods.Semver"] = nil
   local handle = makeVoxelHandle(imageData)
-  local mod = makeMod(handle, {
+  local stored = {
     depth = depth, shape = shape, side_color = sideColor,
     ground_shade = opts.ground ~= "" and opts.ground or nil,
     blink = opts.blink ~= "" and "on" or nil,
     top_edge = opts.topedge ~= "" and opts.topedge or nil,
-  })
+  }
+  -- Passagem generica de opcao do mod: `opt=chave:valor,chave:valor`.
+  --
+  -- Antes disto, cada opcao nova do mod exigia editar este arquivo, e uma
+  -- rodada de implementacao ficou sem medicao visual justamente porque a
+  -- opcao nova nao tinha como chegar aqui e o implementador estava proibido
+  -- de mexer na regua. Ferramenta que precisa ser editada a cada feature nao
+  -- e ferramenta, e degrau.
+  --
+  -- Valor numerico e convertido, porque o mod guarda algumas opcoes como
+  -- numero e outras como string (FRONT_SHAPE_VALUES = { "off", 0.12, ... }) e
+  -- passar "0.12" onde ele espera 0.12 cai no default sem avisar.
+  -- Chave desconhecida NAO pode passar em silencio: um erro de digitacao
+  -- vira "medi com a opcao desligada e nao percebi", que e exatamente o erro
+  -- que eu cometi ao passar `low` onde o mod guarda 0.12. A validacao roda
+  -- depois que o mod se registra, porque so entao existe schema.
+  local pedidas = {}
+  for par in tostring(opts.opt):gmatch("[^,]+") do
+    local chave, valor = par:match("^%s*([%w_]+)%s*:%s*(.-)%s*$")
+    if chave then
+      stored[chave] = tonumber(valor) or valor
+      pedidas[#pedidas + 1] = chave
+    else
+      print("OPCAO MAL FORMADA, esperava chave:valor e veio: " .. tostring(par))
+      love.event.quit(2)
+    end
+  end
+  local mod = makeMod(handle, stored)
   local chunk = assert(loadfile(MAIN_PATH))
   chunk(mod)
+  if #pedidas > 0 then
+    local conhecidas = {}
+    for _, row in ipairs(mod._schema or {}) do
+      if row.key then conhecidas[row.key] = true end
+    end
+    for _, chave in ipairs(pedidas) do
+      if not conhecidas[chave] then
+        print("OPCAO DESCONHECIDA: " .. chave ..
+          "  (o mod nao define essa chave; a medicao sairia com o padrao " ..
+          "e voce nao notaria)")
+        love.event.quit(2)
+      end
+    end
+  end
   local SpriteBillboards = handle.exports.lib.require("SpriteBillboards")
   local mesh
   local mesh = SpriteBillboards.mesh(def, frame)
@@ -1438,6 +1492,79 @@ local function computeMetrics(screen)
           "  %-11s %-9s yaw %2d   art %5.1f%%   top %5.1f%%   side %5.1f%%   base %5.1f%%",
           row.shape, row.pitchLabel, yawDeg, art, n.top / drawn * 100,
           n.side / drawn * 100, n.bottom / drawn * 100))
+      end
+    end
+  end
+
+  -- ESTRUTURA TONAL, por classe de face.
+  --
+  -- O art% acima e provenance PURA: ele conta de onde a superficie veio, e o
+  -- passe que o mede reaproveita o canal de shade para carregar a classe da
+  -- face, entao ele e cego a iluminacao POR CONSTRUCAO. Nenhuma opcao de
+  -- sombreamento pode move-lo, nem em principio. Isso deixou duas features
+  -- desta branch sem regua nenhuma, julgadas so no olho.
+  --
+  -- Isto mede outra coisa: quanta ESTRUTURA existe na superficie desenhada.
+  -- Uma tampa chapada tem um nivel de tom so e amplitude zero. Um domo em
+  -- degraus tem tres. Nao decide se ficou bonito, e nao tenta: essa licao ja
+  -- foi paga quando um redesenho por IA satisfez toda restricao numerica e
+  -- entregou arte pior. Serve para dizer O QUE MUDOU e para pegar regressao.
+  print("")
+  print("estrutura tonal na superficie desenhada, por classe de face")
+  print("  niveis  quantos tons distintos aparecem (chapado = 1)")
+  print("  ampl    diferenca entre o tom mais claro e o mais escuro")
+  print("  desvio  desvio medio em torno do tom medio da classe")
+  -- `desvio` existe porque `niveis` e `ampl` NAO distinguem forcas.
+  -- Medido por uma revisao adversarial: FRONT SHAPE em 0.12, 0.17 e 0.22
+  -- reportava `niveis 7 ampl 0.596` nos TRES, enquanto 2382 de 43600 pixels
+  -- do quadro realmente diferiam entre a primeira e a ultima. Ou seja, a
+  -- regua dizia "igual" com 5% da tela mudada.
+  --
+  -- A causa e que contar baldes e um teste de PRESENCA: assim que a terceira
+  -- faixa de tom aparece, a contagem satura, e subir a forca so afasta os
+  -- tons uns dos outros sem criar balde novo. `ampl` tambem satura, porque o
+  -- pixel mais claro e o mais escuro costumam ser os mesmos texels em toda
+  -- forca. O desvio medio nao satura: ele cresce junto com a separacao.
+  for r, row in ipairs(state.rows) do
+    local y0 = (r - 1) * (cell + labelH) + labelH
+    for c, yawDeg in ipairs(state.yaws) do
+      local x0 = (c - 1) * cell
+      local tons, lo, hi, soma, cont = {}, {}, {}, {}, {}
+      local vals = {}
+      for _, k in ipairs(KINDS) do
+        tons[k] = {}; lo[k] = 2; hi[k] = -1; soma[k] = 0; cont[k] = 0
+        vals[k] = {}
+      end
+      for y = 0, cell - 1 do
+        for x = 0, cell - 1 do
+          local kind = kindAt(img:getPixel(x0 + x, y0 + y))
+          if kind then
+            local sr, sg, sb = screen:getPixel(x0 + x, y0 + y)
+            local lum = sr * 0.3 + sg * 0.6 + sb * 0.1
+            -- quantiza em 64 baldes: o adversario mostrou que contar valores
+            -- unicos de ponto flutuante sempre devolve "muitos", tanto para um
+            -- degrade bonito quanto para ruido, entao nao discrimina nada.
+            tons[kind][math.floor(lum * 64 + 0.5)] = true
+            if lum < lo[kind] then lo[kind] = lum end
+            if lum > hi[kind] then hi[kind] = lum end
+            soma[kind] = soma[kind] + lum
+            cont[kind] = cont[kind] + 1
+            vals[kind][cont[kind]] = lum
+          end
+        end
+      end
+      for _, k in ipairs({ "front", "top" }) do
+        local n = 0
+        for _ in pairs(tons[k]) do n = n + 1 end
+        if n > 0 then
+          local media = soma[k] / cont[k]
+          local desvio = 0
+          for i = 1, cont[k] do desvio = desvio + math.abs(vals[k][i] - media) end
+          desvio = desvio / cont[k]
+          print(string.format(
+            "  %-11s %-9s yaw %2d   %-6s niveis %2d   ampl %.3f   desvio %.4f",
+            row.shape, row.pitchLabel, yawDeg, k, n, hi[k] - lo[k], desvio))
+        end
       end
     end
   end

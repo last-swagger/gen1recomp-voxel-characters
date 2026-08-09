@@ -88,6 +88,50 @@ R=$($LOVE $H/compose out=chk_compose.png \
 say "compositor aceita '=' na legenda" "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
 [ "$R" = "1" ] || FAIL=1
 
+# 5. A REGUA MEDE A SI MESMA.
+#
+#    Uma revisao adversarial apontou que as tres mudancas mais recentes do
+#    harness nao tinham cobertura nenhuma, e que o gate oficial
+#    (voxel_chars_test.lua) estruturalmente NAO PODE cobri-las: ele nunca
+#    carrega este arquivo. Verde la nao diz nada sobre a regua. Entao os
+#    casos abaixo cobrem o instrumento, nao o mod.
+
+# 5a. Vazamento entre celulas. Uma forma funda transbordava a propria celula e
+#     contaminava a vizinha, e so no tamanho de celula PADRAO: em celula menor
+#     nao vazava, o que fazia o defeito sumir quando alguem tentava reproduzir.
+A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=220 \
+    metrics=1 out=chk_iso.png 2>&1 | grep "^  slab" | grep -o "art *[0-9.]*")
+B=$($LOVE $H sprite=red shapes=flat,slab,carved frames=0 yaws=0 rungs=35 cell=220 \
+    metrics=1 out=chk_juntos.png 2>&1 | grep "^  slab" | grep -o "art *[0-9.]*")
+say "medicao nao vaza entre celulas" "sozinho $A / ao lado do carved $B"
+[ "$A" = "$B" ] || FAIL=1
+
+# 5b. A passagem generica de opcao chega no mod. Sem isto, uma opcao nova
+#     mediria com o padrao e ninguem notaria.
+A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
+    metrics=1 out=chk_o0.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
+B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
+    opt="front_shape:0.12" metrics=1 out=chk_o1.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
+say "opcao generica chega no mod" "sem opcao $A / com opcao $B"
+[ "$A" != "$B" ] || FAIL=1
+
+# 5c. Chave desconhecida nao pode passar calada: um erro de digitacao vira
+#     "medi com a opcao desligada e nao percebi".
+R=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=120 \
+    opt="chave_que_nao_existe:1" metrics=1 out=chk_o2.png 2>&1 | grep -c "OPCAO DESCONHECIDA")
+say "chave de opcao desconhecida grita" "$([ "$R" -ge 1 ] && echo ok || echo FALHOU)"
+[ "$R" -ge 1 ] || FAIL=1
+
+# 5d. A estrutura tonal precisa DISTINGUIR FORCA. A primeira versao contava
+#     tons distintos e dava o mesmo numero para 0.12 e 0.22, com 2382 de 43600
+#     pixels realmente diferentes: dizia "igual" com 5% da tela mudada.
+A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
+    opt="front_shape:0.12" metrics=1 out=chk_d1.png 2>&1 | grep "front  niveis" | grep -o "desvio [0-9.]*")
+B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
+    opt="front_shape:0.22" metrics=1 out=chk_d2.png 2>&1 | grep "front  niveis" | grep -o "desvio [0-9.]*")
+say "estrutura tonal distingue forca" "0.12 -> $A / 0.22 -> $B"
+[ "$A" != "$B" ] || FAIL=1
+
 echo
 [ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: nao confie em medicao ate consertar"
 exit $FAIL

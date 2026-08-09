@@ -11,23 +11,38 @@
 --
 -- ISTO USA tests/drivers/util.lua, o utilitario que os 240 drivers do proprio
 -- projeto usam. Eu escrevi este arquivo duas vezes do zero antes de procurar,
--- e as duas versoes falharam por coisas que o util.lua ja resolve: esperar a
--- carga, pular o intro, e conferir que a screenshot chegou no disco. Sempre
--- procure o padrao da casa antes de inventar o seu.
+-- e as duas versoes falharam por coisas que o util.lua ja resolve.
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
   local n = 0
+
+  -- Sem TTY o stdout do LOVE fica em buffer de BLOCO e um processo que nao sai
+  -- nunca esvazia. Log vazio nao distingue "nao aconteceu nada" de "nao
+  -- terminou", e eu ja tirei a conclusao errada disso mais de uma vez.
+  io.stdout:setvbuf("line")
+
+  -- VSYNC DESLIGADO, E ESTA E A LINHA QUE FAZ O GATE FUNCIONAR SOZINHO.
+  --
+  -- Com vsync ligado e a janela ocluida (o caso normal quando isto roda de um
+  -- shell, atras do editor), love.graphics.present() espera um flip que o
+  -- compositor do macOS nao agenda enquanto ninguem esta olhando. O laco de
+  -- love.run inteiro para: medido em 5 quadros em 90 segundos. O sintoma e
+  -- indistinguivel de "travou no launcher" (zero fotos, log vazio) e foi por
+  -- isso que este gate passou dias parecendo quebrado. Os drivers do PROPRIO
+  -- projeto (tests/drivers/zoom_test.lua) travam igual sem isto: nao era
+  -- codigo nosso.
+  if love.window and love.window.setVSync then pcall(love.window.setVSync, 0) end
 
   -- FOTO: love.graphics.captureScreenshot, NAO U.shot.
   --
   -- Os dois existem e sao caminhos de codigo diferentes. O U.shot usa
   -- game.capturePath e grava com io.open em caminho RELATIVO ao diretorio de
   -- trabalho; o captureScreenshot grava no diretorio de save do LOVE. Eu ja
-  -- tinha um driver funcionando com o segundo (vc_driver.png, 07/08 21:31) e
-  -- quebrei tudo ao "melhorar" para o padrao do projeto sem verificar que o
-  -- mecanismo novo funcionava neste ambiente. Adotar a estrutura da casa foi
-  -- certo; adotar junto um mecanismo que eu nao tinha provado, nao.
+  -- tinha um driver funcionando com o segundo e quebrei tudo ao "melhorar"
+  -- para o padrao do projeto sem verificar que o mecanismo novo funcionava
+  -- neste ambiente. Adotar a estrutura da casa foi certo; adotar junto um
+  -- mecanismo que eu nao tinha provado, nao.
   local function foto(nome)
     n = n + 1
     local caminho = string.format("vc_%02d_%s.png", n, nome)
@@ -38,51 +53,57 @@ return function(game)
 
   U.log("VC driver: comecando")
 
-  -- NAO chama U.newGame. Os 240 drivers do projeto pressupoem boot direto
-  -- (--game / POKEPORT_GAME), e o boot direto so acontece quando
-  -- RomImporter.isReady(versao) e verdadeiro; uma versao que nao esta pronta
-  -- cai no launcher e o driver fica parado para sempre esperando um mundo que
-  -- nunca chega. Em vez de exigir isso, aqui a gente ESPERA: quem rodar pode
-  -- clicar Play na mao, e o driver assume depois. Funciona nos dois casos.
+  -- CHEGAR AO MUNDO: U.teleport, nao marteladas de "a".
   --
-  -- A espera e generosa de proposito. Perder trinta segundos e barato; travar
-  -- e caro, e ja custou sete tentativas.
-  local ESPERA = tonumber(os.getenv("VC_WAIT")) or 900
-  U.wait(60)
-  -- Foto de diagnostico antes de qualquer outra coisa: quem dispara este
-  -- driver nao ve a janela, entao se algo travar depois daqui, esta foto diz
-  -- em que tela o jogo estava. Foi ela que mostrou que o driver estava
-  -- fotografando a TELA DE TITULO enquanto eu achava que ele estava no mundo.
-  foto("onde_estou_no_comeco")
-  U.wait(math.max(0, ESPERA - 60))
-
-  -- Chegar ao mundo. O teste de "estou no mundo" e o mesmo que o util.lua do
-  -- projeto usa em U.newGame: game.stack:top() == game.overworld. Martelar "a"
-  -- cobre os dois caminhos, continuar um save (titulo, menu, CONTINUE) e comecar
-  -- um jogo novo, sem o driver precisar saber qual dos dois e.
-  local noMundo = false
-  for _ = 1, 300 do
-    if game.overworld and game.stack:top() == game.overworld then
-      noMundo = true
-      break
-    end
-    U.tap(game, "a")
-    U.wait(3)
+  -- A versao anterior deste arquivo esperava ate 900 quadros e depois batia
+  -- "a" trezentas vezes torcendo para atravessar titulo e menu, e falhava com
+  -- ZERO fotos e log vazio. Duas coisas estavam erradas e as duas foram
+  -- medidas:
+  --
+  -- 1. POKEPORT_GAME e POKEPORT_SLOT sao LETRA MORTA aqui. Eles so sao lidos
+  --    em LaunchOptions.resolve (main.lua:359), que fica DEPOIS do
+  --    `if scripted then ... return end` (main.lua:313-330). Com
+  --    POKEPORT_DRIVER setado o controle nunca chega la. A versao que boota
+  --    vem de POKEPORT_VERSION (main.lua:304), default "red". Nesta maquina
+  --    red NAO esta pronto (faltam assets/generated/audio/programs.bin e
+  --    assets/generated/trade/game_boy.png), entao o boot caia no importador
+  --    e ficava esperando um ROM que ninguem ia arrastar: o driver nem chegava
+  --    a ser criado. Quem resolve isso e o run.sh, exportando POKEPORT_VERSION.
+  --
+  -- 2. U.teleport e o padrao da casa: 212 dos 240 drivers do projeto usam, e
+  --    so 8 usam o caminho de apertar tecla. Ele esvazia a pilha e empurra o
+  --    OverworldController direto, entao nao existe titulo para atravessar.
+  -- E O DESTINO E VALIDADO. U.teleport nao valida nada: se a celula pedida for
+  -- placa, mesa, parede ou NPC, o jogador pousa em cima e a foto sai com ele
+  -- num lugar onde ninguem consegue ficar. Foi o Kim que viu isso nas fotos
+  -- antes de mim. Ver tools/ingame/pouso.lua.
+  local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
+  local MAPA, X, Y, RAIO = Pouso.escolher(game,
+    os.getenv("VC_MAP") or "VIRIDIAN_CITY",
+    tonumber(os.getenv("VC_X")) or 17,
+    tonumber(os.getenv("VC_Y")) or 17)
+  U.teleport(game, MAPA, X, Y, "down")
+  U.wait(30)
+  if RAIO == nil then
+    U.log("VC driver: AVISO, nenhuma celula boa perto do ponto pedido")
+  elseif RAIO > 0 then
+    U.log(string.format("VC driver: pouso deslocado %d celula(s) para (%d,%d)",
+      RAIO, X, Y))
   end
-  if not noMundo then
-    U.log("VC driver: NAO cheguei ao mundo; veja a foto de diagnostico")
+
+  if not (game.overworld and game.stack:top() == game.overworld) then
+    U.log("VC driver: teleport para " .. MAPA .. " NAO chegou ao mundo")
     foto("preso_fora_do_mundo")
     return
   end
-  U.wait(30)
-  U.log("VC driver: no mundo")
+  U.log("VC driver: no mundo, mapa " .. MAPA)
 
   -- Ligar uma opcao do mod por codigo, para comparar com e sem sem ninguem
-  -- navegar menu. VC_OPT="front_shape=low". O mod persiste a opcao no save e
-  -- reage ao evento mod.options_changed (main.lua, writeOption e o handler),
-  -- entao escrever e emitir e o mesmo caminho que o menu usa.
+  -- navegar menu. VC_OPT="front_shape=0.12". O mod persiste a opcao no save e
+  -- reage ao evento mod.options_changed, entao escrever e emitir e o mesmo
+  -- caminho que o menu usa.
   local opt = os.getenv("VC_OPT")
-  if opt then
+  if opt and opt ~= "" then
     local chave, valor = opt:match("^([%w_]+)=(.+)$")
     if chave then
       local o = game.save and game.save.options

@@ -37,6 +37,26 @@ docs/images/exposure.png
 tools/ingame/driver.lua
 tools/ingame/run.sh
 
+# A sonda do passo 1 do roadmap: envolve Voxel3D.draw no jogo rodando e mede se
+# a posicao por instancia chega limpa. So medicao, nao muda nada. Ferramenta.
+tools/ingame/probe_draw.lua
+
+# O gate numerico do canal de vida: mede em pixel, no jogo rodando, se a
+# respiracao chega na tela e se responde ao menu. Ferramenta, nao conteudo.
+tools/ingame/probe_life.lua
+
+# O escolhedor de pouso: valida a celula antes de largar o jogador nela, para o
+# gate nao fotografar ninguem em cima de placa ou de mesa. Ferramenta.
+tools/ingame/pouso.lua
+
+# O gravador de clipe: mp4 e gif lado a lado de uma opcao ligada e desligada.
+# Foto nao julga movimento; estes tres arquivos existem para isso. Ferramenta.
+tools/ingame/clip.lua
+tools/ingame/clip.sh
+
 # Mais renders de comparacao para as notas de release.
 docs/images/walk-offset.png
 docs/images/blink-walk.png
+
+# O roadmap da proxima direcao. Documentacao de projeto, nao conteudo do mod.
+docs/ROADMAP.md
