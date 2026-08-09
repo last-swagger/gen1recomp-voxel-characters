@@ -40,3 +40,6 @@ tools/ingame/run.sh
 # Mais renders de comparacao para as notas de release.
 docs/images/walk-offset.png
 docs/images/blink-walk.png
+
+# O roadmap da proxima direcao. Documentacao de projeto, nao conteudo do mod.
+docs/ROADMAP.md
