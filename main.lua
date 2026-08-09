@@ -49,108 +49,177 @@ local HOSTS = {
     supported = ">=1.5.0 <2.0.0",
   },
 }
-local KEY = "depth"
-local SIDE_COLOR_KEY = "side_color"
-local SHAPE_KEY = "shape"
-local GROUND_SHADE_KEY = "ground_shade"
-local BLINK_KEY = "blink"
-local TOP_EDGE_KEY = "top_edge"
-local FRONT_SHAPE_KEY = "front_shape"
-local TOP_DOME_KEY = "top_dome"
-local STEP_WEIGHT_KEY = "step_weight"
-local VALUES = { "off", 1, 2, 3, 5, 10 }
-local LABELS = { "OFF", "1", "2", "3", "5", "10" }
-local SIDE_COLOR_VALUES = { "body", "outline" }
-local SIDE_COLOR_LABELS = { "BODY", "OUTLINE" }
-local SHAPE_VALUES = { "slab", "carved", "carved_plus" }
-local SHAPE_LABELS = { "SLAB", "CARVED", "CARVED+" }
-local GROUND_SHADE_VALUES = { "off", "on" }
-local GROUND_SHADE_LABELS = { "OFF", "ON" }
-local BLINK_VALUES = { "off", "on" }
-local BLINK_LABELS = { "OFF", "ON" }
-local TOP_EDGE_VALUES = { "off", "on" }
-local TOP_EDGE_LABELS = { "OFF", "ON" }
--- DECISAO v1.6.0: os tres niveis sao forca de sombreamento em degraus na
--- face frontal, nao contagem de poligonos. A geometria (posicao de
--- vertice, logo IoU e contagem de quads) e identica para qualquer forca >
--- 0: emitFrontRun so usa a forca para escalar o multiplicador de shade de
--- cada degrau, nunca a posicao de um vertice. 0.12 e o valor medido e
--- validado por Kim (IoU 1.000 contra o card plano em red, blue, snorlax,
--- poke_ball e nurse, frames 0-5; 259 quads no red.png frame 0, dentro do
--- orcamento de 300) e e o primeiro nivel ligado. 0.22 tambem foi medido e
--- ja "pesa demais" na leitura do Kim, mas fica disponivel como teto para
--- quem preferir mais contraste. 0.17 (MED) e o ponto medio entre os dois
--- extremos medidos: como a geometria independe da magnitude da forca, os
--- dois numeros medidos ja cobrem esse terceiro nivel por construcao, sem
--- exigir uma rodada extra de render.
-local FRONT_SHAPE_VALUES = { "off", 0.12, 0.17, 0.22 }
-local FRONT_SHAPE_LABELS = { "OFF", "LOW", "MED", "HIGH" }
--- DECISAO v1.6.0: TOP DOME segue o mesmo mecanismo de FRONT SHAPE (degraus
--- de shade por posicao no run, a forca so escala o multiplicador de cada
--- degrau, nunca a posicao de um vertice), mas com dois niveis, nao tres:
--- so 0.15 e 0.30 foram medidos (IoU 1.000 contra o card plano em red,
--- blue, snorlax, poke_ball e nurse, frames 0-5; contagem de quads
--- identica a com a opcao desligada em qualquer forca) e a cintilacao entre
--- poses, o risco pre-registrado, nao apareceu no gate. Ao contrario de
--- FRONT SHAPE, nao ha um MED interpolado aqui: a spec desta rodada so deu
--- os dois pontos medidos, e um terceiro nivel sem medicao seria chute.
-local TOP_DOME_VALUES = { "off", 0.15, 0.30 }
-local TOP_DOME_LABELS = { "OFF", "LOW", "HIGH" }
--- DECISAO: STEP WEIGHT desloca VERTICE (cisalhamento em Z), nao shade, entao
--- ao contrario de FRONT SHAPE/TOP DOME a magnitude muda geometria de
--- verdade, no formula z = z + forca * (y / cellH). Essa formula e linear na
--- forca por construcao: nenhum degrau, nenhum quantizador, so uma
--- multiplicacao. Kim mediu o deslocamento de tela numa celula de 300px em
--- tres pontos (lean 0: +8px, so a arte; +0.5: +13px; -0.5: +3px) e a
--- silhueta a pitch 0 (IoU 1.000) em CINCO pontos, -1.0 a +1.0, cobrindo
--- folgadamente a faixa usada aqui. 0.5 e o teto medido e tambem o teto que
--- Kim julgou como o limite antes do personagem parecer agachar em vez de
--- andar (palpite dele, nao contrariado por nenhuma medicao nova: a formula
--- linear nao da motivo para uma virada nao linear entre 0.25 e 0.5). 0.25 e
--- exatamente a metade dessa forca; a mesma linearidade que garante metade
--- do deslocamento medido garante metade do caminho ate qualquer efeito
--- colateral, sem exigir uma malha nova pra confirmar. So o sinal positivo
--- vira nivel: negativo achata o passo, um efeito diferente e fora do escopo
--- desta rodada.
+-- REFATORACAO (locais do chunk principal): main.lua chegou a 199 locais
+-- contra o teto de 200 do LuaJIT (LUAI_MAXVARS) porque cada opcao de menu
+-- trazia consigo um punhado de locais proprios no topo do arquivo (chave,
+-- valores, rotulos, default, indice do default, a variavel de estado, e
+-- quatro funcoes: indexOf/read/set/row). Sete opcoes depois o orcamento
+-- tinha acabado e a proxima nao coube: erro de COMPILACAO, nao de
+-- comportamento, porque o mod inteiro deixa de carregar.
 --
--- NOTA de orcamento: main.lua ja roda perto do teto de 200 locais do
--- chunk principal (limite do proprio Lua/LuaJIT, LUAI_MAXVARS). Ao
--- contrario de FRONT SHAPE/TOP DOME, que tem VALUES e LABELS como arrays
--- paralelos e um DEFAULT_X e um DEFAULT_X_INDEX separados, STEP WEIGHT
--- junta label e valor num so array de pares e usa so o indice default
--- (posicao 1, "off", como todo default conservador desta lista) sem uma
--- constante propria: dois locais a menos no chunk principal, mesmo
--- resultado.
-local STEP_WEIGHT_LEVELS = { { "OFF", "off" }, { "LOW", 0.25 }, { "HIGH", 0.5 } }
-local DEFAULT_DEPTH = 3
-local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
+-- A partir de agora existe UMA tabela de descricao de opcao (OPTIONS,
+-- logo abaixo) e funcoes genericas que operam sobre qualquer entrada dela
+-- (optionIndexOf/readOption/setOption/makeOptionRow, mais adiante), mais UM
+-- local de estado (optionState, uma tabela indexada pela chave da opcao) no
+-- lugar da variavel de estado dedicada de cada opcao. Acrescentar uma opcao
+-- nova e acrescentar uma entrada nesta tabela: nenhum local novo no chunk
+-- principal.
+--
+-- Cada entrada usa o mesmo formato de pares { ROTULO, valor } que STEP
+-- WEIGHT ja usava sozinho antes desta rodada (o campo `levels` abaixo):
+-- serve tanto para valores numericos com rotulo separado (FRONT SHAPE:
+-- { "LOW", 0.12 }) quanto para strings (SIDE COLOR: { "BODY", "body" }),
+-- sem caso especial. `defaultIndex` aponta a posicao default dentro de
+-- `levels` (TOP EDGE e a unica que nao comeca na posicao 1: default ON,
+-- ver comentario na propria entrada). `clears` diz o que `setOption` limpa
+-- quando o valor muda: "full" (so DEPTH, que tambem invalida `masks`),
+-- "mesh" (a maioria, que so precisa reconstruir a malha), ou omitido
+-- (BLINK, que nunca limpa cache: e aplicado por malha a cada desenho em
+-- applyBlinkUv, nao assado na geometria).
+local OPTIONS = {
+  {
+    key = "depth",
+    label = "VOXEL CHARS",
+    levels = {
+      { "OFF", "off" }, { "1", 1 }, { "2", 2 },
+      { "3", 3 }, { "5", 5 }, { "10", 10 },
+    },
+    defaultIndex = 4, -- posicao de 3
+    help = "Extrudes overworld character sprites. Depth 1-5 stays inside the voxel pull budget; 10 may clip into walls.",
+    clears = "full",
+  },
+  {
+    key = "side_color",
+    label = "SIDE COLOR",
+    levels = { { "BODY", "body" }, { "OUTLINE", "outline" } },
+    defaultIndex = 1,
+    help = "Colors new side, top, and bottom faces from body pixels or keeps the original outline pixels.",
+    clears = "mesh",
+  },
+  {
+    key = "shape",
+    label = "SHAPE",
+    levels = {
+      { "SLAB", "slab" }, { "CARVED", "carved" }, { "CARVED+", "carved_plus" },
+    },
+    defaultIndex = 1,
+    help = "SLAB keeps the v1.1.0 extrusion. CARVED builds visual-hull volume from three views. CARVED+ adds tone relief.",
+    clears = "mesh",
+  },
+  {
+    key = "ground_shade",
+    label = "GROUND SHADE",
+    levels = { { "OFF", "off" }, { "ON", "on" } },
+    defaultIndex = 1,
+    help = "Adds the host-style contact shade to the lowest six pixels of the solid character mesh.",
+    clears = "mesh",
+  },
+  {
+    key = "blink",
+    label = "BLINK",
+    levels = { { "OFF", "off" }, { "ON", "on" } },
+    defaultIndex = 1,
+    help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
+  },
+  {
+    key = "top_edge",
+    label = "TOP EDGE",
+    levels = { { "OFF", "off" }, { "ON", "on" } },
+    -- DECISAO v1.4.2: OFF nao e neutro. Com SIDE COLOR: BODY, a face de
+    -- topo da linha mais alta pode buscar a cor do corpo abaixo e pintar
+    -- uma tampa clara acima do contorno escuro, como no bone do Red. TOP
+    -- EDGE ligado por padrao nao adiciona efeito: remove esse defeito de
+    -- leitura e preserva uma quina escura ajustavel para quem quiser
+    -- voltar ao host shade puro.
+    defaultIndex = 2, -- "on"
+    help = "Darkens only exposed SLAB top faces for a false top-down edge.",
+    clears = "mesh",
+  },
+  {
+    key = "front_shape",
+    label = "FRONT SHAPE",
+    -- DECISAO v1.6.0: os tres niveis sao forca de sombreamento em degraus
+    -- na face frontal, nao contagem de poligonos. A geometria (posicao de
+    -- vertice, logo IoU e contagem de quads) e identica para qualquer
+    -- forca > 0: emitFrontRun so usa a forca para escalar o multiplicador
+    -- de shade de cada degrau, nunca a posicao de um vertice. 0.12 e o
+    -- valor medido e validado por Kim (IoU 1.000 contra o card plano em
+    -- red, blue, snorlax, poke_ball e nurse, frames 0-5; 259 quads no
+    -- red.png frame 0, dentro do orcamento de 300) e e o primeiro nivel
+    -- ligado. 0.22 tambem foi medido e ja "pesa demais" na leitura do Kim,
+    -- mas fica disponivel como teto para quem preferir mais contraste.
+    -- 0.17 (MED) e o ponto medio entre os dois extremos medidos: como a
+    -- geometria independe da magnitude da forca, os dois numeros medidos
+    -- ja cobrem esse terceiro nivel por construcao, sem exigir uma rodada
+    -- extra de render.
+    levels = {
+      { "OFF", "off" }, { "LOW", 0.12 }, { "MED", 0.17 }, { "HIGH", 0.22 },
+    },
+    defaultIndex = 1,
+    help = "Steps the SLAB front face into three pixel aligned shade tones toward each run's edges, for false roundness without a gradient.",
+    clears = "mesh",
+  },
+  {
+    key = "top_dome",
+    label = "TOP DOME",
+    -- DECISAO v1.6.0: TOP DOME segue o mesmo mecanismo de FRONT SHAPE
+    -- (degraus de shade por posicao no run, a forca so escala o
+    -- multiplicador de cada degrau, nunca a posicao de um vertice), mas
+    -- com dois niveis, nao tres: so 0.15 e 0.30 foram medidos (IoU 1.000
+    -- contra o card plano em red, blue, snorlax, poke_ball e nurse, frames
+    -- 0-5; contagem de quads identica a com a opcao desligada em qualquer
+    -- forca) e a cintilacao entre poses, o risco pre-registrado, nao
+    -- apareceu no gate. Ao contrario de FRONT SHAPE, nao ha um MED
+    -- interpolado aqui: a spec desta rodada so deu os dois pontos
+    -- medidos, e um terceiro nivel sem medicao seria chute.
+    levels = { { "OFF", "off" }, { "LOW", 0.15 }, { "HIGH", 0.30 } },
+    -- Regra da casa: toda opcao de menu nova comeca com um default
+    -- conservador. TOP DOME muda uma leitura visual estabelecida (a tampa
+    -- chapada) e nao foi lancada ainda, entao OFF, como FRONT SHAPE.
+    defaultIndex = 1,
+    help = "Steps the SLAB top face into pixel aligned shade tones toward each run's edges, for a domed cap instead of a flat one.",
+    clears = "mesh",
+  },
+  {
+    key = "step_weight",
+    label = "STEP WEIGHT",
+    -- DECISAO: STEP WEIGHT desloca VERTICE (cisalhamento em Z), nao shade,
+    -- entao ao contrario de FRONT SHAPE/TOP DOME a magnitude muda
+    -- geometria de verdade, na formula z = z + forca * (y / cellH). Essa
+    -- formula e linear na forca por construcao: nenhum degrau, nenhum
+    -- quantizador, so uma multiplicacao. Kim mediu o deslocamento de tela
+    -- numa celula de 300px em tres pontos (lean 0: +8px, so a arte; +0.5:
+    -- +13px; -0.5: +3px) e a silhueta a pitch 0 (IoU 1.000) em CINCO
+    -- pontos, -1.0 a +1.0, cobrindo folgadamente a faixa usada aqui. 0.5 e
+    -- o teto medido e tambem o teto que Kim julgou como o limite antes do
+    -- personagem parecer agachar em vez de andar (palpite dele, nao
+    -- contrariado por nenhuma medicao nova: a formula linear nao da
+    -- motivo para uma virada nao linear entre 0.25 e 0.5). 0.25 e
+    -- exatamente a metade dessa forca; a mesma linearidade que garante
+    -- metade do deslocamento medido garante metade do caminho ate
+    -- qualquer efeito colateral, sem exigir uma malha nova pra confirmar.
+    -- So o sinal positivo vira nivel: negativo achata o passo, um efeito
+    -- diferente e fora do escopo desta rodada.
+    levels = { { "OFF", "off" }, { "LOW", 0.25 }, { "HIGH", 0.5 } },
+    -- Regra da casa outra vez: STEP WEIGHT desloca vertice pela primeira
+    -- vez nesta branch (FRONT SHAPE e TOP DOME so mexem em shade), entao o
+    -- conservadorismo do default OFF vale ainda mais aqui.
+    defaultIndex = 1,
+    help = "Shears the SLAB mesh toward the camera on walking frames only, proportional to height, so the solid's weight trails the art's own step.",
+    clears = "mesh",
+  },
+}
+
+local OPTION_BY_KEY = {}
+for _, opt in ipairs(OPTIONS) do
+  OPTION_BY_KEY[opt.key] = opt
+end
+
+-- Sentinela de SIDE COLOR usado por bodyTexelInFrame/blinkBodyTexel (mais
+-- abaixo) para decidir se a busca de corpo entra em jogo. Fica como
+-- constante propria, fora do sistema de opcoes generico, porque essas duas
+-- funcoes ficam no meio da construcao de malha, nao no menu.
 local DEFAULT_SIDE_COLOR = "body"
-local DEFAULT_SIDE_COLOR_INDEX = 1
-local DEFAULT_SHAPE = "slab"
-local DEFAULT_SHAPE_INDEX = 1
-local DEFAULT_GROUND_SHADE = "off"
-local DEFAULT_GROUND_SHADE_INDEX = 1
-local DEFAULT_BLINK = "off"
-local DEFAULT_BLINK_INDEX = 1
--- DECISAO v1.4.2: OFF nao e neutro. Com SIDE COLOR: BODY, a face de topo da
--- linha mais alta pode buscar a cor do corpo abaixo e pintar uma tampa clara
--- acima do contorno escuro, como no bone do Red. TOP EDGE ligado por padrao
--- nao adiciona efeito: remove esse defeito de leitura e preserva uma quina
--- escura ajustavel para quem quiser voltar ao host shade puro.
-local DEFAULT_TOP_EDGE = "on"
-local DEFAULT_TOP_EDGE_INDEX = 2
-local DEFAULT_FRONT_SHAPE = "off"
-local DEFAULT_FRONT_SHAPE_INDEX = 1
--- Regra da casa: toda opcao de menu nova comeca com um default conservador.
--- TOP DOME muda uma leitura visual estabelecida (a tampa chapada) e nao foi
--- lancada ainda, entao OFF, como FRONT SHAPE.
-local DEFAULT_TOP_DOME = "off"
-local DEFAULT_TOP_DOME_INDEX = 1
--- Regra da casa outra vez: STEP WEIGHT desloca vertice pela primeira vez
--- nesta branch (FRONT SHAPE e TOP DOME so mexem em shade), entao o
--- conservadorismo do default OFF vale ainda mais aqui. Sem constante propria
--- (ver NOTA de orcamento acima de STEP_WEIGHT_LEVELS): "off" e sempre a
--- posicao 1 desse array, como em toda opcao desta lista.
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -319,113 +388,33 @@ local EYE_SIDE_MARKS = {
   youngster = { { 5, 7 } },
 }
 
-mod.options:define({
-  {
-    key = KEY,
-    type = "choice",
-    label = "VOXEL CHARS",
-    choices = {
-      { "OFF", "off" }, { "1", 1 }, { "2", 2 },
-      { "3", 3 }, { "5", 5 }, { "10", 10 },
-    },
-    default = 3,
-    help = "Extrudes overworld character sprites. Depth 1-5 stays inside the voxel pull budget; 10 may clip into walls.",
-  },
-  {
-    key = SIDE_COLOR_KEY,
-    type = "choice",
-    label = "SIDE COLOR",
-    choices = {
-      { "BODY", "body" }, { "OUTLINE", "outline" },
-    },
-    default = DEFAULT_SIDE_COLOR,
-    help = "Colors new side, top, and bottom faces from body pixels or keeps the original outline pixels.",
-  },
-  {
-    key = SHAPE_KEY,
-    type = "choice",
-    label = "SHAPE",
-    choices = {
-      { "SLAB", "slab" }, { "CARVED", "carved" },
-      { "CARVED+", "carved_plus" },
-    },
-    default = DEFAULT_SHAPE,
-    help = "SLAB keeps the v1.1.0 extrusion. CARVED builds visual-hull volume from three views. CARVED+ adds tone relief.",
-  },
-  {
-    key = GROUND_SHADE_KEY,
-    type = "choice",
-    label = "GROUND SHADE",
-    choices = {
-      { "OFF", "off" }, { "ON", "on" },
-    },
-    default = DEFAULT_GROUND_SHADE,
-    help = "Adds the host-style contact shade to the lowest six pixels of the solid character mesh.",
-  },
-  {
-    key = BLINK_KEY,
-    type = "choice",
-    label = "BLINK",
-    choices = {
-      { "OFF", "off" }, { "ON", "on" },
-    },
-    default = DEFAULT_BLINK,
-    help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
-  },
-  {
-    key = TOP_EDGE_KEY,
-    type = "choice",
-    label = "TOP EDGE",
-    choices = {
-      { "OFF", "off" }, { "ON", "on" },
-    },
-    default = DEFAULT_TOP_EDGE,
-    help = "Darkens only exposed SLAB top faces for a false top-down edge.",
-  },
-  {
-    key = FRONT_SHAPE_KEY,
-    type = "choice",
-    label = "FRONT SHAPE",
-    choices = {
-      { "OFF", "off" }, { "LOW", 0.12 }, { "MED", 0.17 }, { "HIGH", 0.22 },
-    },
-    default = DEFAULT_FRONT_SHAPE,
-    help = "Steps the SLAB front face into three pixel aligned shade tones toward each run's edges, for false roundness without a gradient.",
-  },
-  {
-    key = TOP_DOME_KEY,
-    type = "choice",
-    label = "TOP DOME",
-    choices = {
-      { "OFF", "off" }, { "LOW", 0.15 }, { "HIGH", 0.30 },
-    },
-    default = DEFAULT_TOP_DOME,
-    help = "Steps the SLAB top face into pixel aligned shade tones toward each run's edges, for a domed cap instead of a flat one.",
-  },
-  {
-    key = STEP_WEIGHT_KEY,
-    type = "choice",
-    label = "STEP WEIGHT",
-    choices = STEP_WEIGHT_LEVELS,
-    default = STEP_WEIGHT_LEVELS[1][2],
-    help = "Shears the SLAB mesh toward the camera on walking frames only, proportional to height, so the solid's weight trails the art's own step.",
-  },
-})
+-- Gerado a partir de OPTIONS (acima): uma opcao nova ganha `type = "choice"`
+-- e os campos `choices`/`default` derivados de `levels`/`defaultIndex` de
+-- graca, sem precisar duplicar a tabela aqui.
+do
+  local schema = {}
+  for _, opt in ipairs(OPTIONS) do
+    schema[#schema + 1] = {
+      key = opt.key,
+      type = "choice",
+      label = opt.label,
+      choices = opt.levels,
+      default = opt.levels[opt.defaultIndex][2],
+      help = opt.help,
+    }
+  end
+  mod.options:define(schema)
+end
 
 local SpriteBillboards, Voxel3D, ImageCache
 local VoxelState, FirstPerson, VoxelScene
 local originalMesh
 local meshes, masks = {}, {}
 local meshOrder = {}
-local depthValue
-local sideColorValue
-local shapeValue
-local groundShadeValue
-local blinkValue
-local topEdgeValue
-local frontShapeValue
-local topDomeValue
-local stepWeightValue
+-- Estado resolvido de toda opcao, indexado pela chave (opt.key). Substitui
+-- as nove variaveis dedicadas de antes (depthValue, sideColorValue, ...):
+-- ver a REFATORACAO acima de OPTIONS.
+local optionState = {}
 local optionsRegistered = false
 local meshBlink = setmetatable({}, { __mode = "k" })
 local blinkVertexWarned = false
@@ -472,121 +461,20 @@ local warnedReplacedMesh = false
 -- false so guarda "falhou", nao guarda por que.
 local meshFailureReasons = {}
 
-local function indexOf(value)
-  for i, v in ipairs(VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_INDEX
-end
-
-local function sideColorIndexOf(value)
-  for i, v in ipairs(SIDE_COLOR_VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_SIDE_COLOR_INDEX
-end
-
-local function shapeIndexOf(value)
-  for i, v in ipairs(SHAPE_VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_SHAPE_INDEX
-end
-
-local function groundShadeIndexOf(value)
-  for i, v in ipairs(GROUND_SHADE_VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_GROUND_SHADE_INDEX
-end
-
-local function blinkIndexOf(value)
-  for i, v in ipairs(BLINK_VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_BLINK_INDEX
-end
-
-local function topEdgeIndexOf(value)
-  for i, v in ipairs(TOP_EDGE_VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_TOP_EDGE_INDEX
-end
-
-local function frontShapeIndexOf(value)
-  for i, v in ipairs(FRONT_SHAPE_VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_FRONT_SHAPE_INDEX
-end
-
-local function topDomeIndexOf(value)
-  for i, v in ipairs(TOP_DOME_VALUES) do
-    if v == value then return i end
-  end
-  return DEFAULT_TOP_DOME_INDEX
-end
-
-local function stepWeightIndexOf(value)
-  for i, level in ipairs(STEP_WEIGHT_LEVELS) do
+-- Genericas: operam sobre qualquer entrada de OPTIONS (opt.levels e um
+-- array de pares { ROTULO, valor }, opt.defaultIndex a posicao default
+-- nesse array). Substituem os pares indexOf/readX dedicados de cada opcao.
+local function optionIndexOf(opt, value)
+  for i, level in ipairs(opt.levels) do
     if level[2] == value then return i end
   end
-  return 1
+  return opt.defaultIndex
 end
 
-local function readDepth()
-  local ok, value = pcall(mod.options.get, mod.options, KEY)
-  if ok then return VALUES[indexOf(value)] end
-  return DEFAULT_DEPTH
-end
-
-local function readSideColor()
-  local ok, value = pcall(mod.options.get, mod.options, SIDE_COLOR_KEY)
-  if ok then return SIDE_COLOR_VALUES[sideColorIndexOf(value)] end
-  return DEFAULT_SIDE_COLOR
-end
-
-local function readShape()
-  local ok, value = pcall(mod.options.get, mod.options, SHAPE_KEY)
-  if ok then return SHAPE_VALUES[shapeIndexOf(value)] end
-  return DEFAULT_SHAPE
-end
-
-local function readGroundShade()
-  local ok, value = pcall(mod.options.get, mod.options, GROUND_SHADE_KEY)
-  if ok then return GROUND_SHADE_VALUES[groundShadeIndexOf(value)] end
-  return DEFAULT_GROUND_SHADE
-end
-
-local function readBlink()
-  local ok, value = pcall(mod.options.get, mod.options, BLINK_KEY)
-  if ok then return BLINK_VALUES[blinkIndexOf(value)] end
-  return DEFAULT_BLINK
-end
-
-local function readTopEdge()
-  local ok, value = pcall(mod.options.get, mod.options, TOP_EDGE_KEY)
-  if ok then return TOP_EDGE_VALUES[topEdgeIndexOf(value)] end
-  return DEFAULT_TOP_EDGE
-end
-
-local function readFrontShape()
-  local ok, value = pcall(mod.options.get, mod.options, FRONT_SHAPE_KEY)
-  if ok then return FRONT_SHAPE_VALUES[frontShapeIndexOf(value)] end
-  return DEFAULT_FRONT_SHAPE
-end
-
-local function readTopDome()
-  local ok, value = pcall(mod.options.get, mod.options, TOP_DOME_KEY)
-  if ok then return TOP_DOME_VALUES[topDomeIndexOf(value)] end
-  return DEFAULT_TOP_DOME
-end
-
-local function readStepWeight()
-  local ok, value = pcall(mod.options.get, mod.options, STEP_WEIGHT_KEY)
-  if ok then return STEP_WEIGHT_LEVELS[stepWeightIndexOf(value)][2] end
-  return STEP_WEIGHT_LEVELS[1][2]
+local function readOption(opt)
+  local ok, value = pcall(mod.options.get, mod.options, opt.key)
+  if ok then return opt.levels[optionIndexOf(opt, value)][2] end
+  return opt.levels[opt.defaultIndex][2]
 end
 
 local function releaseMesh(mesh)
@@ -604,87 +492,29 @@ local function clearCache()
   masks = {}
 end
 
-local function setDepth(value)
-  local nextValue = VALUES[indexOf(value)]
-  if depthValue ~= nextValue then clearCache() end
-  depthValue = nextValue
-  return depthValue
+-- Generica: substitui os nove setX dedicados. `opt.clears` decide o que
+-- limpar quando o valor muda (ver comentario de campo em OPTIONS, acima):
+-- "full" so para DEPTH (clearCache, que tambem derruba `masks`), "mesh"
+-- para a maioria (clearMeshCache, libera as malhas velhas na hora em vez de
+-- esperar o LRU reciclar -- o defeito que o Colonel_Aureliano reportou na
+-- v1.4.0 quando a opcao mudava no menu sem mudar nada em tela), e nenhum
+-- dos dois para BLINK.
+local function setOption(opt, value)
+  local nextValue = opt.levels[optionIndexOf(opt, value)][2]
+  if optionState[opt.key] ~= nextValue then
+    if opt.clears == "full" then
+      clearCache()
+    elseif opt.clears == "mesh" then
+      clearMeshCache()
+    end
+  end
+  optionState[opt.key] = nextValue
+  return nextValue
 end
 
-local function setSideColor(value)
-  local nextValue = SIDE_COLOR_VALUES[sideColorIndexOf(value)]
-  if sideColorValue ~= nextValue then clearMeshCache() end
-  sideColorValue = nextValue
-  return sideColorValue
+for _, opt in ipairs(OPTIONS) do
+  setOption(opt, readOption(opt))
 end
-
-local function setShape(value)
-  local nextValue = SHAPE_VALUES[shapeIndexOf(value)]
-  if shapeValue ~= nextValue then clearMeshCache() end
-  shapeValue = nextValue
-  return shapeValue
-end
-
-local function setGroundShade(value)
-  local nextValue = GROUND_SHADE_VALUES[groundShadeIndexOf(value)]
-  if groundShadeValue ~= nextValue then clearMeshCache() end
-  groundShadeValue = nextValue
-  return groundShadeValue
-end
-
-local function setBlink(value)
-  blinkValue = BLINK_VALUES[blinkIndexOf(value)]
-  return blinkValue
-end
-
-local function setTopEdge(value)
-  local nextValue = TOP_EDGE_VALUES[topEdgeIndexOf(value)]
-  if topEdgeValue ~= nextValue then clearMeshCache() end
-  topEdgeValue = nextValue
-  return topEdgeValue
-end
-
--- A forca entra na cacheKey (ver cacheKey abaixo), mas clearMeshCache aqui
--- tambem, no mesmo padrao de SIDE COLOR/SHAPE/GROUND SHADE/TOP EDGE:
--- libera as malhas velhas na hora em vez de esperar o LRU reciclar.
-local function setFrontShape(value)
-  local nextValue = FRONT_SHAPE_VALUES[frontShapeIndexOf(value)]
-  if frontShapeValue ~= nextValue then clearMeshCache() end
-  frontShapeValue = nextValue
-  return frontShapeValue
-end
-
--- Mesmo padrao de FRONT SHAPE: a forca entra na cacheKey (ver cacheKey
--- abaixo) e tambem limpa o cache aqui, para as malhas velhas nao esperarem
--- o LRU reciclar antes do topo novo aparecer na tela.
-local function setTopDome(value)
-  local nextValue = TOP_DOME_VALUES[topDomeIndexOf(value)]
-  if topDomeValue ~= nextValue then clearMeshCache() end
-  topDomeValue = nextValue
-  return topDomeValue
-end
-
--- Mesmo padrao de FRONT SHAPE/TOP DOME: a forca entra na cacheKey (ver
--- cacheKey abaixo) e tambem limpa o cache aqui, para as malhas velhas nao
--- esperarem o LRU reciclar antes do passo novo aparecer na tela. Sem isso a
--- opcao mudaria no menu sem mudar nada em tela ate o LRU reciclar por
--- acaso -- o defeito que o Colonel_Aureliano reportou na v1.4.0.
-local function setStepWeight(value)
-  local nextValue = STEP_WEIGHT_LEVELS[stepWeightIndexOf(value)][2]
-  if stepWeightValue ~= nextValue then clearMeshCache() end
-  stepWeightValue = nextValue
-  return stepWeightValue
-end
-
-setDepth(readDepth())
-setSideColor(readSideColor())
-setShape(readShape())
-setGroundShade(readGroundShade())
-setBlink(readBlink())
-setTopEdge(readTopEdge())
-setFrontShape(readFrontShape())
-setTopDome(readTopDome())
-setStepWeight(readStepWeight())
 Assets.register(clearCache)
 
 local function writeOption(game, key, value)
@@ -707,152 +537,23 @@ local function writeOption(game, key, value)
   end
 end
 
-local function depthRow()
+-- Generica: substitui os nove rowX dedicados. Mesma forma que cada um
+-- tinha (id/label fixos, value() le o rotulo do nivel atual, step() avanca
+-- um nivel ciclicamente e passa pelo setOption/writeOption de sempre).
+local function makeOptionRow(opt)
   return {
-    id = mod.id .. ":" .. KEY,
-    label = "VOXEL CHARS",
-    value = function() return LABELS[indexOf(depthValue or readDepth())] end,
-    step = function(game, dir)
-      local i = indexOf(depthValue or readDepth())
-      i = ((i + (dir or 1) - 1) % #VALUES) + 1
-      local value = setDepth(VALUES[i])
-      writeOption(game, KEY, value)
-      return true
-    end,
-  }
-end
-
-local function sideColorRow()
-  return {
-    id = mod.id .. ":" .. SIDE_COLOR_KEY,
-    label = "SIDE COLOR",
+    id = mod.id .. ":" .. opt.key,
+    label = opt.label,
     value = function()
-      return SIDE_COLOR_LABELS[sideColorIndexOf(sideColorValue or readSideColor())]
+      local current = optionState[opt.key] or readOption(opt)
+      return opt.levels[optionIndexOf(opt, current)][1]
     end,
     step = function(game, dir)
-      local i = sideColorIndexOf(sideColorValue or readSideColor())
-      i = ((i + (dir or 1) - 1) % #SIDE_COLOR_VALUES) + 1
-      local value = setSideColor(SIDE_COLOR_VALUES[i])
-      writeOption(game, SIDE_COLOR_KEY, value)
-      return true
-    end,
-  }
-end
-
-local function shapeRow()
-  return {
-    id = mod.id .. ":" .. SHAPE_KEY,
-    label = "SHAPE",
-    value = function()
-      return SHAPE_LABELS[shapeIndexOf(shapeValue or readShape())]
-    end,
-    step = function(game, dir)
-      local i = shapeIndexOf(shapeValue or readShape())
-      i = ((i + (dir or 1) - 1) % #SHAPE_VALUES) + 1
-      local value = setShape(SHAPE_VALUES[i])
-      writeOption(game, SHAPE_KEY, value)
-      return true
-    end,
-  }
-end
-
-local function groundShadeRow()
-  return {
-    id = mod.id .. ":" .. GROUND_SHADE_KEY,
-    label = "GROUND SHADE",
-    value = function()
-      return GROUND_SHADE_LABELS[groundShadeIndexOf(groundShadeValue or readGroundShade())]
-    end,
-    step = function(game, dir)
-      local i = groundShadeIndexOf(groundShadeValue or readGroundShade())
-      i = ((i + (dir or 1) - 1) % #GROUND_SHADE_VALUES) + 1
-      local value = setGroundShade(GROUND_SHADE_VALUES[i])
-      writeOption(game, GROUND_SHADE_KEY, value)
-      return true
-    end,
-  }
-end
-
-local function blinkRow()
-  return {
-    id = mod.id .. ":" .. BLINK_KEY,
-    label = "BLINK",
-    value = function()
-      return BLINK_LABELS[blinkIndexOf(blinkValue or readBlink())]
-    end,
-    step = function(game, dir)
-      local i = blinkIndexOf(blinkValue or readBlink())
-      i = ((i + (dir or 1) - 1) % #BLINK_VALUES) + 1
-      local value = setBlink(BLINK_VALUES[i])
-      writeOption(game, BLINK_KEY, value)
-      return true
-    end,
-  }
-end
-
-local function topEdgeRow()
-  return {
-    id = mod.id .. ":" .. TOP_EDGE_KEY,
-    label = "TOP EDGE",
-    value = function()
-      return TOP_EDGE_LABELS[topEdgeIndexOf(topEdgeValue or readTopEdge())]
-    end,
-    step = function(game, dir)
-      local i = topEdgeIndexOf(topEdgeValue or readTopEdge())
-      i = ((i + (dir or 1) - 1) % #TOP_EDGE_VALUES) + 1
-      local value = setTopEdge(TOP_EDGE_VALUES[i])
-      writeOption(game, TOP_EDGE_KEY, value)
-      return true
-    end,
-  }
-end
-
-local function frontShapeRow()
-  return {
-    id = mod.id .. ":" .. FRONT_SHAPE_KEY,
-    label = "FRONT SHAPE",
-    value = function()
-      return FRONT_SHAPE_LABELS[frontShapeIndexOf(frontShapeValue or readFrontShape())]
-    end,
-    step = function(game, dir)
-      local i = frontShapeIndexOf(frontShapeValue or readFrontShape())
-      i = ((i + (dir or 1) - 1) % #FRONT_SHAPE_VALUES) + 1
-      local value = setFrontShape(FRONT_SHAPE_VALUES[i])
-      writeOption(game, FRONT_SHAPE_KEY, value)
-      return true
-    end,
-  }
-end
-
-local function topDomeRow()
-  return {
-    id = mod.id .. ":" .. TOP_DOME_KEY,
-    label = "TOP DOME",
-    value = function()
-      return TOP_DOME_LABELS[topDomeIndexOf(topDomeValue or readTopDome())]
-    end,
-    step = function(game, dir)
-      local i = topDomeIndexOf(topDomeValue or readTopDome())
-      i = ((i + (dir or 1) - 1) % #TOP_DOME_VALUES) + 1
-      local value = setTopDome(TOP_DOME_VALUES[i])
-      writeOption(game, TOP_DOME_KEY, value)
-      return true
-    end,
-  }
-end
-
-local function stepWeightRow()
-  return {
-    id = mod.id .. ":" .. STEP_WEIGHT_KEY,
-    label = "STEP WEIGHT",
-    value = function()
-      return STEP_WEIGHT_LEVELS[stepWeightIndexOf(stepWeightValue or readStepWeight())][1]
-    end,
-    step = function(game, dir)
-      local i = stepWeightIndexOf(stepWeightValue or readStepWeight())
-      i = ((i + (dir or 1) - 1) % #STEP_WEIGHT_LEVELS) + 1
-      local value = setStepWeight(STEP_WEIGHT_LEVELS[i][2])
-      writeOption(game, STEP_WEIGHT_KEY, value)
+      local current = optionState[opt.key] or readOption(opt)
+      local i = optionIndexOf(opt, current)
+      i = ((i + (dir or 1) - 1) % #opt.levels) + 1
+      local value = setOption(opt, opt.levels[i][2])
+      writeOption(game, opt.key, value)
       return true
     end,
   }
@@ -1311,7 +1012,7 @@ end
 local function applyBlinkUv(mesh)
   local meta = meshBlink[mesh]
   if not meta then return end
-  local closed = (blinkValue or readBlink()) == "on"
+  local closed = (optionState.blink or readOption(OPTION_BY_KEY.blink)) == "on"
     and blinkClosedForBase(meta.baseName)
   if meta.closed == closed then return end
   meta.closed = closed
@@ -1724,7 +1425,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
         -- saia no mesmo tom escuro da borda verdadeira: um anel escuro em
         -- volta de cada olho, em qualquer folha com marca de olho
         -- (`EYE_MARKS`/`EYE_SIDE_MARKS`) e independente da opcao BLINK,
-        -- porque o corte por `isEye` nunca consulta `blinkValue`. `lx` e
+        -- porque o corte por `isEye` nunca consulta o estado de BLINK. `lx` e
         -- `lx2` espelham juntos como o resto do run, entao a simetria em X
         -- exigida continua garantida por construcao: nunca uma coordenada
         -- absoluta de tela, sempre os limites do proprio run.
@@ -2387,7 +2088,7 @@ local function statusValue()
     warnReplacedMesh()
     return "REPLACED"
   end
-  if (depthValue or readDepth()) == "off" then return "OFF" end
+  if (optionState.depth or readOption(OPTION_BY_KEY.depth)) == "off" then return "OFF" end
   -- Intencional, nao defeito: um solido nao herda o contrato de billboard
   -- cilindrico da primeira pessoa, entao devolvemos o card original de
   -- proposito enquanto isto for verdade (main.lua, firstPersonCardActive).
@@ -2419,44 +2120,22 @@ local function registerOptionsRows()
     if type(out) ~= "table" then return out end
     out[#out + 1] = statusRow()
     if patched then
-      out[#out + 1] = depthRow()
-      out[#out + 1] = sideColorRow()
-      out[#out + 1] = shapeRow()
-      out[#out + 1] = groundShadeRow()
-      out[#out + 1] = blinkRow()
-      out[#out + 1] = topEdgeRow()
-      out[#out + 1] = frontShapeRow()
-      out[#out + 1] = topDomeRow()
-      out[#out + 1] = stepWeightRow()
+      for _, opt in ipairs(OPTIONS) do
+        out[#out + 1] = makeOptionRow(opt)
+      end
     end
     return out
   end)
 
   mod.events:on("mod.options_changed", function(payload)
-    if payload and payload.mod == mod.id and payload.key == KEY then
-      setDepth(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == SIDE_COLOR_KEY then
-      setSideColor(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == SHAPE_KEY then
-      setShape(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == GROUND_SHADE_KEY then
-      setGroundShade(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == BLINK_KEY then
-      setBlink(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == TOP_EDGE_KEY then
-      setTopEdge(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == FRONT_SHAPE_KEY then
-      setFrontShape(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == TOP_DOME_KEY then
-      setTopDome(payload.value)
-    elseif payload and payload.mod == mod.id and payload.key == STEP_WEIGHT_KEY then
-      setStepWeight(payload.value)
-    end
+    if not (payload and payload.mod == mod.id) then return end
+    local opt = OPTION_BY_KEY[payload.key]
+    if opt then setOption(opt, payload.value) end
   end)
 end
 
 local function voxelMesh(def, frame)
-  local depth = depthValue or readDepth()
+  local depth = optionState.depth or readOption(OPTION_BY_KEY.depth)
   if depth == "off" then
     recordDrawResult("off")
     return safeOriginal(def, frame)
@@ -2465,13 +2144,13 @@ local function voxelMesh(def, frame)
     recordDrawResult("first_person")
     return safeOriginal(def, frame)
   end
-  local sideColor = sideColorValue or readSideColor()
-  local shape = shapeValue or readShape()
-  local groundShade = groundShadeValue or readGroundShade()
-  local topEdge = topEdgeValue or readTopEdge()
-  local frontShape = frontShapeValue or readFrontShape()
-  local topDome = topDomeValue or readTopDome()
-  local stepWeight = stepWeightValue or readStepWeight()
+  local sideColor = optionState.side_color or readOption(OPTION_BY_KEY.side_color)
+  local shape = optionState.shape or readOption(OPTION_BY_KEY.shape)
+  local groundShade = optionState.ground_shade or readOption(OPTION_BY_KEY.ground_shade)
+  local topEdge = optionState.top_edge or readOption(OPTION_BY_KEY.top_edge)
+  local frontShape = optionState.front_shape or readOption(OPTION_BY_KEY.front_shape)
+  local topDome = optionState.top_dome or readOption(OPTION_BY_KEY.top_dome)
+  local stepWeight = optionState.step_weight or readOption(OPTION_BY_KEY.step_weight)
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then

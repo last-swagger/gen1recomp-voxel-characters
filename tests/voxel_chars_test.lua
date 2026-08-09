@@ -383,7 +383,16 @@ local function topQuadShadeAt(mesh, minX, maxX, y)
   end
 end
 
-local function setDepthWithoutClearing(modules, value)
+-- Refatoracao da tabela de opcoes: main.lua nao guarda mais um
+-- upvalue dedicado por opcao (depthValue, sideColorValue, ...). Todo valor
+-- resolvido mora agora numa tabela unica, `optionState` (upvalue de
+-- voxelMesh, indexada pela chave da opcao: "depth", "side_color", ...). Os
+-- nove helpers abaixo continuam com o mesmo proposito de sempre (mudar o
+-- valor resolvido SEM passar por setOption, entao sem disparar o
+-- clearCache/clearMeshCache que setOption dispara), so que agora acham
+-- `optionState` (a TABELA, um objeto por referencia) e escrevem direto no
+-- campo, em vez de sobrescrever um upvalue escalar via debug.setupvalue.
+local function setOptionStateWithoutClearing(modules, key, value)
   local wrapper = modules.SpriteBillboards.mesh
   local voxelMesh
   for i = 1, 20 do
@@ -393,183 +402,51 @@ local function setDepthWithoutClearing(modules, value)
       break
     end
   end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper para depth")
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper para " .. key)
   for i = 1, 40 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "depthValue" then
-      debug.setupvalue(voxelMesh, i, value)
+    local name, state = debug.getupvalue(voxelMesh, i)
+    if name == "optionState" then
+      state[key] = value
       return true
     end
   end
-  return check(false, "teste encontra depthValue em voxelMesh")
+  return check(false, "teste encontra optionState em voxelMesh")
+end
+
+local function setDepthWithoutClearing(modules, value)
+  return setOptionStateWithoutClearing(modules, "depth", value)
 end
 
 local function setSideColorWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 40 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "sideColorValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra sideColorValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "side_color", value)
 end
 
 local function setShapeWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 40 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "shapeValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra shapeValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "shape", value)
 end
 
 local function setGroundShadeWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 50 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "groundShadeValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra groundShadeValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "ground_shade", value)
 end
 
 local function setBlinkWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 70 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "blinkValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra blinkValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "blink", value)
 end
 
 local function setTopEdgeWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 80 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "topEdgeValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra topEdgeValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "top_edge", value)
 end
 
 local function setFrontShapeWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 90 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "frontShapeValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra frontShapeValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "front_shape", value)
 end
 
 local function setTopDomeWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 100 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "topDomeValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra topDomeValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "top_dome", value)
 end
 
 local function setStepWeightWithoutClearing(modules, value)
-  local wrapper = modules.SpriteBillboards.mesh
-  local voxelMesh
-  for i = 1, 20 do
-    local name, upvalue = debug.getupvalue(wrapper, i)
-    if name == "voxelMesh" then
-      voxelMesh = upvalue
-      break
-    end
-  end
-  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
-  for i = 1, 110 do
-    local name = debug.getupvalue(voxelMesh, i)
-    if name == "stepWeightValue" then
-      debug.setupvalue(voxelMesh, i, value)
-      return true
-    end
-  end
-  return check(false, "teste encontra stepWeightValue em voxelMesh")
+  return setOptionStateWithoutClearing(modules, "step_weight", value)
 end
 
 local function blinkHashName(name)
