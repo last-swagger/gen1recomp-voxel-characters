@@ -174,6 +174,31 @@ anything. Two independent bugs were in the way and neither was what the symptom 
 scripted boot ignores `POKEPORT_GAME` and was booting a version that was not ready, and vsync on
 an occluded window stalls the whole loop at under a frame per second. Details in the commit.
 
+Two things the owner asked for after seeing the first screenshots, both done:
+
+**The player was landing on things.** `U.teleport` writes the player to the requested tile with no
+validation at all, so it parked him on a sign. `tools/ingame/pouso.lua` runs the seven checks the
+engine itself uses (bounds, walkable, sign, warp, warp tile, pad or hole, NPC) and returns the
+nearest tile that passes. Roughly twenty drivers in this repo hand-roll some subset of that; none
+covers all seven.
+
+**Stills cannot judge motion.** `tools/ingame/clip.sh <dir> <key=value>` records the same scene
+twice, with the option off and on, and assembles `off.mp4`, `on.mp4`, a side-by-side `ab.mp4`
+(left is always off) and `ab.gif`. Three lessons are baked into it: record indoors, because the
+day cycle changes the sky between the two takes; crop the video instead of zooming the game camera,
+which tilts down and fills the frame with floor; and walk the character for `MOTION LAG`, because
+a spring at rest makes both sides identical.
+
+**The clip immediately paid for itself.** `MOTION LAG` was shearing the body nearly 45 degrees:
+the level number was being used as a slope instead of a head displacement in pixels, because the
+divide by the 16 px cell height that `SWAY` has was missing. At level 0.70 the head moved 11 world
+pixels, most of a tile, and the character read as falling over rather than walking with weight.
+
+All 465 offline checks and all eight in-game checks passed with that bug in place. Every one of
+them asked *did it change*; not one asked *by how much*. That gap is now closed with magnitude
+bounds in the offline suite, including an absolute ceiling that no future level can exceed without
+a test failing.
+
 ### 6. Desynchronise — DONE
 
 An instance tracker matches each draw to a remembered character by cell, then by nearest

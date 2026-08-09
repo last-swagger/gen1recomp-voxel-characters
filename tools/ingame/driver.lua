@@ -73,11 +73,23 @@ return function(game)
   -- 2. U.teleport e o padrao da casa: 212 dos 240 drivers do projeto usam, e
   --    so 8 usam o caminho de apertar tecla. Ele esvazia a pilha e empurra o
   --    OverworldController direto, entao nao existe titulo para atravessar.
-  local MAPA = os.getenv("VC_MAP") or "VIRIDIAN_CITY"
-  local X = tonumber(os.getenv("VC_X")) or 17
-  local Y = tonumber(os.getenv("VC_Y")) or 17
+  -- E O DESTINO E VALIDADO. U.teleport nao valida nada: se a celula pedida for
+  -- placa, mesa, parede ou NPC, o jogador pousa em cima e a foto sai com ele
+  -- num lugar onde ninguem consegue ficar. Foi o Kim que viu isso nas fotos
+  -- antes de mim. Ver tools/ingame/pouso.lua.
+  local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
+  local MAPA, X, Y, RAIO = Pouso.escolher(game,
+    os.getenv("VC_MAP") or "VIRIDIAN_CITY",
+    tonumber(os.getenv("VC_X")) or 17,
+    tonumber(os.getenv("VC_Y")) or 17)
   U.teleport(game, MAPA, X, Y, "down")
   U.wait(30)
+  if RAIO == nil then
+    U.log("VC driver: AVISO, nenhuma celula boa perto do ponto pedido")
+  elseif RAIO > 0 then
+    U.log(string.format("VC driver: pouso deslocado %d celula(s) para (%d,%d)",
+      RAIO, X, Y))
+  end
 
   if not (game.overworld and game.stack:top() == game.overworld) then
     U.log("VC driver: teleport para " .. MAPA .. " NAO chegou ao mundo")

@@ -116,7 +116,9 @@ return function(game)
   -- CHEGA na tela e responde ao menu; que duas instancias fiquem fora de fase e
   -- provado na suite offline, onde da para ler a matriz inteira.
   local MAPA = os.getenv("VC_MAP") or "REDS_HOUSE_2F"
-  U.teleport(game, MAPA, 3, 4, "down")
+  local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
+  local _, PX, PY = Pouso.escolher(game, MAPA, 3, 4)
+  U.teleport(game, MAPA, PX, PY, "down")
   U.wait(60)
   if not (game.overworld and game.stack:top() == game.overworld) then
     veredito("V1", false, "nao cheguei ao mundo"); return
@@ -282,7 +284,7 @@ return function(game)
   -- mola esta em repouso e o alvo e zero. Se aparecesse, o efeito estaria
   -- vindo de outro lugar (ou a mola estaria oscilando sozinha, que e o modo de
   -- falha classico de uma mola mal amortecida).
-  opcao("sway", "off"); opcao("lag", 0.70)
+  opcao("sway", "off"); opcao("lag", 1.2)
   U.wait(90)  -- tempo de sobra para a mola assentar
   local lagParado, tl = parDeQuadros()
   nota("MOTION LAG NORMAL com todo mundo parado: %d pixels (%d tentativas)",
@@ -322,7 +324,7 @@ return function(game)
       "o jogador nao conseguiu andar em nenhuma direcao; o teste nao vale")
   else
     nota("direcao que move a partir de (%d,%d): %s", PARTIDA_X, PARTIDA_Y, direcao)
-    opcao("lag", 0.70); U.wait(20)
+    opcao("lag", 1.2); U.wait(20)
     local andou, comLag = tentaPasso(direcao)
     local dLag = andou and difere(semLag, comLag) or -1
     nota("um passo para %s, com e sem MOTION LAG: %d pixels diferentes",
@@ -365,7 +367,7 @@ return function(game)
       U.wait(30)
     end
     local function liga()
-      opcao("breath", 0.020); opcao("sway", 0.45); opcao("lag", 0.70)
+      opcao("breath", 0.020); opcao("sway", 0.45); opcao("lag", 1.2)
       U.wait(30)
     end
     -- Aquecimento: constroi malha, carrega textura, deixa o LRU assentar.

@@ -267,7 +267,10 @@ local OPTIONS = {
     -- Movimento secundario de verdade exige submalha por regiao (corpo,
     -- cabeca, mochila) desenhada com matriz propria. Isso NAO esta feito, e
     -- esta escrito assim no roadmap para ninguem achar que esta.
-    levels = { { "OFF", "off" }, { "SUBTLE", 0.35 }, { "NORMAL", 0.70 } },
+    -- Os numeros sao deslocamento da CABECA em pixels de mundo na velocidade de
+    -- caminhada, a mesma unidade de SWAY. A mola passa do ponto em cerca de 8%,
+    -- entao o pico real fica um pouco acima do nivel escolhido.
+    levels = { { "OFF", "off" }, { "SUBTLE", 0.6 }, { "NORMAL", 1.2 } },
     defaultIndex = 1,
     help = "Leans the whole solid back from its feet with a spring while it moves, and overshoots when it stops, so the body carries weight instead of sliding.",
   },
@@ -2552,7 +2555,17 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     kx = amp * math.sin(a) / LIFE_CELL
   end
   if lag ~= "off" then
-    local amp = lag * (pessoa and pessoa.lag or 1)
+    -- DIVIDIR POR LIFE_CELL, igual ao SWAY logo acima, e o motivo esta escrito
+    -- aqui porque a falta disso passou por todos os gates numericos.
+    --
+    -- `amp` e deslocamento da CABECA em pixels de mundo. O cisalhamento e
+    -- x' = x + k*y com y ate 16, entao k tem que ser amp/16. Sem a divisao,
+    -- `amp` virava a INCLINACAO: no nivel 0.70 a cabeca andava 0.70*16 = 11 px,
+    -- quase um tile inteiro, e o personagem nao lia como andando com peso, lia
+    -- como caindo de lado. Os oito checks in-game passaram assim mesmo, porque
+    -- todos perguntavam "mudou?" e nenhum perguntava "mudou quanto?". Quem
+    -- pegou foi olhar o clipe.
+    local amp = lag * (pessoa and pessoa.lag or 1) / LIFE_CELL
     kx = kx + amp * inst.lagX
     kz = kz + amp * inst.lagZ
   end

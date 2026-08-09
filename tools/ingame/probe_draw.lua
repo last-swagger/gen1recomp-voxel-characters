@@ -149,7 +149,9 @@ return function(game)
   end
 
   nota("antes do teleport (quadro %d) %s", U.frame(), ambiente())
-  U.teleport(game, "VIRIDIAN_CITY", 17, 17, "down")
+  local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
+  local mapa, tx, ty = Pouso.escolher(game, "VIRIDIAN_CITY", 17, 17)
+  U.teleport(game, mapa, tx, ty, "down")
   nota("depois do teleport (quadro %d) %s", U.frame(), ambiente())
   U.wait(60)
   nota("depois de esperar 60 quadros (quadro %d) %s", U.frame(), ambiente())

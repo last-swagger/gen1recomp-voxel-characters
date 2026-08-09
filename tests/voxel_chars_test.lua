@@ -4982,7 +4982,7 @@ do
   local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
   local mod = loadWith(makeMod(handle,
-    { breath = 0.020, sway = 0.20, lag = 0.35 }))
+    { breath = 0.020, sway = 0.20, lag = 0.6 }))
   eq(lifeRowValue(mod), "BREATH+SWAY+LAG",
      "as tres ligadas: LIFE junta os nomes com +")
 end
@@ -5090,7 +5090,7 @@ do
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle, { breath = 0.035, sway = 0.45, lag = 0.70 }))
+  loadWith(makeMod(handle, { breath = 0.035, sway = 0.45, lag = 1.2 }))
   local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
   local model = lifeModel(32, 48, false)
   modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
@@ -5219,7 +5219,7 @@ do
     pixels[0] = 1
     local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
       nil, nil, nil, nil, nil, true)
-    loadWith(makeMod(handle, { lag = 0.70 }))
+    loadWith(makeMod(handle, { lag = 1.2 }))
     local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
     withLoveTime(0, function()
       local model = lifeModel(0, 0, false)
