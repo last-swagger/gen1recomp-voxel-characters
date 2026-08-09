@@ -309,6 +309,35 @@ local function frontVertexShadeAt(mesh, x, y)
   end
 end
 
+-- v1.6.0: como frontVertexShadeAt, mas devolve Z em vez de shade e nao exige
+-- Z == 0: STEP WEIGHT cisalha Z proporcional a altura (Y), entao um vertice
+-- de frente deixa de estar exatamente no plano Z = 0 quando a opcao esta
+-- ligada -- e a propria posicao sheared que o teste quer ler. `shade`
+-- desambigua entre frente (0.90), tras (0.68), lateral (0.78), topo (1.00)
+-- e base (0.55) quando (x, y) coincide entre faces diferentes.
+local function vertexZAt(mesh, x, y, shade)
+  for _, v in ipairs(mesh.verts) do
+    if close(v[1], x) and close(v[2], y)
+        and (not shade or close(v[6], shade)) then
+      return v[3]
+    end
+  end
+end
+
+-- v1.6.0: como positionSignature, mas so a coluna de X (v[1]), na mesma
+-- ordem de emissao dos vertices. STEP WEIGHT cisalha Z proporcional a
+-- altura e nunca mexe em X -- a garantia contra o espelho do host, que so
+-- inverte sinal em X. Comparar esta assinatura entre a malha com a opcao
+-- ligada e desligada prova X identico vertice a vertice, nao so "a mesma
+-- silhueta por acaso".
+local function xSignature(mesh)
+  local out = {}
+  for i, v in ipairs(mesh.verts) do
+    out[i] = ("%.4f"):format(v[1])
+  end
+  return table.concat(out, ";")
+end
+
 -- v1.6.0: como frontFaceZAt, mas sem exigir shade == 0.90, porque um quad
 -- de FRONT SHAPE em degrau pode sair mais escuro que o shade plano de
 -- sempre. Acha o quad frontal (z1, plano em z = 0) pelas bordas X/Y e
@@ -520,6 +549,27 @@ local function setTopDomeWithoutClearing(modules, value)
     end
   end
   return check(false, "teste encontra topDomeValue em voxelMesh")
+end
+
+local function setStepWeightWithoutClearing(modules, value)
+  local wrapper = modules.SpriteBillboards.mesh
+  local voxelMesh
+  for i = 1, 20 do
+    local name, upvalue = debug.getupvalue(wrapper, i)
+    if name == "voxelMesh" then
+      voxelMesh = upvalue
+      break
+    end
+  end
+  check(type(voxelMesh) == "function", "teste encontra voxelMesh no wrapper")
+  for i = 1, 110 do
+    local name = debug.getupvalue(voxelMesh, i)
+    if name == "stepWeightValue" then
+      debug.setupvalue(voxelMesh, i, value)
+      return true
+    end
+  end
+  return check(false, "teste encontra stepWeightValue em voxelMesh")
 end
 
 local function blinkHashName(name)
@@ -1135,7 +1185,7 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 10, "hook anexa as rows do voxel characters, mais STATUS")
+  eq(#rows, 11, "hook anexa as rows do voxel characters, mais STATUS")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
   local option = rows[3]
   eq(rows[4].label, "SIDE COLOR", "hook anexa a row de cor lateral")
@@ -1145,6 +1195,7 @@ do
   eq(rows[8].label, "TOP EDGE", "hook anexa a row de top edge")
   eq(rows[9].label, "FRONT SHAPE", "hook anexa a row de front shape")
   eq(rows[10].label, "TOP DOME", "hook anexa a row de top dome")
+  eq(rows[11].label, "STEP WEIGHT", "hook anexa a row de step weight")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -1271,6 +1322,47 @@ do
   eq(option.value(), "HIGH", "TOP DOME alterna para HIGH")
   check(option.step(game, 1), "TOP DOME da a volta")
   eq(option.value(), "OFF", "TOP DOME volta para OFF depois de HIGH")
+end
+
+do
+  -- v1.6.0: a row de STEP WEIGHT, no mesmo padrao das outras: default OFF
+  -- (regra da casa -- alem disso, e a primeira opcao desta branch que move
+  -- vertice em vez de shade, entao o conservadorismo pesa ainda mais), dois
+  -- degraus (OFF, LOW 0.25, HIGH 0.5), step troca e persiste no save e no
+  -- loader.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle, { depth = 1 }))
+  local emitted = {}
+  local game = {
+    save = { options = {} },
+    mods = {
+      modOptions = {},
+      events = {
+        emit = function(_, name, payload)
+          emitted[#emitted + 1] = { name = name, payload = payload }
+          if mod._events[name] then mod._events[name](payload) end
+        end,
+      },
+    },
+  }
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
+  local option = rows[10]
+  eq(option.label, "STEP WEIGHT", "row de STEP WEIGHT fica depois de TOP DOME")
+  eq(option.value(), "OFF", "STEP WEIGHT default e OFF")
+  check(option.step(game, 1), "step de STEP WEIGHT informa mudanca")
+  eq(option.value(), "LOW", "STEP WEIGHT alterna para LOW")
+  eq(game.save.options.modOptions.voxel_characters.step_weight, 0.25,
+     "STEP WEIGHT persiste no save")
+  eq(game.mods.modOptions.voxel_characters.step_weight, 0.25,
+     "STEP WEIGHT persiste no loader")
+  eq(emitted[1].payload.value, 0.25, "STEP WEIGHT emite o valor novo")
+  check(option.step(game, 1), "STEP WEIGHT segue avancando")
+  eq(option.value(), "HIGH", "STEP WEIGHT alterna para HIGH")
+  check(option.step(game, 1), "STEP WEIGHT da a volta")
+  eq(option.value(), "OFF", "STEP WEIGHT volta para OFF depois de HIGH")
 end
 
 do
@@ -2762,6 +2854,50 @@ do
 end
 
 do
+  -- v1.6.0, teste obrigatorio 6: "a chave de cache muda com a forca". Sem
+  -- isso a opcao nao muda nada na tela ate o LRU reciclar por acaso, o
+  -- mesmo defeito que o Colonel_Aureliano reportou na v1.4.0. Prova por
+  -- reversao: sem `stepWeightPart` em cacheKey, off/low/high colapsam na
+  -- MESMA chave e `Voxel3D.created` fica em 1, nao 3.
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", step_weight = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local off = modules.SpriteBillboards.mesh(def, 0)
+  setStepWeightWithoutClearing(modules, 0.25)
+  local low = modules.SpriteBillboards.mesh(def, 0)
+  setStepWeightWithoutClearing(modules, 0.5)
+  local high = modules.SpriteBillboards.mesh(def, 0)
+  check(off ~= low and low ~= high and off ~= high,
+        "cacheKey separa STEP WEIGHT mesmo sem limpar o cache (off/low/high)")
+  eq(modules.Voxel3D.created, 3,
+     "cacheKey cria uma entrada propria para cada forca de STEP WEIGHT")
+end
+
+do
+  -- STEP WEIGHT, como FRONT SHAPE e TOP DOME, so existe para SLAB: CARVED
+  -- constroi a partir do casco visual em voxels, sem o `p()` que aplica o
+  -- cisalhamento. A chave ignora a forca de proposito fora do SLAB, para
+  -- nao duplicar malhas identicas so porque o menu trocou de nivel.
+  local cellW, cellH = 1, 1
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do paint(pixels, sheetW, cellW, frame, 0, 0, 1) end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "carved", step_weight = "off" }))
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+  local a = modules.SpriteBillboards.mesh(def, 0)
+  setStepWeightWithoutClearing(modules, 0.5)
+  local b = modules.SpriteBillboards.mesh(def, 0)
+  eq(a, b, "cacheKey ignora STEP WEIGHT quando SHAPE e CARVED")
+  eq(modules.Voxel3D.created, 1,
+     "CARVED nao duplica malha identica ao trocar STEP WEIGHT")
+end
+
+do
   local cellW, cellH = 1, 7
   local pixels = {}
   for ly = 0, cellH - 1 do paint(pixels, cellW, cellW, 0, 0, ly, 1) end
@@ -3912,7 +4048,7 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 9, "com host, nove rows: STATUS mais as oito de sempre")
+  eq(#rows, 10, "com host, dez rows: STATUS mais as nove de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
   eq(rows[2].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
   eq(rows[3].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
@@ -3922,6 +4058,7 @@ do
   eq(rows[7].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
   eq(rows[8].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
   eq(rows[9].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
+  eq(rows[10].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
 end
 
 do
@@ -4564,6 +4701,260 @@ do
   local multiplier = 1 - 0.30 * 2 / 2
   eq(bothEdge, edgeOnlyCenter * multiplier,
      "TOP DOME multiplica a base que TOP EDGE ja escureceu, nunca a substitui")
+end
+
+-- v1.6.0: STEP WEIGHT. Cisalhamento em Z proporcional a altura do SLAB, so
+-- nos frames de caminhada, para o solido acompanhar o passo que a arte ja
+-- da sozinha. Os sete testes abaixo sao os obrigatorios da spec da rodada,
+-- na mesma ordem; a row/step/persist e as duas variantes de cacheKey (SLAB
+-- separa, CARVED ignora) ja foram cobertas mais acima, junto das rows e
+-- cacheKeys das outras opcoes. Os dois ultimos blocos vao alem do
+-- obrigatorio: cobrem a restricao "confirme quais frames sao de caminhada
+-- pelo codigo, em vez de assumir 3, 4 e 5", com uma folha de 4 frames (o
+-- indice 3 existe mas nao e caminhada) e uma folha de 8 (o indice 6 dobra
+-- para o bucket parado por frame % 3, o mesmo bucket que carvedFrames ja
+-- usa para CARVED).
+--
+-- Fixture comum aos testes 1 a 5: uma coluna de um pixel em lx = 7, pintada
+-- em tres alturas isoladas (ly = 15 o pe, y local 0..1; ly = 8 o meio, y
+-- local 7..8; ly = 0 o topo, y local 15..16, com cellH = 16), replicada em
+-- todos os seis frames para que a pose parada (frame 0) e a de caminhada
+-- (frame 3) partam da mesma arte.
+
+do
+  -- teste obrigatorio 1: "com a opcao desligada, a malha e byte a byte a de
+  -- hoje". Lido no frame de CAMINHADA (3), o unico onde STEP WEIGHT teria
+  -- algo a fazer -- se o cisalhamento vazasse por baixo do OFF, e ali que
+  -- apareceria.
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    paint(pixels, sheetW, cellW, frame, 7, 15, 1)
+    paint(pixels, sheetW, cellW, frame, 7, 8, 1)
+    paint(pixels, sheetW, cellW, frame, 7, 0, 1)
+  end
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local gotOff = modulesOff.SpriteBillboards.mesh(def, 3)
+
+  local handleDefault, modulesDefault = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleDefault, { depth = 2, shape = "slab" }))
+  local gotDefault = modulesDefault.SpriteBillboards.mesh(def, 3)
+
+  eq(vertexSignature(gotOff), vertexSignature(gotDefault),
+     "STEP WEIGHT OFF explicito e o default (sem a chave) produzem a mesma malha, "
+     .. "byte a byte, no frame de caminhada")
+end
+
+do
+  -- teste obrigatorio 2: "a pose parada nao se move com a opcao ligada --
+  -- so a de caminhada muda". As duas metades sao necessarias para provar
+  -- por reversao: um gate quebrado que cisalhasse TODO frame (nao so
+  -- caminhada) passaria pela metade "caminhada muda" mas quebraria a
+  -- metade "parada nao muda"; uma implementacao que nunca aplicasse forca
+  -- alguma passaria pela metade "parada nao muda" mas quebraria "caminhada
+  -- muda".
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    paint(pixels, sheetW, cellW, frame, 7, 15, 1)
+    paint(pixels, sheetW, cellW, frame, 7, 8, 1)
+    paint(pixels, sheetW, cellW, frame, 7, 0, 1)
+  end
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local standOff = modulesOff.SpriteBillboards.mesh(def, 0)
+  local walkOff = modulesOff.SpriteBillboards.mesh(def, 3)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", step_weight = 0.5 }))
+  local standOn = modulesOn.SpriteBillboards.mesh(def, 0)
+  local walkOn = modulesOn.SpriteBillboards.mesh(def, 3)
+
+  eq(vertexSignature(standOn), vertexSignature(standOff),
+     "a pose parada (frame 0) nao se move com STEP WEIGHT ligado")
+  check(vertexSignature(walkOn) ~= vertexSignature(walkOff),
+        "controle: a pose de caminhada (frame 3) MUDA com STEP WEIGHT ligado -- "
+        .. "senao as duas comparacoes acima nao provariam nada")
+end
+
+do
+  -- teste obrigatorio 3: "o deslocamento e proporcional a altura -- o pe
+  -- fica parado, o topo move o maximo". Mesma fixture de tres alturas,
+  -- lida no frame de caminhada (3) com STEP WEIGHT: HIGH (forca 0.5).
+  -- Valores exatos, nao so "maior que": a formula (z += forca * y / cellH)
+  -- e linear por construcao, entao pe, meio e topo tem que bater o numero
+  -- exato, nao so a ordem.
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    paint(pixels, sheetW, cellW, frame, 7, 15, 1)
+    paint(pixels, sheetW, cellW, frame, 7, 8, 1)
+    paint(pixels, sheetW, cellW, frame, 7, 0, 1)
+  end
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local off = modulesOff.SpriteBillboards.mesh(def, 3)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", step_weight = 0.5 }))
+  local on = modulesOn.SpriteBillboards.mesh(def, 3)
+
+  local footOff, footOn = vertexZAt(off, 7, 0, 0.90), vertexZAt(on, 7, 0, 0.90)
+  local midOff, midOn = vertexZAt(off, 7, 8, 0.90), vertexZAt(on, 7, 8, 0.90)
+  local topOff, topOn = vertexZAt(off, 7, 16, 0.90), vertexZAt(on, 7, 16, 0.90)
+  check(footOff and footOn and midOff and midOn and topOff and topOn,
+        "teste encontra os tres vertices de frente (pe Y=0, meio Y=8, topo Y=16) "
+        .. "nas duas malhas")
+
+  eq(footOn - footOff, 0, "o pe (Y = 0) nao se move -- cisalhamento zero na base")
+  eq(midOn - midOff, 0.25, "o meio (Y = cellH / 2) move metade da forca -- proporcional a altura")
+  eq(topOn - topOff, 0.5, "o topo (Y = cellH) move a forca inteira -- o deslocamento maximo")
+end
+
+do
+  -- teste obrigatorio 4: "nenhuma coordenada X muda" -- a garantia contra
+  -- o espelho do host, que so inverte sinal em X. Usa a malha inteira
+  -- (frente, tras, laterais, topo, base), nao so os tres vertices de
+  -- frente medidos no teste anterior.
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    for lx = 4, 10 do paint(pixels, sheetW, cellW, frame, lx, 7, 1) end
+  end
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local off = modulesOff.SpriteBillboards.mesh(def, 3)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", step_weight = 0.5 }))
+  local on = modulesOn.SpriteBillboards.mesh(def, 3)
+
+  eq(xSignature(on), xSignature(off),
+     "nenhuma coordenada X muda -- mesma sequencia de vertices, so Z muda")
+  check(vertexSignature(on) ~= vertexSignature(off),
+        "controle: Z realmente mudou em algum vertice -- senao a comparacao de X "
+        .. "acima nao provaria nada")
+end
+
+do
+  -- teste obrigatorio 5: "a contagem de quads nao muda -- isto move
+  -- vertice, nao cria face". Mesma fixture do teste anterior.
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 6
+  local pixels = {}
+  for frame = 0, 5 do
+    for lx = 4, 10 do paint(pixels, sheetW, cellW, frame, lx, 7, 1) end
+  end
+  local def = { image = "sheet.png", frames = 6, frameWidth = cellW }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local off = modulesOff.SpriteBillboards.mesh(def, 3)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", step_weight = 0.5 }))
+  local on = modulesOn.SpriteBillboards.mesh(def, 3)
+
+  eq(quadCount(on), quadCount(off), "STEP WEIGHT ligado nao muda a contagem de quads")
+end
+
+-- teste obrigatorio 6 ("a chave de cache muda com a forca") ja esta
+-- coberto junto das outras cacheKeys, mais acima (cacheKey separa STEP
+-- WEIGHT mesmo sem limpar o cache, off/low/high, e ignora a forca quando
+-- SHAPE e CARVED).
+
+do
+  -- teste obrigatorio 7: "folha de 1 frame nao quebra". Uma folha de 1
+  -- frame nao tem pose de caminhada (m.frames < 6), entao `andando` fica
+  -- falso pelo bucket de frame, e a malha sai identica com a opcao ligada
+  -- ou desligada -- nao so "nao lanca excecao".
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  for lx = 4, 10 do paint(pixels, cellW, cellW, 0, lx, 7, 1) end
+  local def = { image = "sheet.png", frames = 1 }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local off = modulesOff.SpriteBillboards.mesh(def, 0)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", step_weight = 0.5 }))
+  local on = modulesOn.SpriteBillboards.mesh(def, 0)
+
+  check(off ~= nil and off.verts ~= nil,
+        "folha de 1 frame continua construindo malha com STEP WEIGHT ligado")
+  eq(vertexSignature(on), vertexSignature(off),
+     "folha de 1 frame: sem pose de caminhada, a malha sai identica ligado ou desligado")
+end
+
+do
+  -- restricao extra (nao numerada na spec, mas explicita: "confirme quais
+  -- [frames] sao, pelo codigo, em vez de assumir 3, 4 e 5"). Uma folha de 4
+  -- frames tem o indice 3 como frame VALIDO, mas nao como pose de
+  -- caminhada estabelecida -- o bucket de seis frames (parada 0/1/2,
+  -- caminhada 3/4/5) so vale a partir de seis frames. Uma implementacao
+  -- ingenua que checasse so `frame == 3` (o palpite que a spec
+  -- explicitamente pede para nao fazer) teria estourado o cisalhamento
+  -- aqui; a guarda `m.frames >= 6` e o que separa as duas.
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 4
+  local pixels = {}
+  for frame = 0, 3 do
+    paint(pixels, sheetW, cellW, frame, 7, 0, 1) -- topo: o ponto mais sensivel a um cisalhamento indevido
+  end
+  local def = { image = "sheet.png", frames = 4, frameWidth = cellW }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local off = modulesOff.SpriteBillboards.mesh(def, 3)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", step_weight = 0.5 }))
+  local on = modulesOn.SpriteBillboards.mesh(def, 3)
+
+  eq(vertexSignature(on), vertexSignature(off),
+     "folha de 4 frames, frame 3: sem pose de caminhada estabelecida (m.frames < 6), "
+     .. "a malha sai identica ligado ou desligado")
+end
+
+do
+  -- restricao extra, segunda metade: um frame acima de 5 dobra em bucket de
+  -- 3 (frame % 3), o mesmo bucket que carvedFrames ja usa para CARVED
+  -- (main.lua), entao nunca cai no bucket "andando" (posicao 3) mesmo numa
+  -- folha com seis frames ou mais. Frame 6 numa folha de 8: 6 % 3 = 0, o
+  -- bucket de frente PARADA, nao o de caminhada.
+  local cellW, cellH = 16, 16
+  local sheetW = cellW * 8
+  local pixels = {}
+  for frame = 0, 7 do
+    paint(pixels, sheetW, cellW, frame, 7, 0, 1)
+  end
+  local def = { image = "sheet.png", frames = 8, frameWidth = cellW }
+
+  local handleOff, modulesOff = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOff, { depth = 2, shape = "slab", step_weight = "off" }))
+  local off = modulesOff.SpriteBillboards.mesh(def, 6)
+
+  local handleOn, modulesOn = makeVoxelHandle("1.6.0", pixels, sheetW, cellH)
+  loadWith(makeMod(handleOn, { depth = 2, shape = "slab", step_weight = 0.5 }))
+  local on = modulesOn.SpriteBillboards.mesh(def, 6)
+
+  eq(vertexSignature(on), vertexSignature(off),
+     "frame 6 (acima de 5) dobra para o bucket parado por frame % 3, mesmo numa folha "
+     .. "com oito frames")
 end
 
 T.finish("voxel_chars_test")

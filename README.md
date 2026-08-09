@@ -51,7 +51,7 @@ once a host is found.
 
 ## Options
 
-Nine rows, under **OPTIONS**:
+Ten rows, under **OPTIONS**:
 
 ```
 STATUS:        read only, see below
@@ -63,6 +63,7 @@ BLINK:         OFF / ON
 TOP EDGE:      OFF / ON
 FRONT SHAPE:   OFF / LOW / MED / HIGH
 TOP DOME:      OFF / LOW / HIGH
+STEP WEIGHT:   OFF / LOW / HIGH
 ```
 
 `STATUS` is read only and recomputed live every time the menu opens, never
@@ -193,6 +194,34 @@ the two strengths measured against the silhouette gate, IoU 1.000 at every
 strength; there is no MED here, only the two measured points. `TOP EDGE` and
 `TOP DOME` shade the same face without conflict: `TOP DOME` steps whatever
 base `TOP EDGE` already produced, so turning one on never cancels the other.
+
+`STEP WEIGHT` shears the **SLAB** mesh toward the camera on walking frames
+only, proportional to height, so the solid's weight trails the art's own
+step instead of standing rigid while the sprite alone moves. Default is
+**OFF**. The shear only ever touches Z, and only on the three walking
+frames (front, back and side): at pitch 0, the camera the silhouette gate
+renders from, Z points straight at the camera, so this never changes a
+pixel of the silhouette; on the game's own overworld camera, which looks
+down from above, the same Z offset reads as vertical motion instead. There
+is no X component, so the host's mirror never sees this option, and the
+mesh keeps the same quad count at every strength: this moves vertices that
+already exist, it never adds a face. Which frames count as walking comes
+from the same six frame bucket `CARVED` already uses, not a fixed list, so
+a sheet with fewer than six frames has no walking pose and this option is
+a no-op on it. **LOW** (strength 0.25) and **HIGH** (0.5) are linear
+fractions of the same measured shear, not two separate measurements: HIGH
+is the strength measured against the silhouette gate, IoU 1.000 from -1.0
+to +1.0 in half steps on `red`, `blue`, `snorlax`, `poke_ball` and `nurse`,
+frames 0 through 5, and also the ceiling of the useful range: past it, the
+step starts reading as a crouch instead of a step. Measured on a 300 pixel
+test cell, the art alone already
+shifts the walking pose 8 pixels from the standing pose, and HIGH adds
+roughly 5 more; the character on screen during actual play is a small
+fraction of that test cell, so the real addition is on the order of a
+single pixel. This is a small amount of weight in the animation, not a
+visual redesign. Only the positive direction is exposed: a negative
+strength flattens the step instead, a different effect that is out of
+scope here.
 
 ## Compatibility
 

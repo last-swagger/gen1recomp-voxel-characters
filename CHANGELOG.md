@@ -91,6 +91,62 @@ the direction is named in the entry their contribution landed in.
   change nothing on screen until an unrelated cache eviction happened to
   clear the old mesh.
 
+- **`STEP WEIGHT: OFF / LOW / HIGH` shears the SLAB mesh toward the camera
+  on walking frames only, proportional to height, so the solid's weight
+  trails the art's own step.** When the character walks, only the sprite
+  art moves: the source art already drops a line on the walk frame, but the
+  solid this mod builds stayed rigid, the same shape at the same height in
+  both poses. This shears every vertex in Z by an amount proportional to
+  its own height above the foot, on walking frames only: the foot stays
+  put, the top of the mesh moves the most, and everything between scales
+  in a straight line.
+
+  The shear lands on Z on purpose, and that choice is what keeps it safe.
+  At pitch 0, the camera the silhouette gate renders from, Z points
+  straight at the camera, so shearing it does not move a single pixel of
+  the silhouette. At the game's own overworld camera, which looks down
+  from above, that same Z offset reads as vertical motion instead, adding
+  a touch of bounce to the step. There is no X component at all, so the
+  host's left/right mirror never sees this option. Default is OFF.
+
+  Which frames count as walking is read from the same six frame bucket the
+  mod's `CARVED` builder already uses (front, back and side standing,
+  then front, back and side walking), not a hardcoded frame list: a sheet
+  with fewer than six frames has no walking pose to begin with and this
+  option is a no-op on it, and a frame index past 5 folds back into the
+  standing bucket the same way `CARVED` already does, rather than being
+  guessed at.
+
+  LOW and HIGH are 0.25 and 0.5. The underlying shear is linear in
+  strength by construction, one multiplication with no shading steps or
+  quantization involved, so a strength halfway between two measured points
+  produces exactly half the measured effect, not an estimate. HIGH (0.5)
+  is the strength measured against the silhouette gate: IoU 1.000 against
+  the flat card at pitch 0, sampled from -1.0 to +1.0 in half steps, well
+  past the range exposed here, on `red`, `blue`, `snorlax`, `poke_ball` and
+  `nurse`, frames 0 through 5. It is also the ceiling of the useful range:
+  past it, the step starts reading as a crouch instead of a step, so
+  nothing higher is offered. LOW (0.25)
+  is exactly half that strength, inside the range that still reads as a
+  step. Only the positive direction is exposed: a negative strength
+  flattens the step instead of amplifying it, a different effect that is
+  out of scope for this change.
+
+  Calibrated honestly: measured on a 300 pixel test cell, the art alone
+  already shifts the walking pose 8 pixels from the standing pose, and
+  HIGH strength adds roughly 5 more. The character on screen during actual
+  play is a small fraction of that test cell, so the real addition is on
+  the order of a single pixel. This is a small amount of weight in the
+  animation, not a change anyone should expect to see as a new look for
+  the character.
+
+  The mesh cache key now carries the selected strength, the same fix
+  `FRONT SHAPE` and `TOP DOME` needed: without it, switching `STEP WEIGHT`
+  in the options menu would change nothing on screen until an unrelated
+  cache eviction happened to clear the old mesh. Quad count is unchanged
+  at every strength: this moves vertices that already existed, it never
+  adds a face.
+
 ## [1.5.0] - 2026-08-08
 
 ### Added

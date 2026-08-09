@@ -57,6 +57,7 @@ local BLINK_KEY = "blink"
 local TOP_EDGE_KEY = "top_edge"
 local FRONT_SHAPE_KEY = "front_shape"
 local TOP_DOME_KEY = "top_dome"
+local STEP_WEIGHT_KEY = "step_weight"
 local VALUES = { "off", 1, 2, 3, 5, 10 }
 local LABELS = { "OFF", "1", "2", "3", "5", "10" }
 local SIDE_COLOR_VALUES = { "body", "outline" }
@@ -95,6 +96,32 @@ local FRONT_SHAPE_LABELS = { "OFF", "LOW", "MED", "HIGH" }
 -- os dois pontos medidos, e um terceiro nivel sem medicao seria chute.
 local TOP_DOME_VALUES = { "off", 0.15, 0.30 }
 local TOP_DOME_LABELS = { "OFF", "LOW", "HIGH" }
+-- DECISAO: STEP WEIGHT desloca VERTICE (cisalhamento em Z), nao shade, entao
+-- ao contrario de FRONT SHAPE/TOP DOME a magnitude muda geometria de
+-- verdade, no formula z = z + forca * (y / cellH). Essa formula e linear na
+-- forca por construcao: nenhum degrau, nenhum quantizador, so uma
+-- multiplicacao. Kim mediu o deslocamento de tela numa celula de 300px em
+-- tres pontos (lean 0: +8px, so a arte; +0.5: +13px; -0.5: +3px) e a
+-- silhueta a pitch 0 (IoU 1.000) em CINCO pontos, -1.0 a +1.0, cobrindo
+-- folgadamente a faixa usada aqui. 0.5 e o teto medido e tambem o teto que
+-- Kim julgou como o limite antes do personagem parecer agachar em vez de
+-- andar (palpite dele, nao contrariado por nenhuma medicao nova: a formula
+-- linear nao da motivo para uma virada nao linear entre 0.25 e 0.5). 0.25 e
+-- exatamente a metade dessa forca; a mesma linearidade que garante metade
+-- do deslocamento medido garante metade do caminho ate qualquer efeito
+-- colateral, sem exigir uma malha nova pra confirmar. So o sinal positivo
+-- vira nivel: negativo achata o passo, um efeito diferente e fora do escopo
+-- desta rodada.
+--
+-- NOTA de orcamento: main.lua ja roda perto do teto de 200 locais do
+-- chunk principal (limite do proprio Lua/LuaJIT, LUAI_MAXVARS). Ao
+-- contrario de FRONT SHAPE/TOP DOME, que tem VALUES e LABELS como arrays
+-- paralelos e um DEFAULT_X e um DEFAULT_X_INDEX separados, STEP WEIGHT
+-- junta label e valor num so array de pares e usa so o indice default
+-- (posicao 1, "off", como todo default conservador desta lista) sem uma
+-- constante propria: dois locais a menos no chunk principal, mesmo
+-- resultado.
+local STEP_WEIGHT_LEVELS = { { "OFF", "off" }, { "LOW", 0.25 }, { "HIGH", 0.5 } }
 local DEFAULT_DEPTH = 3
 local DEFAULT_INDEX = 4  -- posicao de 3 em VALUES
 local DEFAULT_SIDE_COLOR = "body"
@@ -119,6 +146,11 @@ local DEFAULT_FRONT_SHAPE_INDEX = 1
 -- lancada ainda, entao OFF, como FRONT SHAPE.
 local DEFAULT_TOP_DOME = "off"
 local DEFAULT_TOP_DOME_INDEX = 1
+-- Regra da casa outra vez: STEP WEIGHT desloca vertice pela primeira vez
+-- nesta branch (FRONT SHAPE e TOP DOME so mexem em shade), entao o
+-- conservadorismo do default OFF vale ainda mais aqui. Sem constante propria
+-- (ver NOTA de orcamento acima de STEP_WEIGHT_LEVELS): "off" e sempre a
+-- posicao 1 desse array, como em toda opcao desta lista.
 -- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
 -- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
 -- usam um meio-termo para o slab ler como volume sem depender de sombra real.
@@ -370,6 +402,14 @@ mod.options:define({
     default = DEFAULT_TOP_DOME,
     help = "Steps the SLAB top face into pixel aligned shade tones toward each run's edges, for a domed cap instead of a flat one.",
   },
+  {
+    key = STEP_WEIGHT_KEY,
+    type = "choice",
+    label = "STEP WEIGHT",
+    choices = STEP_WEIGHT_LEVELS,
+    default = STEP_WEIGHT_LEVELS[1][2],
+    help = "Shears the SLAB mesh toward the camera on walking frames only, proportional to height, so the solid's weight trails the art's own step.",
+  },
 })
 
 local SpriteBillboards, Voxel3D, ImageCache
@@ -385,6 +425,7 @@ local blinkValue
 local topEdgeValue
 local frontShapeValue
 local topDomeValue
+local stepWeightValue
 local optionsRegistered = false
 local meshBlink = setmetatable({}, { __mode = "k" })
 local blinkVertexWarned = false
@@ -487,6 +528,13 @@ local function topDomeIndexOf(value)
   return DEFAULT_TOP_DOME_INDEX
 end
 
+local function stepWeightIndexOf(value)
+  for i, level in ipairs(STEP_WEIGHT_LEVELS) do
+    if level[2] == value then return i end
+  end
+  return 1
+end
+
 local function readDepth()
   local ok, value = pcall(mod.options.get, mod.options, KEY)
   if ok then return VALUES[indexOf(value)] end
@@ -533,6 +581,12 @@ local function readTopDome()
   local ok, value = pcall(mod.options.get, mod.options, TOP_DOME_KEY)
   if ok then return TOP_DOME_VALUES[topDomeIndexOf(value)] end
   return DEFAULT_TOP_DOME
+end
+
+local function readStepWeight()
+  local ok, value = pcall(mod.options.get, mod.options, STEP_WEIGHT_KEY)
+  if ok then return STEP_WEIGHT_LEVELS[stepWeightIndexOf(value)][2] end
+  return STEP_WEIGHT_LEVELS[1][2]
 end
 
 local function releaseMesh(mesh)
@@ -610,6 +664,18 @@ local function setTopDome(value)
   return topDomeValue
 end
 
+-- Mesmo padrao de FRONT SHAPE/TOP DOME: a forca entra na cacheKey (ver
+-- cacheKey abaixo) e tambem limpa o cache aqui, para as malhas velhas nao
+-- esperarem o LRU reciclar antes do passo novo aparecer na tela. Sem isso a
+-- opcao mudaria no menu sem mudar nada em tela ate o LRU reciclar por
+-- acaso -- o defeito que o Colonel_Aureliano reportou na v1.4.0.
+local function setStepWeight(value)
+  local nextValue = STEP_WEIGHT_LEVELS[stepWeightIndexOf(value)][2]
+  if stepWeightValue ~= nextValue then clearMeshCache() end
+  stepWeightValue = nextValue
+  return stepWeightValue
+end
+
 setDepth(readDepth())
 setSideColor(readSideColor())
 setShape(readShape())
@@ -618,6 +684,7 @@ setBlink(readBlink())
 setTopEdge(readTopEdge())
 setFrontShape(readFrontShape())
 setTopDome(readTopDome())
+setStepWeight(readStepWeight())
 Assets.register(clearCache)
 
 local function writeOption(game, key, value)
@@ -769,6 +836,23 @@ local function topDomeRow()
       i = ((i + (dir or 1) - 1) % #TOP_DOME_VALUES) + 1
       local value = setTopDome(TOP_DOME_VALUES[i])
       writeOption(game, TOP_DOME_KEY, value)
+      return true
+    end,
+  }
+end
+
+local function stepWeightRow()
+  return {
+    id = mod.id .. ":" .. STEP_WEIGHT_KEY,
+    label = "STEP WEIGHT",
+    value = function()
+      return STEP_WEIGHT_LEVELS[stepWeightIndexOf(stepWeightValue or readStepWeight())][1]
+    end,
+    step = function(game, dir)
+      local i = stepWeightIndexOf(stepWeightValue or readStepWeight())
+      i = ((i + (dir or 1) - 1) % #STEP_WEIGHT_LEVELS) + 1
+      local value = setStepWeight(STEP_WEIGHT_LEVELS[i][2])
+      writeOption(game, STEP_WEIGHT_KEY, value)
       return true
     end,
   }
@@ -1249,7 +1333,7 @@ end
 
 local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
                              groundShade, baseName, topEdge, frontShape,
-                             topDome)
+                             topDome, stepWeight)
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -1456,7 +1540,34 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   -- base e laterais usam texel fixo por pixel para poder buscar corpo no
   -- eixo certo sem misturar colunas de um run.
 
+  -- FEATURE STEP WEIGHT (v1.6.0): cisalhamento em Z proporcional a altura,
+  -- so nos frames de caminhada. Em Z de proposito: a pitch 0, a camera do
+  -- gate de conformidade, o eixo Z aponta para a camera, entao mexer nele
+  -- nao muda silhueta (Kim mediu IoU 1.000 em -1.0, -0.5, 0, +0.5 e +1.0).
+  -- Na camera do jogo, que olha de cima, o mesmo deslocamento em Z aparece
+  -- na vertical depois da rotacao de `correction` que `p()` ja aplicava.
+  -- Nada em X: o espelho do host nunca ve esta opcao.
+  --
+  -- "Frame de caminhada" e derivado do mesmo bucket que carvedFrames ja usa
+  -- para CARVED (main.lua, funcao carvedFrames abaixo), nao os literais 3,
+  -- 4 e 5 chutados: um frame acima de 5 dobra em bucket de 3 (frame % 3),
+  -- igual roleForFrame, e so entra no bucket "andando" (posicao 3) quando a
+  -- folha de fato tem seis frames. Isso cobre por construcao a restricao
+  -- "folhas com menos frames nao tem pose de caminhada": com m.frames < 6,
+  -- bucketFrame nunca chega a 3 dentro do intervalo valido de frame (ja
+  -- normalizado para [0, m.frames) no topo desta funcao), entao `andando`
+  -- fica falso e nenhuma folha de 1 ou 3 frames estoura.
+  local stepWeightForce = tonumber(stepWeight) or 0
+  local bucketFrame = frame
+  if bucketFrame > 5 then bucketFrame = bucketFrame % 3 end
+  local andando = bucketFrame >= 3 and m.frames >= 6
+  local stepWeightZ = andando and stepWeightForce or 0
+
   local function p(x, y, z)
+    -- Zero exato quando a opcao esta desligada ou o frame nao e de
+    -- caminhada: soma de 0.0 preserva o valor de z bit a bit, entao a
+    -- malha continua identica a de hoje nesses dois casos.
+    if stepWeightZ ~= 0 then z = z + stepWeightZ * (y / m.cellH) end
     -- A matriz do Dramatic Shape inclina o card no X, pivotando nos pes.
     -- A malha solida chega contra-rotacionada no mesmo pivo; depois do lean
     -- externo, o corpo volta a ficar de pe.
@@ -2082,23 +2193,24 @@ end
 
 local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape,
                                  groundShade, baseName, topEdge, frontShape,
-                                 topDome)
+                                 topDome, stepWeight)
   if shape == "carved" or shape == "carved_plus" then
     local ok, mesh = pcall(buildCarvedMesh, def, frame, depth, correction, m,
       sideColor, shape, groundShade)
     if ok and mesh then return mesh end
   end
   return buildSlabMesh(def, frame, depth, correction, m, sideColor, groundShade,
-    baseName, topEdge, frontShape, topDome)
+    baseName, topEdge, frontShape, topDome, stepWeight)
 end
 
--- FRONT SHAPE e TOP DOME, como TOP EDGE, so existem para SLAB: CARVED/CARVED+
--- constroem a partir do casco visual em voxels, sem o run frontal continuo
--- que emitFrontRun escalona nem o run de topo que topShadeDomo le. Fora do
--- SLAB, a chave ignora a forca de proposito, para nao duplicar malhas
--- identicas so porque o menu trocou de nivel.
+-- FRONT SHAPE, TOP DOME e STEP WEIGHT, como TOP EDGE, so existem para SLAB:
+-- CARVED/CARVED+ constroem a partir do casco visual em voxels, sem o run
+-- frontal continuo que emitFrontRun escalona, sem o run de topo que
+-- topShadeDomo le, e sem o `p()` que aplica o cisalhamento de STEP WEIGHT.
+-- Fora do SLAB, a chave ignora a forca de proposito, para nao duplicar
+-- malhas identicas so porque o menu trocou de nivel.
 local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
-                        groundShade, topEdge, frontShape, topDome)
+                        groundShade, topEdge, frontShape, topDome, stepWeight)
   local depthPart = (shape == "carved" or shape == "carved_plus") and "art"
     or tostring(depth)
   local topEdgePart = shape == "slab" and tostring(topEdge or "") or ""
@@ -2107,6 +2219,9 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
   -- sem isso, mexer no menu nao muda nada na tela ate o LRU reciclar por
   -- acaso, exatamente o defeito que o Colonel_Aureliano reportou na v1.4.0.
   local topDomePart = shape == "slab" and tostring(topDome or "") or ""
+  -- Mesma exigencia da spec desta rodada ("a chave de cache precisa incluir
+  -- a forca"), mesmo motivo de TOP DOME logo acima.
+  local stepWeightPart = shape == "slab" and tostring(stepWeight or "") or ""
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
@@ -2118,6 +2233,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
     topEdgePart,
     frontShapePart,
     topDomePart,
+    stepWeightPart,
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -2311,6 +2427,7 @@ local function registerOptionsRows()
       out[#out + 1] = topEdgeRow()
       out[#out + 1] = frontShapeRow()
       out[#out + 1] = topDomeRow()
+      out[#out + 1] = stepWeightRow()
     end
     return out
   end)
@@ -2332,6 +2449,8 @@ local function registerOptionsRows()
       setFrontShape(payload.value)
     elseif payload and payload.mod == mod.id and payload.key == TOP_DOME_KEY then
       setTopDome(payload.value)
+    elseif payload and payload.mod == mod.id and payload.key == STEP_WEIGHT_KEY then
+      setStepWeight(payload.value)
     end
   end)
 end
@@ -2352,6 +2471,7 @@ local function voxelMesh(def, frame)
   local topEdge = topEdgeValue or readTopEdge()
   local frontShape = frontShapeValue or readFrontShape()
   local topDome = topDomeValue or readTopDome()
+  local stepWeight = stepWeightValue or readStepWeight()
   local correction = quantizeCorrection(leanCorrection())
   local okMask, m = pcall(maskFor, def)
   if not (okMask and m) then
@@ -2361,12 +2481,13 @@ local function voxelMesh(def, frame)
   end
   local baseName = spriteBaseName(def and def.image)
   local key = cacheKey(def, frame, depth, correction, m, sideColor, shape,
-    groundShade, topEdge, frontShape, topDome)
+    groundShade, topEdge, frontShape, topDome, stepWeight)
   if meshes[key] ~= nil then
     touchMeshKey(key)
   else
     local ok, mesh = pcall(buildSelectedMesh, def, frame, depth, correction,
-      m, sideColor, shape, groundShade, baseName, topEdge, frontShape, topDome)
+      m, sideColor, shape, groundShade, baseName, topEdge, frontShape, topDome,
+      stepWeight)
     if ok and mesh then
       meshFailureReasons[key] = nil
     else
