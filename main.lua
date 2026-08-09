@@ -1602,28 +1602,39 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
         -- run recebe um shade CONSTANTE, escolhido entre FRONT_SHAPE_STEPS
         -- niveis pela distancia ate a borda do run, do mesmo jeito que o
         -- artista ja faz volume nos sprites fonte.
+        --
+        -- CORRECAO (pente fino de olho novo): `runCenter` e `runHalf` vem
+        -- do RUN INTEIRO (`lx`, `lx2`), nunca do segmento `a..b` que
+        -- `emitFrontRun` recebe. Um olho no meio do run corta a CHAMADA em
+        -- pedacos (o laco `isEye` logo abaixo), mas nao corta o run: o
+        -- pixel do olho continua opaco e dentro de `lx..lx2`. Medir contra
+        -- o segmento fazia cada pedaco tratar a propria ponta, colada no
+        -- olho, como se fosse a borda real da silhueta, entao esse pixel
+        -- saia no mesmo tom escuro da borda verdadeira: um anel escuro em
+        -- volta de cada olho, em qualquer folha com marca de olho
+        -- (`EYE_MARKS`/`EYE_SIDE_MARKS`) e independente da opcao BLINK,
+        -- porque o corte por `isEye` nunca consulta `blinkValue`. `lx` e
+        -- `lx2` espelham juntos como o resto do run, entao a simetria em X
+        -- exigida continua garantida por construcao: nunca uma coordenada
+        -- absoluta de tela, sempre os limites do proprio run.
+        local runCenter = (lx + lx2) / 2
+        local runHalf = (lx2 - lx) / 2
         local function emitFrontRun(a, b)
           if a > b then return end
-          -- Runs com menos de 3 pixels nao tem um pixel "do meio" distinto
-          -- das duas bordas: nao ha degrau possivel, e dividir so custaria
-          -- quad. Ficam no quad unico de sempre, igual a opcao desligada.
-          if frontStep <= 0 or b - a < 2 then
+          -- Sem degrau possivel quando a opcao esta desligada OU o RUN
+          -- INTEIRO, nao o segmento, tem menos de 3 pixels: nao ha um
+          -- pixel "do meio" distinto das duas bordas reais. Um segmento
+          -- curto colado num olho, dentro de um run largo, ainda precisa
+          -- do degrau: por isso a guarda olha `lx2 - lx`, nao `b - a`.
+          if frontStep <= 0 or lx2 - lx < 2 then
             local rx, rw = a, b - a + 1
             quad(p(rx, y, z1), p(rx + rw, y, z1),
                  p(rx + rw, y + 1, z1), p(rx, y + 1, z1),
                  rectUv(a, ly, b), OBJ_SHADE.front)
             return
           end
-          -- `center` e `half` sao relativos apenas a `a` e `b`, os limites
-          -- DESTE run (que ja chega aqui recortado pelos olhos, se algum
-          -- cair no meio). Nunca uma coordenada absoluta de tela: e o que
-          -- garante a simetria em X exigida, o run espelha junto com o
-          -- personagem e o shade espelha junto com ele, sem depender de
-          -- estar no lado leste ou oeste.
-          local center = (a + b) / 2
-          local half = (b - a) / 2
           for sx = a, b do
-            local t = math.abs(sx - center) / half
+            local t = math.abs(sx - runCenter) / runHalf
             local level = math.floor(t * (FRONT_SHAPE_STEPS - 0.001))
             local sh = OBJ_SHADE.front
               * (1 - frontStep * level / (FRONT_SHAPE_STEPS - 1))

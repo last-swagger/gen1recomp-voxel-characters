@@ -4322,6 +4322,51 @@ do
         "o segmento depois do olho de perfil se divide em degraus sem quebrar a piscada")
 end
 
+do
+  -- ACHADO (pente fino de olho novo): emitFrontRun calculava `center` e
+  -- `half` a partir do SEGMENTO recebido por chamada (a, b), nao do run
+  -- opaco inteiro (lx, lx2). O laco que corta o run nos olhos (main.lua,
+  -- logo abaixo da definicao de emitFrontRun) chama emitFrontRun uma vez
+  -- por pedaco, entao cada pedaco era tratado como se fosse um run
+  -- inteiro, com sua propria "borda mais escura" -- inclusive no pixel que
+  -- so esta colado no olho e nao perto de nenhuma borda real da silhueta.
+  -- Isso desenhava um anel escuro em volta de cada olho: vale para
+  -- qualquer folha com marca de olho, em toda pose que pisca, e independe
+  -- da opcao BLINK, porque o corte por isEye nunca consulta blinkValue --
+  -- por isso este teste nao liga BLINK. Nem a silhueta, nem a contagem de
+  -- quads, nem a estrutura tonal pegam isso: so o shade de pixels
+  -- especificos fica errado, por isso nenhum teste anterior encontrou o
+  -- defeito.
+  --
+  -- paintBlinkFaceWide pinta a linha inteira (lx 0 a 15) como um unico run
+  -- opaco, com os olhos do "red" (EYE_MARKS.red, lx 6 e 9) cortando as
+  -- CHAMADAS a emitFrontRun em tres pedacos sem cortar o run em si. Forca
+  -- 0.22 (HIGH), a mesma da reproducao do revisor.
+  local cellW, cellH = 16, 16
+  local pixels = {}
+  paintBlinkFaceWide(pixels, cellW, cellW, 0)
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+  loadWith(makeMod(handle, { depth = 2, shape = "slab", front_shape = 0.22 }))
+  local got = modules.SpriteBillboards.mesh({ image = "red.png", frames = 1 }, 0)
+  local trueEdgeLeft = frontQuadShadeAt(got, 0, 1, 8, 9)
+  local trueEdgeRight = frontQuadShadeAt(got, 15, 16, 8, 9)
+  local eyeAdjacentLeft = frontQuadShadeAt(got, 5, 6, 8, 9)
+  local eyeAdjacentRight = frontQuadShadeAt(got, 10, 11, 8, 9)
+  check(trueEdgeLeft ~= nil and trueEdgeRight ~= nil
+        and eyeAdjacentLeft ~= nil and eyeAdjacentRight ~= nil,
+        "teste encontra os quatro quads (duas bordas reais, dois pixels colados nos olhos)")
+  eq(trueEdgeLeft, trueEdgeRight,
+     "as duas bordas reais da silhueta saem no mesmo shade, o mais escuro do run")
+  check(eyeAdjacentLeft > trueEdgeLeft,
+        "o pixel colado no olho esquerdo sai mais claro que a borda real da silhueta, "
+        .. "nao no mesmo tom escuro")
+  check(eyeAdjacentRight > trueEdgeRight,
+        "o pixel colado no olho direito sai mais claro que a borda real da silhueta, "
+        .. "nao no mesmo tom escuro")
+  eq(eyeAdjacentLeft, eyeAdjacentRight,
+     "os dois pixels colados nos olhos saem simetricos entre si")
+end
+
 -- v1.6.0: TOP DOME. Volume na face de TOPO do SLAB em degraus alinhados ao
 -- pixel, opcao nova de menu com default OFF. Os seis testes abaixo sao os
 -- obrigatorios da spec da rodada; a row/step/persist e as duas variantes de
