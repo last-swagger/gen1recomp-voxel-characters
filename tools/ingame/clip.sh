@@ -25,7 +25,7 @@
 set -u
 REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
 SAVE="$HOME/Library/Application Support/LOVE/pokemon-love2d"
-LOVE="${LOVE_BIN:-/opt/homebrew/bin/love}"
+. "$(cd "$(dirname "$0")/.." && pwd)/love_bin.sh"
 DRIVER="$REPO/mods/voxel_characters/tools/ingame/clip.lua"
 
 SAIDA="${1:?uso: clip.sh <pasta-de-saida> <chave=valor>}"

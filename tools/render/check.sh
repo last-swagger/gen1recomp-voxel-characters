@@ -8,11 +8,20 @@
 # errado. Uma medicao feita com regua torta e pior que nenhuma: ela produz
 # confianca.
 set -u
-LOVE=/opt/homebrew/bin/love
+. "$(cd "$(dirname "$0")/.." && pwd)/love_bin.sh"
 H=mods/voxel_characters/tools/render
 FAIL=0
 
 say() { printf "%-52s %s\n" "$1" "$2"; }
+
+# Checagem que compara DUAS medicoes passa comparando vazio com vazio quando o
+# render nem rodou. Foi assim que a regua ficou verde numa maquina sem o LOVE
+# no caminho esperado. Toda medicao usada numa igualdade passa por aqui antes.
+medido() {
+  [ -n "$1" ] && return 0
+  echo "  (sem medicao: o render nao produziu saida)" >&2
+  return 1
+}
 
 # 1. Convencoes internas: eixos, formas de setVertex, contagem de frames.
 OUT=$($LOVE $H selftest=1 2>&1 | grep "autoteste")
@@ -104,7 +113,7 @@ A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=220 \
 B=$($LOVE $H sprite=red shapes=flat,slab,carved frames=0 yaws=0 rungs=35 cell=220 \
     metrics=1 out=chk_juntos.png 2>&1 | grep "^  slab" | grep -o "art *[0-9.]*")
 say "medicao nao vaza entre celulas" "sozinho $A / ao lado do carved $B"
-[ "$A" = "$B" ] || FAIL=1
+medido "$A" && medido "$B" && [ "$A" = "$B" ] || FAIL=1
 
 # 5b. A passagem generica de opcao chega no mod. Sem isto, uma opcao nova
 #     mediria com o padrao e ninguem notaria.

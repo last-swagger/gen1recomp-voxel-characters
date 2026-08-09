@@ -20,7 +20,7 @@ set -u
 REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
 SAVE="$HOME/Library/Application Support/LOVE/pokemon-love2d"
 MARCADOR="$SAVE/relaunch_to_launcher.txt"
-LOVE="${LOVE_BIN:-/opt/homebrew/bin/love}"
+. "$(cd "$(dirname "$0")/.." && pwd)/love_bin.sh"
 DRIVER="${VC_DRIVER:-$REPO/mods/voxel_characters/tools/ingame/driver.lua}"
 
 SAIDA="${1:?uso: run.sh <pasta-de-saida> [chave=valor]}"
