@@ -41,6 +41,10 @@ tools/ingame/run.sh
 # a posicao por instancia chega limpa. So medicao, nao muda nada. Ferramenta.
 tools/ingame/probe_draw.lua
 
+# O gate numerico do canal de vida: mede em pixel, no jogo rodando, se a
+# respiracao chega na tela e se responde ao menu. Ferramenta, nao conteudo.
+tools/ingame/probe_life.lua
+
 # Mais renders de comparacao para as notas de release.
 docs/images/walk-offset.png
 docs/images/blink-walk.png

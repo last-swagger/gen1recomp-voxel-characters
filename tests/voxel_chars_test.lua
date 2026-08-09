@@ -473,6 +473,33 @@ local function withLoveTime(value, fn)
   if not ok then error(err) end
 end
 
+-- vida: monta uma matriz de mundo de 16 numeros, row-major, no mesmo
+-- formato que VoxelScene.billboardMatrix entrega (traducao na 4a coluna de
+-- cada linha). model[1] faz dupla funcao, exatamente como no host: sinal do
+-- espelho E x da linha 0 na formula de cisalhamento. As outras 15 celulas
+-- sao numeros fixos e distintos (cada celula vale o proprio indice, exceto
+-- as tres do contrato: model[1], model[4] e model[12]), para os testes
+-- conseguirem distinguir "essa celula mudou" de "essa celula nao mudou"
+-- sem precisar inspecionar nada alem da propria matriz.
+local function lifeModel(px, py, mirrored)
+  local sign = mirrored and -1 or 1
+  return {
+    sign, 2, 3, mirrored and (px + 16) or px,
+    5, 6, 7, 8,
+    9, 10, 11, py + 8,
+    13, 14, 15, 16,
+  }
+end
+
+-- compara duas matrizes de 16 numeros celula a celula, com a mesma
+-- tolerancia de `close`.
+local function sameMatrix(a, b)
+  for i = 1, 16 do
+    if not close(a[i], b[i]) then return false end
+  end
+  return true
+end
+
 local function paintBlinkFace(pixels, sheetW, cellW, frame)
   local skin = rgba(0.80, 0.55, 0.40, 1)
   local eye = rgba(0.05, 0.05, 0.05, 1)
@@ -570,8 +597,15 @@ end
 -- antes de SLAB e CARVED). cardBlend controla o retorno do stub de
 -- FirstPerson.cardBlend(); omitFirstPerson tira o modulo do namespace, para
 -- provar a versao do host onde FirstPerson nem existe.
+--
+-- withDraw da suporte ao canal de vida (main.lua, lifeDrawWrap): sem ele o
+-- Voxel3D do mock nao tem campo `draw`, do mesmo jeito que o host de sempre
+-- neste arquivo, entao drawWrap fica false e LIFE le NO CHANNEL. Com ele, o
+-- mock ganha um `draw` que so registra a chamada (mesh, texture, model,
+-- pull, sunModel) em Voxel3D.drawCalls, para os testes lerem depois, e
+-- devolve "drew" para simular um retorno qualquer do host.
 local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
-                               cardBlend, omitFirstPerson, hostId)
+                               cardBlend, omitFirstPerson, hostId, withDraw)
   local modules = {}
   local V = {}
   local original = function(def, frame)
@@ -580,7 +614,8 @@ local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
   function V.require(name)
     if modules[name] then return modules[name] end
     if name == "Voxel3D" then
-      modules[name] = {
+      local voxel3D
+      voxel3D = {
         created = 0,
         FORMAT = {
           { "VertexPosition", "float", 3 },
@@ -602,10 +637,20 @@ local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
         end,
         newMesh = function(verts, map)
           if #verts == 0 then return nil end
-          modules[name].created = modules[name].created + 1
+          voxel3D.created = voxel3D.created + 1
           return fakeMesh(verts, map)
         end,
       }
+      if withDraw then
+        voxel3D.drawCalls = {}
+        voxel3D.draw = function(mesh, texture, model, pull, sunModel)
+          local calls = voxel3D.drawCalls
+          calls[#calls + 1] = { mesh = mesh, texture = texture,
+            model = model, pull = pull, sunModel = sunModel }
+          return "drew"
+        end
+      end
+      modules[name] = voxel3D
     elseif name == "ImageCache" then
       modules[name] = { get = function() return fakeImage(pixels, w, h) end }
     elseif name == "SpriteBillboards" then
@@ -688,6 +733,15 @@ local function statusRowValue(mod)
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
   for _, row in ipairs(rows) do
     if row.label == "STATUS" then return row.value() end
+  end
+end
+
+-- vida: mesma ideia de statusRowValue, para a row de LIFE.
+local function lifeRowValue(mod)
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  for _, row in ipairs(rows) do
+    if row.label == "LIFE" then return row.value() end
   end
 end
 
@@ -1090,17 +1144,18 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 11, "hook anexa as rows do voxel characters, mais STATUS")
+  eq(#rows, 12, "hook anexa as rows do voxel characters, mais STATUS e LIFE")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
-  local option = rows[3]
-  eq(rows[4].label, "SIDE COLOR", "hook anexa a row de cor lateral")
-  eq(rows[5].label, "SHAPE", "hook anexa a row de shape")
-  eq(rows[6].label, "GROUND SHADE", "hook anexa a row de ground shade")
-  eq(rows[7].label, "BLINK", "hook anexa a row de blink")
-  eq(rows[8].label, "TOP EDGE", "hook anexa a row de top edge")
-  eq(rows[9].label, "FRONT SHAPE", "hook anexa a row de front shape")
-  eq(rows[10].label, "TOP DOME", "hook anexa a row de top dome")
-  eq(rows[11].label, "STEP WEIGHT", "hook anexa a row de step weight")
+  eq(rows[3].label, "LIFE", "hook anexa a row de LIFE logo depois do STATUS")
+  local option = rows[4]
+  eq(rows[5].label, "SIDE COLOR", "hook anexa a row de cor lateral")
+  eq(rows[6].label, "SHAPE", "hook anexa a row de shape")
+  eq(rows[7].label, "GROUND SHADE", "hook anexa a row de ground shade")
+  eq(rows[8].label, "BLINK", "hook anexa a row de blink")
+  eq(rows[9].label, "TOP EDGE", "hook anexa a row de top edge")
+  eq(rows[10].label, "FRONT SHAPE", "hook anexa a row de front shape")
+  eq(rows[11].label, "TOP DOME", "hook anexa a row de top dome")
+  eq(rows[12].label, "STEP WEIGHT", "hook anexa a row de step weight")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -1136,7 +1191,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[7]
+  local option = rows[8]
   eq(option.label, "TOP EDGE", "row de TOP EDGE fica depois de BLINK")
   eq(option.value(), "ON", "TOP EDGE default e ON")
   check(option.step(game, 1), "step de TOP EDGE informa mudanca")
@@ -1171,7 +1226,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[8]
+  local option = rows[9]
   eq(option.label, "FRONT SHAPE", "row de FRONT SHAPE fica depois de TOP EDGE")
   eq(option.value(), "OFF", "FRONT SHAPE default e OFF")
   check(option.step(game, 1), "step de FRONT SHAPE informa mudanca")
@@ -1213,7 +1268,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[9]
+  local option = rows[10]
   eq(option.label, "TOP DOME", "row de TOP DOME fica depois de FRONT SHAPE")
   eq(option.value(), "OFF", "TOP DOME default e OFF")
   check(option.step(game, 1), "step de TOP DOME informa mudanca")
@@ -1254,7 +1309,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[10]
+  local option = rows[11]
   eq(option.label, "STEP WEIGHT", "row de STEP WEIGHT fica depois de TOP DOME")
   eq(option.value(), "OFF", "STEP WEIGHT default e OFF")
   check(option.step(game, 1), "step de STEP WEIGHT informa mudanca")
@@ -3946,24 +4001,25 @@ end
 
 do
   -- as rows existentes continuam aparecendo na mesma ordem, depois do
-  -- STATUS.
+  -- STATUS e da LIFE.
   local pixels = {}
   pixels[0] = 1
   local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 10, "com host, dez rows: STATUS mais as nove de sempre")
+  eq(#rows, 11, "com host, onze rows: STATUS, LIFE, mais as nove de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
-  eq(rows[2].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
-  eq(rows[3].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
-  eq(rows[4].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
-  eq(rows[5].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
-  eq(rows[6].label, "BLINK", "BLINK continua na mesma posicao relativa")
-  eq(rows[7].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
-  eq(rows[8].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
-  eq(rows[9].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
-  eq(rows[10].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
+  eq(rows[2].label, "LIFE", "LIFE vem logo depois do STATUS")
+  eq(rows[3].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
+  eq(rows[4].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
+  eq(rows[5].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
+  eq(rows[6].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
+  eq(rows[7].label, "BLINK", "BLINK continua na mesma posicao relativa")
+  eq(rows[8].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
+  eq(rows[9].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
+  eq(rows[10].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
+  eq(rows[11].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
 end
 
 do
@@ -4860,6 +4916,424 @@ do
   eq(vertexSignature(on), vertexSignature(off),
      "frame 6 (acima de 5) dobra para o bucket parado por frame % 3, mesmo numa folha "
      .. "com oito frames")
+end
+
+-- ========================================================================
+-- VIDA: BREATH, SWAY, MOTION LAG (canal novo em cima de Voxel3D.draw)
+-- ========================================================================
+--
+-- O host so oferece o segundo ponto de patch quando makeVoxelHandle recebe
+-- withDraw=true. Os testes abaixo cobrem o canal instalando, a row de LIFE
+-- reportando cada estado, as tres rows do menu so aparecendo com o canal, e
+-- o contrato de matriz (so a coluna 2 muda, os pes ficam parados, o
+-- espelho inverte o cisalhamento, personalidade por folha, primeira
+-- pessoa, sunModel, e a fase seguindo o relogio em vez da posicao).
+
+do
+  -- item 1: com host que desenha, o canal instala e troca o campo
+  -- Voxel3D.draw pela funcao deste mod.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local voxel3D = handle.exports.lib.require("Voxel3D")
+  local originalDrawFn = voxel3D.draw
+  loadWith(makeMod(handle))
+  check(modules.Voxel3D.draw ~= originalDrawFn,
+        "com host que desenha, o canal instala e troca Voxel3D.draw")
+end
+
+do
+  -- item 2: sem canal (host sem draw), LIFE diz NO CHANNEL mesmo com host
+  -- valido e patch feito.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle))
+  eq(lifeRowValue(mod), "NO CHANNEL",
+     "host sem Voxel3D.draw: LIFE diz NO CHANNEL")
+end
+
+do
+  -- item 2: com canal e as tres opcoes desligadas (default), LIFE diz OFF.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle))
+  eq(lifeRowValue(mod), "OFF",
+     "host com canal, as tres opcoes desligadas: LIFE diz OFF")
+end
+
+do
+  -- item 2: so BREATH ligado.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle, { breath = 0.020 }))
+  eq(lifeRowValue(mod), "BREATH", "so BREATH ligado: LIFE diz BREATH")
+end
+
+do
+  -- item 2: as tres ligadas juntas, na ordem BREATH+SWAY+LAG.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle,
+    { breath = 0.020, sway = 0.20, lag = 0.35 }))
+  eq(lifeRowValue(mod), "BREATH+SWAY+LAG",
+     "as tres ligadas: LIFE junta os nomes com +")
+end
+
+do
+  -- item 3: sem canal, as tres rows de vida nao aparecem no menu.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16)
+  local mod = loadWith(makeMod(handle))
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  local labels = {}
+  for _, row in ipairs(rows) do labels[row.label] = true end
+  check(not (labels.BREATH or labels.SWAY or labels["MOTION LAG"]),
+        "sem canal, BREATH/SWAY/MOTION LAG nao aparecem no menu")
+end
+
+do
+  -- item 3: com canal, as tres rows aparecem depois de STEP WEIGHT, nesta
+  -- ordem, com os rotulos certos.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle))
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+  eq(#rows, 14,
+     "com canal, catorze rows: STATUS, LIFE e as doze opcoes (nove de sempre mais vida)")
+  eq(rows[11].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
+  eq(rows[12].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
+  eq(rows[13].label, "SWAY", "SWAY aparece depois de BREATH")
+  eq(rows[14].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
+end
+
+do
+  -- item 4: com as tres opcoes desligadas, o desenho passa direto: o
+  -- original recebe a MESMA tabela de model, por identidade.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model = lifeModel(32, 48, false)
+  modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+  local call = modules.Voxel3D.drawCalls[1]
+  check(call.model == model,
+        "as tres opcoes desligadas: o original recebe a mesma tabela de model")
+end
+
+do
+  -- item 5: uma malha que este mod nunca produziu passa direto, mesmo com
+  -- BREATH ligado.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.020 }))
+  local foreignMesh = {}
+  local model = lifeModel(32, 48, false)
+  modules.Voxel3D.draw(foreignMesh, "tex", model, "pull", nil)
+  local call = modules.Voxel3D.drawCalls[1]
+  check(call.model == model,
+        "malha estranha ao mod: o original recebe a mesma tabela de model, "
+        .. "mesmo com BREATH ligado")
+end
+
+do
+  -- item 6: so BREATH ligado muda so a coluna 2 (indices 2, 6, 10, 14),
+  -- escalando pelo mesmo fator nas quatro linhas; a tabela do chamador nao
+  -- e mutada.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.020 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model = lifeModel(32, 48, false)
+  modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+  local out = modules.Voxel3D.drawCalls[1].model
+  check(out ~= model, "BREATH ligado: o original recebe uma tabela nova")
+  for _, i in ipairs({ 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16 }) do
+    eq(out[i], model[i], "BREATH so muda a coluna 2, indice " .. i .. " fica igual")
+  end
+  local s = out[2] / model[2]
+  check(math.abs(s - 1) > 0.0001, "BREATH realmente escalou a coluna 2")
+  check(close(out[6], model[6] * s), "coluna 2 escala pelo mesmo fator na linha 1")
+  check(close(out[10], model[10] * s), "coluna 2 escala pelo mesmo fator na linha 2")
+  check(close(out[14], model[14] * s), "coluna 2 escala pelo mesmo fator na linha 3")
+  check(model[1] == 1 and model[2] == 2 and model[3] == 3 and model[4] == 32
+    and model[5] == 5 and model[6] == 6 and model[7] == 7 and model[8] == 8
+    and model[9] == 9 and model[10] == 10 and model[11] == 11 and model[12] == 56
+    and model[13] == 13 and model[14] == 14 and model[15] == 15 and model[16] == 16,
+    "a tabela original do chamador nao foi mutada")
+end
+
+do
+  -- item 7: os pes nao se movem. A malha tem y local = 0 no chao, e local
+  -- (0,0,0) cai exatamente na traducao (coluna 4: indices 4, 8, 12, 16),
+  -- que a formula da coluna 2 nunca toca. Testado com as tres opcoes
+  -- ligadas juntas, o caso de cisalhamento maximo.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.035, sway = 0.45, lag = 0.70 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model = lifeModel(32, 48, false)
+  modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+  local out = modules.Voxel3D.drawCalls[1].model
+  check(out ~= model, "com as tres opcoes ligadas, o original recebe uma tabela nova")
+  eq(out[4], model[4], "coluna 4 (traducao) da linha 0 fica intacta, os pes nao se movem")
+  eq(out[8], model[8], "coluna 4 da linha 1 fica intacta")
+  eq(out[12], model[12], "coluna 4 da linha 2 fica intacta")
+  eq(out[16], model[16], "coluna 4 da linha 3 fica intacta")
+end
+
+do
+  -- item 8: o espelho inverte o cisalhamento. Mesma posicao (px, py)
+  -- recuperada dos dois jeitos (model[1] = 1 direto, model[1] = -1 com
+  -- model[4] deslocado em +16), mesmo relogio: a contribuicao de kx (o
+  -- termo que a coluna 2 ganha alem da escala, recuperado dividindo pelo
+  -- proprio model[1]) sai com sinal oposto.
+  local pixels = {}
+  pixels[0] = 1
+  local px, py = 32, 48
+
+  local handleA, modulesA = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handleA, { sway = 0.45 }))
+  local meshA = modulesA.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local modelA = lifeModel(px, py, false)
+  modulesA.Voxel3D.draw(meshA, "tex", modelA, "pull", nil)
+  local outA = modulesA.Voxel3D.drawCalls[1].model
+  local kxA = (outA[2] - modelA[2]) / modelA[1]
+
+  local handleB, modulesB = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handleB, { sway = 0.45 }))
+  local meshB = modulesB.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local modelB = lifeModel(px, py, true)
+  modulesB.Voxel3D.draw(meshB, "tex", modelB, "pull", nil)
+  local outB = modulesB.Voxel3D.drawCalls[1].model
+  local kxB = (outB[2] - modelB[2]) / modelB[1]
+
+  check(math.abs(kxA) > 0.0001, "sem espelho, o balanco realmente contribuiu algo")
+  check(close(kxA, -kxB), "com espelho, a contribuicao de kx sai com sinal oposto")
+end
+
+do
+  -- item 9: personalidade por folha. poke_ball tem breath = 0: mesmo com
+  -- BREATH em STRONG, a coluna 2 sai identica. Uma folha ausente da tabela
+  -- usa multiplicador 1 e muda normalmente.
+  local pixels = {}
+  pixels[0] = 1
+
+  local handleObj, modulesObj = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handleObj, { breath = 0.035 }))
+  local ballMesh = modulesObj.SpriteBillboards.mesh(
+    { image = "poke_ball.png", frames = 1 }, 0)
+  local ballModel = lifeModel(32, 48, false)
+  modulesObj.Voxel3D.draw(ballMesh, "tex", ballModel, "pull", nil)
+  local ballOut = modulesObj.Voxel3D.drawCalls[1].model
+  eq(ballOut[2], ballModel[2], "poke_ball nao respira: coluna 2 sai identica")
+  eq(ballOut[6], ballModel[6], "poke_ball nao respira: coluna 2 (linha 1) sai identica")
+
+  local handlePerson, modulesPerson = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handlePerson, { breath = 0.035 }))
+  local personMesh = modulesPerson.SpriteBillboards.mesh(
+    { image = "sheet.png", frames = 1 }, 0)
+  local personModel = lifeModel(32, 48, false)
+  modulesPerson.Voxel3D.draw(personMesh, "tex", personModel, "pull", nil)
+  local personOut = modulesPerson.Voxel3D.drawCalls[1].model
+  check(math.abs(personOut[2] - personModel[2]) > 0.0001,
+        "folha ausente da tabela de personalidade usa multiplicador 1 e muda")
+end
+
+do
+  -- item 10: model[1] fora de +-1 (mistura de yaw de primeira pessoa) faz
+  -- passar direto, mesmo com BREATH ligado.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.020 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model = lifeModel(32, 48, false)
+  model[1] = 0.5
+  modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+  local call = modules.Voxel3D.drawCalls[1]
+  check(call.model == model,
+        "model[1] nao e +-1: passa direto, mesma tabela por identidade")
+end
+
+do
+  -- item 11: sunModel recebe a mesma escala s que o corpo, numa tabela
+  -- nova. Sem sunModel, continua nil.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.020 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model = lifeModel(32, 48, false)
+  local sunModel = lifeModel(32, 48, false)
+  modules.Voxel3D.draw(mesh, "tex", model, "pull", sunModel)
+  local call = modules.Voxel3D.drawCalls[1]
+  check(call.sunModel ~= sunModel, "sunModel: o original recebe uma tabela nova")
+  local s = call.model[2] / model[2]
+  check(close(call.sunModel[2], sunModel[2] * s),
+        "sunModel escala pelo mesmo fator s que o corpo")
+
+  local handleNil, modulesNil = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handleNil, { breath = 0.020 }))
+  local meshNil = modulesNil.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local modelNil = lifeModel(32, 48, false)
+  modulesNil.Voxel3D.draw(meshNil, "tex", modelNil, "pull", nil)
+  eq(modulesNil.Voxel3D.drawCalls[1].sunModel, nil, "sem sunModel, continua nil")
+end
+
+do
+  -- item 11, extra: sunModel usa kz = 0 sempre (main.lua diz isso
+  -- explicitamente), mesmo quando o corpo tem kz != 0 por causa de MOTION
+  -- LAG. Duas rodadas identicas, so o componente z de sunModel muda; se kz
+  -- vazasse para sunModel, mudar esse componente mudaria o resultado
+  -- junto.
+  local function lagSunColumn2(sunZ)
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { lag = 0.70 }))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    withLoveTime(0, function()
+      local model = lifeModel(0, 0, false)
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+    end)
+    local out
+    withLoveTime(0.1, function()
+      local model = lifeModel(0, -6, false)
+      local sunModel = lifeModel(0, -6, false)
+      sunModel[3] = sunZ
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", sunModel)
+      out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].sunModel
+    end)
+    return out[2]
+  end
+  local a = lagSunColumn2(500)
+  local b = lagSunColumn2(-500)
+  eq(a, b,
+     "sunModel ignora kz: mudar o componente z de sunModel nao muda a coluna 2, "
+     .. "mesmo com MOTION LAG ligado")
+end
+
+do
+  -- item 12: a fase avanca com o RELOGIO, nao com a posicao. Mesmo
+  -- personagem, mesma posicao, dois relogios diferentes: a escala muda.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.020 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local sA, sB
+  withLoveTime(0, function()
+    local model = lifeModel(0, 0, false)
+    modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+    sA = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model[2] / model[2]
+  end)
+  withLoveTime(1.5, function()
+    local model = lifeModel(0, 0, false)
+    modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+    sB = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model[2] / model[2]
+  end)
+  check(not close(sA, sB),
+        "mesmo personagem, mesma posicao, relogios diferentes: a escala muda")
+end
+
+do
+  -- item 12, continuacao: a mesma fase, avancada pelo mesmo tempo, vale
+  -- tanto parado quanto tendo andado um pouco dentro da mesma celula de
+  -- 16px: a posicao nova NAO gera uma fase semeada do zero.
+  local function laterScale(px1)
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { breath = 0.020 }))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    withLoveTime(0, function()
+      local model = lifeModel(0, 0, false)
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+    end)
+    local s
+    withLoveTime(1.5, function()
+      local model = lifeModel(px1, 0, false)
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+      s = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model[2] / model[2]
+    end)
+    return s
+  end
+  local sStill = laterScale(0)
+  local sMoved = laterScale(4)
+  check(close(sStill, sMoved),
+        "personagem andou um pouco na mesma celula: a fase segue o tempo decorrido, "
+        .. "nao a nova posicao")
+end
+
+do
+  -- item 13: duas instancias da mesma folha, mesmo relogio, posicoes bem
+  -- diferentes: escalas diferentes (fora de fase uma da outra).
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.020 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  withLoveTime(0, function()
+    local model1 = lifeModel(0, 0, false)
+    modules.Voxel3D.draw(mesh, "tex", model1, "pull", nil)
+    local model2 = lifeModel(200, 0, false)
+    modules.Voxel3D.draw(mesh, "tex", model2, "pull", nil)
+    local calls = modules.Voxel3D.drawCalls
+    local s1 = calls[1].model[2] / model1[2]
+    local s2 = calls[2].model[2] / model2[2]
+    check(not close(s1, s2),
+          "duas posicoes bem diferentes, mesmo relogio: escalas diferentes")
+  end)
+end
+
+do
+  -- item 14: o reflexo na agua. O host desenha o mesmo personagem duas
+  -- vezes por quadro com a MESMA matriz; a segunda chamada nao pode
+  -- avancar nada de novo, entao as duas saidas saem iguais.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.020 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local model = lifeModel(40, 24, false)
+  modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+  modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+  local calls = modules.Voxel3D.drawCalls
+  check(sameMatrix(calls[1].model, calls[2].model),
+        "duas chamadas na mesma posicao e no mesmo instante: as duas saidas saem iguais")
 end
 
 T.finish("voxel_chars_test")

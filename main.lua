@@ -208,12 +208,79 @@ local OPTIONS = {
     help = "Shears the SLAB mesh toward the camera on walking frames only, proportional to height, so the solid's weight trails the art's own step.",
     clears = "mesh",
   },
+  -- ------------------------------------------------------------------ VIDA
+  -- As tres opcoes abaixo NAO tocam em malha. Elas pos-multiplicam a MATRIZ
+  -- que o host monta por personagem por quadro, dentro do nosso wrap de
+  -- Voxel3D.draw. Por isso nao tem `clears`: a geometria cacheada continua
+  -- valendo, e trocar de nivel tem efeito no quadro seguinte.
+  --
+  -- Por que matriz e nao vertice: a malha e criada com dica "static"
+  -- (Voxel3D.newMesh) e COMPARTILHADA por todas as instancias da mesma folha.
+  -- Reescrever vertice todo quadro seria o mau uso que a dica existe para
+  -- evitar, e faria dois NPCs iguais respirarem em unissono. A matriz chega
+  -- recem alocada por instancia (medido: tools/ingame/probe_draw.lua, oito
+  -- propriedades, todas passaram), entao ela e o canal certo.
+  {
+    key = "breath",
+    label = "BREATH",
+    -- Escala em Y em torno dos PES. O pivo ja esta nos pes por construcao da
+    -- matriz do host, e S(1,s,1) comuta com o espelho e com o T(-8,0,0)
+    -- local, entao pos-multiplicar a matriz final da exatamente "o corpo
+    -- estica para cima a partir do chao" (conferido na algebra e confirmado
+    -- por revisao externa independente).
+    --
+    -- Os numeros sao fracao da altura: a folha tem 16 px de altura, entao
+    -- 0.010 desloca o topo da cabeca em 0.16 px de mundo. Default OFF pela
+    -- regra da casa: toda mudanca visual nova entra como opcao desligada.
+    levels = {
+      { "OFF", "off" }, { "SUBTLE", 0.010 }, { "NORMAL", 0.020 },
+      { "STRONG", 0.035 },
+    },
+    defaultIndex = 1,
+    help = "Breathes the solid by scaling it vertically from the feet, out of phase per character, so a room of NPCs stops reading as frozen.",
+  },
+  {
+    key = "sway",
+    label = "SWAY",
+    -- Cisalhamento em X proporcional a altura: x' = x + k*(y/cellH). Os pes
+    -- ficam cravados (y=0) e a cabeca desloca k px. O sinal e invertido
+    -- quando a folha esta espelhada, senao o balanco viraria de lado junto
+    -- com o personagem.
+    levels = { { "OFF", "off" }, { "SUBTLE", 0.20 }, { "NORMAL", 0.45 } },
+    defaultIndex = 1,
+    help = "Sways the solid side to side from the feet, at half the breath rate and its own phase, for idle weight shift.",
+  },
+  {
+    key = "lag",
+    label = "MOTION LAG",
+    -- Inercia. Uma mola de segunda ordem por instancia persegue a velocidade do
+    -- personagem e cisalha o corpo NA DIRECAO CONTRARIA, proporcional a altura,
+    -- com passagem do ponto quando ele para.
+    --
+    -- O QUE ISTO NAO E, e a honestidade importa aqui porque o nome engana
+    -- facil: nao e movimento secundario por parte. Uma matriz transforma a
+    -- malha inteira de um jeito so; ela nao consegue segurar a mochila
+    -- enquanto o tronco acompanha o passo. Revisao externa foi direta nesse
+    -- ponto e esta certa. O que sai daqui e o CORPO TODO inclinando a partir
+    -- dos pes, que le como peso e inercia, nao como cabelo esvoacando.
+    --
+    -- Movimento secundario de verdade exige submalha por regiao (corpo,
+    -- cabeca, mochila) desenhada com matriz propria. Isso NAO esta feito, e
+    -- esta escrito assim no roadmap para ninguem achar que esta.
+    levels = { { "OFF", "off" }, { "SUBTLE", 0.35 }, { "NORMAL", 0.70 } },
+    defaultIndex = 1,
+    help = "Leans the whole solid back from its feet with a spring while it moves, and overshoots when it stops, so the body carries weight instead of sliding.",
+  },
 }
 
 local OPTION_BY_KEY = {}
 for _, opt in ipairs(OPTIONS) do
   OPTION_BY_KEY[opt.key] = opt
 end
+
+-- As opcoes que dependem do SEGUNDO ponto de patch (Voxel3D.draw). Sem esse
+-- canal elas nao aparecem no menu: ver registerOptionsRows.
+local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true }
 
 -- Sentinela de SIDE COLOR usado por bodyTexelInFrame/blinkBodyTexel (mais
 -- abaixo) para decidir se a busca de corpo entra em jogo. Fica como
@@ -460,6 +527,17 @@ local warnedReplacedMesh = false
 -- uma vez) em toda chamada seguinte, nao so na primeira: meshes[key] ==
 -- false so guarda "falhou", nao guarda por que.
 local meshFailureReasons = {}
+-- VIDA. `originalDraw` e a Voxel3D.draw do host; `installedDraw` a nossa, para
+-- a row de LIFE detectar quem foi substituido depois de nos (mesma logica de
+-- installedMesh). `drawPatched` so vira true depois da escrita ter sucesso, e
+-- so quando a sonda de capacidade aprovou o canal: um host sem Voxel3D.draw
+-- utilizavel perde a animacao e MANTEM o resto do mod funcionando.
+local originalDraw, installedDraw, drawPatched = nil, nil, false
+-- Malhas que ESTE mod construiu. Chave fraca: quando o LRU solta a malha, a
+-- entrada some sozinha. E o unico discriminador exato de "isto e um
+-- personagem nosso" dentro do wrap de draw, onde terreno, grama, sombra e
+-- pokedex passam pela mesma funcao.
+local ourMeshes = setmetatable({}, { __mode = "k" })
 
 -- Genericas: operam sobre qualquer entrada de OPTIONS (opt.levels e um
 -- array de pares { ROTULO, valor }, opt.defaultIndex a posicao default
@@ -2107,6 +2185,41 @@ local function statusRow()
   }
 end
 
+local warnedReplacedDraw = false
+
+-- Mesma ideia da row de STATUS, para o canal novo. Os tres reports que
+-- motivaram o STATUS (AngelusRole, TwoTracks, Tyler Durden) tinham em comum
+-- nao ter como saber, olhando o jogo, por que nada acontecia. Um canal que
+-- depende de um SEGUNDO ponto do host tem ainda mais jeitos de nao acontecer,
+-- entao ele nasce dizendo em qual deles esta.
+local function lifeStatusValue()
+  if not patched then return "NO HOST" end
+  if not drawPatched then return "NO CHANNEL" end
+  if Voxel3D.draw ~= installedDraw then
+    if not warnedReplacedDraw then
+      warnedReplacedDraw = true
+      mod.log:warn("Voxel3D.draw is no longer the function this mod " ..
+        "installed; another mod replaced it after patching")
+    end
+    return "REPLACED"
+  end
+  if firstPersonCardActive() then return "FIRST PERSON" end
+  local on = {}
+  if optionState.breath ~= "off" then on[#on + 1] = "BREATH" end
+  if optionState.sway ~= "off" then on[#on + 1] = "SWAY" end
+  if optionState.lag ~= "off" then on[#on + 1] = "LAG" end
+  if #on == 0 then return "OFF" end
+  return table.concat(on, "+")
+end
+
+local function lifeStatusRow()
+  return {
+    id = mod.id .. ":life",
+    label = "LIFE",
+    value = lifeStatusValue,
+  }
+end
+
 -- v1.4.2: registrado SEMPRE, com ou sem host (Colonel_Aureliano perdeu vinte
 -- minutos numa reinstalacao limpa, e o Angelus achou que era o Wilds of
 -- Kanto, porque sem host a row nem aparecia). Sem host, so a row de STATUS
@@ -2120,8 +2233,15 @@ local function registerOptionsRows()
     if type(out) ~= "table" then return out end
     out[#out + 1] = statusRow()
     if patched then
+      out[#out + 1] = lifeStatusRow()
       for _, opt in ipairs(OPTIONS) do
-        out[#out + 1] = makeOptionRow(opt)
+        -- As tres opcoes de vida so aparecem quando o canal existe. Um menu
+        -- que oferece BREATH num host sem Voxel3D.draw substituivel promete o
+        -- que nao pode cumprir, e essa e exatamente a experiencia que a row de
+        -- STATUS foi criada para acabar.
+        if not (LIFE_OPTION_KEYS[opt.key] and not drawPatched) then
+          out[#out + 1] = makeOptionRow(opt)
+        end
       end
     end
     return out
@@ -2132,6 +2252,322 @@ local function registerOptionsRows()
     local opt = OPTION_BY_KEY[payload.key]
     if opt then setOption(opt, payload.value) end
   end)
+end
+
+-- ========================================================================
+-- VIDA: animacao por matriz, uma instancia de cada vez
+-- ========================================================================
+--
+-- O QUE ESTA SECAO FAZ, EM UMA FRASE: o host monta uma matriz de mundo nova
+-- para cada personagem a cada quadro; a gente pos-multiplica essa matriz por
+-- uma transformacao LOCAL pequena (escala em Y, cisalhamento em X e em Z) e
+-- devolve. Nenhum vertice e escrito, nenhuma malha e duplicada.
+--
+-- POR QUE ISSO E CORRETO, e nao um truque. A cadeia do host e
+--
+--     M = T(px+8, y, py+8) . Rx(lean - pi/2) . [S(-1,1,1)] . T(-8,0,0)
+--
+-- (row-major, translacao na 4a coluna; VoxelScene.billboardMatrix). Eu quero
+-- injetar a transformacao ANTES da rotacao, no espaco local do card, para o
+-- efeito ser "estica para cima a partir do chao" e nao "estica na direcao da
+-- camera". Pos-multiplicar poe a transformacao no lugar mais local de todos,
+-- depois do T(-8,0,0). Isso e equivalente porque:
+--
+--   S(1,s,1) comuta com T(-8,0,0)   (uma escala so em Y, uma translacao so
+--                                    em X: eixos ortogonais)
+--   S(1,s,1) comuta com S(-1,1,1)   (duas diagonais)
+--
+-- entao M . S = T . Rx . S(-1,1,1) . S(1,s,1) . T(-8,0,0), que e exatamente
+-- onde eu queria a escala. O cisalhamento H (x' = x + kx.y, z' = z + kz.y)
+-- tambem comuta com T(-8,0,0), mas NAO com o espelho: por isso kx e negado
+-- quando m[1] < 0, senao o balanco viraria de lado junto com o personagem.
+--
+-- O PIVO SAO OS PES. A malha tem y=0 no chao (o proprio host documenta "its
+-- feet at local y = 0 land on y"), entao escalar y em torno de zero mantem o
+-- pe plantado e levanta a cabeca, e cisalhar proporcional a y nao arrasta o
+-- pe. E o que faz isto parecer corpo e nao adesivo deslizando.
+
+-- Amplitudes e ritmos. Segundos e fracao de altura de celula.
+local BREATH_PERIOD = 3.1      -- respiracao calma de adulto parado
+local SWAY_PERIOD = 6.2        -- metade do ritmo, para nao bater junto
+local LAG_STIFFNESS = 90       -- mola do movimento secundario
+local LAG_DAMPING = 12         -- abaixo do critico: passa do ponto e volta
+local LAG_REFERENCE_SPEED = 60 -- px/s de uma caminhada normal (16 px / 16 quadros)
+local LIFE_CELL = 16           -- a grade de caminhada do jogo
+local LIFE_MATCH_RADIUS = 24   -- px: o quanto uma instancia pode ter andado
+-- DERIVADO, nunca escrito a mao. A varredura de vizinhos precisa alcancar
+-- TODA celula que possa conter um ponto dentro do raio, e essa relacao e
+-- geometrica: um raio de 24 px sobre celulas de 16 px alcanca DUAS celulas,
+-- nao uma (px' = 15 esta na celula 0, px = 32 na celula 2, e a distancia entre
+-- eles e 17, bem dentro de 24).
+--
+-- A primeira versao varria so as oito celulas adjacentes com o raio em 24, e
+-- revisao independente pegou: nesse vao a instancia nao era encontrada e
+-- renascia com fase nova, que e exatamente o escorregamento de fase que este
+-- rastreador existe para evitar. Derivar o alcance do raio faz os dois numeros
+-- nao poderem mais divergir.
+local LIFE_MATCH_CELLS = math.ceil(LIFE_MATCH_RADIUS / 16)
+local LIFE_FORGET_SECONDS = 2  -- sem aparecer, a instancia e esquecida
+local LIFE_MAX_INSTANCES = 512
+
+-- PERSONALIDADE POR FOLHA (passo 7 do roadmap). Multiplicadores sobre o que o
+-- menu escolheu: ritmo, amplitude de respiracao, amplitude de balanco. Ausente
+-- da tabela = 1, 1, 1. A forma e a mesma de EYE_MARKS, que ja tem 112 entradas
+-- e provou que uma tabela escrita a mao envelhece bem neste mod.
+--
+-- Isto NAO inventa movimento novo: so diz que um velho sentado respira devagar
+-- e quase nao balanca, e que um nadador parado na agua balanca mais que um
+-- guarda em posicao de sentido. Nenhum pixel novo foi desenhado para isso.
+local LIFE_PERSONALITY = {
+  -- quem esta dormindo ou sentado: lento e quase parado
+  gambler_asleep   = { rate = 0.45, breath = 1.35, sway = 0.0 },
+  sleeping_boy     = { rate = 0.45, breath = 1.35, sway = 0.0 },
+  -- quem esta em posicao de sentido: ritmo normal, sem balanco
+  guard            = { rate = 1.00, breath = 0.80, sway = 0.15 },
+  officer_jenny    = { rate = 1.00, breath = 0.80, sway = 0.20 },
+  scientist        = { rate = 1.05, breath = 0.85, sway = 0.30 },
+  -- quem esta na agua ou em pe ha muito tempo: mais balanco
+  swimmer          = { rate = 1.15, breath = 1.10, sway = 1.60 },
+  fisher           = { rate = 0.85, breath = 1.05, sway = 1.25 },
+  -- criancas e gente agitada: rapido e curto
+  youngster        = { rate = 1.30, breath = 0.90, sway = 1.20 },
+  girl             = { rate = 1.25, breath = 0.90, sway = 1.15 },
+  little_girl      = { rate = 1.40, breath = 0.85, sway = 1.30 },
+  -- quem carrega peso
+  super_nerd       = { rate = 0.90, breath = 1.15, sway = 0.75 },
+  gambler          = { rate = 0.95, breath = 1.10, sway = 0.85 },
+  -- OBJETOS. Uma item ball nao respira. Sem esta entrada, a poke_ball do chao
+  -- ficaria pulsando, que e o defeito mais obvio possivel desta feature.
+  poke_ball        = { rate = 1, breath = 0, sway = 0, lag = 0 },
+  boulder          = { rate = 1, breath = 0, sway = 0, lag = 0 },
+  snorlax          = { rate = 0.40, breath = 1.60, sway = 0.0 },
+}
+
+-- Rastreador de instancias.
+--
+-- POR QUE ELE EXISTE, e nao so um hash da posicao: se a fase da animacao for
+-- f(posicao), o personagem andando muda de posicao a cada quadro e a fase
+-- escorrega junto (revisao externa chamou isso de "phase slipping", e esta
+-- certa: ele respiraria em supervelocidade andando num sentido e congelaria
+-- andando no outro). A fase tem que avancar com o TEMPO e so com o tempo.
+--
+-- Entao a gente casa cada desenho com uma instancia conhecida por
+-- proximidade, e carrega a fase de um quadro para o outro. Sem isso nao ha
+-- movimento secundario nenhum: mola precisa de estado.
+local lifeInstances = {}
+local lifeCount = 0
+
+local function lifeCellKey(sheet, px, py)
+  return sheet .. "\1" .. math.floor(px / LIFE_CELL) ..
+    "\1" .. math.floor(py / LIFE_CELL)
+end
+
+-- Fase inicial de uma instancia nova. Determinista (mesma folha no mesmo lugar
+-- volta com a mesma fase depois de trocar de mapa e voltar) e bem espalhada:
+-- as constantes sao irracionais de proposito, porque px e py sao multiplos de
+-- 16 e qualquer fator racional simples alinharia instancias vizinhas na mesma
+-- fase, que e exatamente o coro de robos que a gente esta tentando evitar.
+local function lifeSeedPhase(px, py)
+  local v = px * 0.6180339887 + py * 0.4142135624
+  return v - math.floor(v)
+end
+
+local function lifeForget(now)
+  if lifeCount <= LIFE_MAX_INSTANCES then return end
+  for key, inst in pairs(lifeInstances) do
+    if now - inst.seen > LIFE_FORGET_SECONDS then
+      lifeInstances[key] = nil
+      lifeCount = lifeCount - 1
+    end
+  end
+end
+
+-- Devolve a instancia deste desenho, criando se for a primeira vez.
+--
+-- Tres tentativas, nesta ordem:
+--   1. celula exata. Cobre o caso normal (parado) E a copia refletida na agua,
+--      que o host desenha pela MESMA funcao no mesmo quadro com a mesma
+--      matriz: ela cai na mesma instancia e nao vira uma segunda pessoa.
+--   2. as oito celulas vizinhas, mesma folha, dentro do raio. E o personagem
+--      que acabou de atravessar a fronteira de uma celula andando.
+--   3. instancia nova.
+local function lifeInstance(sheet, px, py, now)
+  local key = lifeCellKey(sheet, px, py)
+  local inst = lifeInstances[key]
+  if not inst then
+    local best, bestKey, bestDist = nil, nil, LIFE_MATCH_RADIUS * LIFE_MATCH_RADIUS
+    for dx = -LIFE_MATCH_CELLS, LIFE_MATCH_CELLS do
+      for dy = -LIFE_MATCH_CELLS, LIFE_MATCH_CELLS do
+        if dx ~= 0 or dy ~= 0 then
+          local k = lifeCellKey(sheet, px + dx * LIFE_CELL, py + dy * LIFE_CELL)
+          local c = lifeInstances[k]
+          -- `c.seen < now` impede roubar uma instancia que JA foi vista neste
+          -- quadro: essa e outra pessoa, nao esta.
+          if c and c.seen < now then
+            local ddx, ddy = px - c.px, py - c.py
+            local d = ddx * ddx + ddy * ddy
+            if d < bestDist then best, bestKey, bestDist = c, k, d end
+          end
+        end
+      end
+    end
+    if best then
+      lifeInstances[bestKey] = nil
+      inst = best
+    else
+      inst = {
+        phase = lifeSeedPhase(px, py),
+        px = px, py = py,
+        lagX = 0, lagVX = 0, lagZ = 0, lagVZ = 0,
+        seen = now,
+      }
+      lifeCount = lifeCount + 1
+      lifeForget(now)
+    end
+    lifeInstances[key] = inst
+  end
+  return inst
+end
+
+-- Avanca a instancia ate `now`. Idempotente dentro do mesmo quadro: a segunda
+-- chamada (o reflexo na agua) tem dt = 0 e nao mexe em nada. E o que dispensa
+-- este codigo de saber onde comeca e termina um quadro.
+local function lifeAdvance(inst, px, py, now, rate)
+  local dt = now - inst.seen
+  if dt <= 0 then return end
+  -- Um dt gigante quer dizer que a instancia sumiu e voltou (troca de mapa,
+  -- menu aberto, jogo em pausa). Continuar a mola com ele daria um estouro.
+  if dt > 0.25 then dt = 1 / 60 end
+
+  inst.phase = (inst.phase + dt * rate) % 1
+
+  -- Velocidade em px/s a partir do deslocamento real. E a unica fonte honesta:
+  -- o mod nao ve o estado de caminhada do NPC, so onde ele estava e onde esta.
+  local vx = (px - inst.px) / dt
+  local vz = (py - inst.py) / dt
+  inst.px, inst.py = px, py
+
+  -- Mola de segunda ordem perseguindo o negativo da velocidade: o corpo fica
+  -- para tras enquanto acelera, e passa do ponto quando o personagem para.
+  local alvoX = -vx / LAG_REFERENCE_SPEED
+  local alvoZ = -vz / LAG_REFERENCE_SPEED
+  inst.lagVX = inst.lagVX +
+    (LAG_STIFFNESS * (alvoX - inst.lagX) - LAG_DAMPING * inst.lagVX) * dt
+  inst.lagVZ = inst.lagVZ +
+    (LAG_STIFFNESS * (alvoZ - inst.lagZ) - LAG_DAMPING * inst.lagVZ) * dt
+  inst.lagX = inst.lagX + inst.lagVX * dt
+  inst.lagZ = inst.lagZ + inst.lagVZ * dt
+
+  inst.seen = now
+end
+
+-- Pos-multiplica `m` (row-major, 16 numeros) pela transformacao local
+--
+--     L = S(1, s, 1) . H(kx, kz)     com H: x' = x + kx.y,  z' = z + kz.y
+--
+-- e devolve uma tabela NOVA. Nova, e nao mutacao no lugar, mesmo tendo
+-- verificado que o host aloca a matriz a cada chamada: se um host futuro
+-- reciclar uma matriz de rascunho, mutar acumularia o efeito a cada quadro ate
+-- explodir, e esse modo de falha e caro demais para o que se economiza.
+local function lifeApply(m, s, kx, kz)
+  local out = {
+    m[1], m[2], m[3], m[4],
+    m[5], m[6], m[7], m[8],
+    m[9], m[10], m[11], m[12],
+    m[13], m[14], m[15], m[16],
+  }
+  -- So a COLUNA 2 muda (indices 2, 6, 10, 14): ela e a imagem do eixo Y local.
+  -- Escalar a coluna e escalar o eixo; somar um multiplo das colunas 1 e 3
+  -- nela e o cisalhamento. As outras doze entradas sao copia, o que e a razao
+  -- de o pe nao se mexer: a coluna 4 e a translacao, e ela nao e tocada.
+  --
+  -- Escrito aberto, sem laco sobre uma tabela de indices, porque este e o
+  -- caminho mais quente do mod: roda uma vez por personagem por desenho, duas
+  -- vezes por quadro cada, e uma tabela literal por chamada aqui seria lixo de
+  -- coletor para nada.
+  out[2] = m[2] * s + m[1] * kx + m[3] * kz
+  out[6] = m[6] * s + m[5] * kx + m[7] * kz
+  out[10] = m[10] * s + m[9] * kx + m[11] * kz
+  out[14] = m[14] * s + m[13] * kx + m[15] * kz
+  return out
+end
+
+-- ------------------------------------------------------------ o wrap
+-- Le a identidade do desenho a partir da propria matriz. Medido em jogo
+-- (tools/ingame/probe_draw.lua): m[4] carrega px, ou px+16 quando espelhado, e
+-- nesse caso m[1] = -1; m[12] carrega py+8. Sao coordenadas de MUNDO, imunes a
+-- camera (P8) e ao degrau de inclinacao (P6).
+--
+-- Quando m[1] nao e +-1, o host esta misturando o yaw de primeira pessoa
+-- (billboardMatrix, ramo cardBlend > 0) e px deixa de ser recuperavel. Ali este
+-- mod ja devolve card plano de proposito, entao a animacao tambem sai fora.
+local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
+  local info = ourMeshes[mesh]
+  if not info or type(model) ~= "table" then
+    return originalDraw(mesh, texture, model, pull, sunModel)
+  end
+
+  local breath = optionState.breath
+  local sway = optionState.sway
+  local lag = optionState.lag
+  if breath == "off" and sway == "off" and lag == "off" then
+    return originalDraw(mesh, texture, model, pull, sunModel)
+  end
+
+  local m1 = model[1]
+  local espelhado = m1 < 0
+  if math.abs(math.abs(m1) - 1) > 1e-6 then
+    return originalDraw(mesh, texture, model, pull, sunModel)
+  end
+
+  -- Mesmo cuidado do piscar (blinkClosedForBase): o relogio vem do host, e um
+  -- host sem love.timer nao pode derrubar o desenho. Sem relogio nao ha
+  -- animacao, e o personagem sai como sempre saiu.
+  if not (love and love.timer and love.timer.getTime) then
+    return originalDraw(mesh, texture, model, pull, sunModel)
+  end
+  local okNow, now = pcall(love.timer.getTime)
+  if not okNow or type(now) ~= "number" then
+    return originalDraw(mesh, texture, model, pull, sunModel)
+  end
+
+  local px = espelhado and (model[4] - LIFE_CELL) or model[4]
+  local py = model[12] - 8
+  local pessoa = LIFE_PERSONALITY[info.base]
+  local rate = pessoa and pessoa.rate or 1
+  local inst = lifeInstance(info.base, px, py, now)
+  lifeAdvance(inst, px, py, now, rate / BREATH_PERIOD)
+
+  local s, kx, kz = 1, 0, 0
+  if breath ~= "off" then
+    local amp = breath * (pessoa and pessoa.breath or 1)
+    s = 1 + amp * math.sin(inst.phase * 2 * math.pi)
+  end
+  if sway ~= "off" then
+    local amp = sway * (pessoa and pessoa.sway or 1)
+    -- Metade do ritmo da respiracao e um quarto de volta fora de fase: os dois
+    -- nunca chegam no extremo juntos, que e o que faria o personagem parecer
+    -- um metronomo em vez de uma pessoa.
+    local a = (inst.phase * BREATH_PERIOD / SWAY_PERIOD + 0.25) * 2 * math.pi
+    kx = amp * math.sin(a) / LIFE_CELL
+  end
+  if lag ~= "off" then
+    local amp = lag * (pessoa and pessoa.lag or 1)
+    kx = kx + amp * inst.lagX
+    kz = kz + amp * inst.lagZ
+  end
+  -- O cisalhamento em X vive no espaco do card, que o espelho ja inverteu.
+  -- Sem negar aqui, o balanco e o atraso trocariam de lado toda vez que o
+  -- personagem virasse para o outro lado, e o pulo seria visivel.
+  if espelhado then kx = -kx end
+
+  local novo = lifeApply(model, s, kx, kz)
+  -- A sombra recebe a MESMA escala. Sem isso o corpo respira e a sombra fica
+  -- imovel, e o personagem descola da propria sombra. O cisalhamento em Z fica
+  -- de fora: a matriz de sombra ja achata z (casterMatrix termina em S(1,1,0))
+  -- e reintroduzir profundidade ali nao teria significado.
+  local novoSol = sunModel and lifeApply(sunModel, s, kx, 0) or nil
+  return originalDraw(mesh, texture, novo, pull, novoSol)
 end
 
 local function voxelMesh(def, frame)
@@ -2179,6 +2615,17 @@ local function voxelMesh(def, frame)
   if mesh then
     recordDrawResult("ok")
     applyBlinkUv(mesh)
+    -- Marca a malha como NOSSA e guarda a folha. E o que o wrap de
+    -- Voxel3D.draw usa para saber que aquele desenho e um personagem deste mod
+    -- e nao terreno, grama, sombra ou a pokedex, que passam pela mesma funcao.
+    --
+    -- So na PRIMEIRA vez. A malha e cacheada por (folha, frame, opcoes), entao
+    -- base e frame nunca mudam para um mesmo objeto de malha; reatribuir a cada
+    -- acerto de cache alocaria uma tabela por personagem por quadro sem trocar
+    -- nada dentro dela.
+    if ourMeshes[mesh] == nil then
+      ourMeshes[mesh] = { base = baseName, frame = frame }
+    end
     return mesh
   end
   -- Registra de novo em toda chamada, mesmo quando `mesh` veio do cache
@@ -2263,6 +2710,38 @@ local function patch(host)
   patched = true
   registerOptionsRows()
   mod.log:info("patched %s character billboards", host.name)
+
+  -- SEGUNDO PONTO DE PATCH, e ele e OPCIONAL de proposito.
+  --
+  -- O canal de animacao precisa envolver Voxel3D.draw. Isso e mais superficie
+  -- do host do que este mod tinha antes, e mais superficie e mais chance de um
+  -- fork futuro quebrar a gente: entre outubro e agora o repositorio original
+  -- saiu do ar duas vezes e nasceram tres linhagens versionando de formas
+  -- incompativeis. Por isso o patch inteiro fica DEPOIS do commit acima e num
+  -- pcall proprio: se ele falhar, o mod perde a animacao e continua desenhando
+  -- solidos normalmente, que e o produto principal. O contrario (perder o mod
+  -- por causa de um enfeite) seria inaceitavel.
+  --
+  -- A sonda de capacidade ja recusou hosts sem Voxel3D.draw utilizavel
+  -- (probeHost, OPTIONAL_CAPABILITIES), entao chegar aqui sem capacidade
+  -- significa host antigo, e a ausencia e silenciosa por escolha: quem roda um
+  -- host sem o canal ve LIFE: NO CHANNEL na tela de opcoes e sabe o porque.
+  if host.caps and host.caps.drawWrap then
+    local okDraw, drawErr = pcall(function()
+      local previous = voxel3D.draw
+      if previous ~= installedDraw then originalDraw = previous end
+      installedDraw = lifeDrawWrap
+      voxel3D.draw = lifeDrawWrap
+    end)
+    if okDraw then
+      drawPatched = true
+      mod.log:info("patched %s character draw for the life channel", host.name)
+    else
+      originalDraw, installedDraw, drawPatched = nil, nil, false
+      mod.log:warn("could not patch %s character draw; the mod works, but " ..
+        "BREATH, SWAY and MOTION LAG stay off: %s", host.name, tostring(drawErr))
+    end
+  end
 end
 
 local function hostIds()
@@ -2284,6 +2763,30 @@ end
 -- recusa um host: ela e so informacao, logada sempre, e um aviso quando
 -- esta fora da faixa conhecida.
 local REQUIRED_MODULES = { "Voxel3D", "ImageCache", "SpriteBillboards" }
+
+-- PASSO 2 DO ROADMAP. Capacidades OPCIONAIS: a ausencia NAO recusa o host, so
+-- desliga o recurso que depende dela.
+--
+-- Isto e o preco de encostar em mais de um ponto do host, e o preco tem que
+-- ser pago aqui e nao no lugar do acidente. A sonda de v1.4.2 ja provou o
+-- valor da ideia: ela e o motivo de a v1.5.0 ter sobrevivido ao repositorio
+-- original sair do ar duas vezes e a comunidade se partir em tres linhagens.
+-- Um recurso novo que dependa de mais API do host tem que entrar pela mesma
+-- porta, senao a primeira mudanca de um fork leva o mod inteiro junto.
+--
+-- Cada capacidade e uma pergunta que so o host pode responder, respondida por
+-- leitura e nunca por numero de versao.
+local function probeCapabilities(modules)
+  return {
+    -- Canal de vida: exige que Voxel3D.draw exista como funcao substituivel
+    -- por CAMPO. Nao da para verificar por leitura que os pontos de chamada
+    -- resolvem o campo em tempo de chamada (nas tres linhagens vivas, os 32
+    -- resolvem), mas da para exigir o minimo: que o campo exista e seja
+    -- chamavel. O resto e coberto pelo pcall em volta da escrita.
+    drawWrap = type(modules.Voxel3D) == "table"
+      and type(modules.Voxel3D.draw) == "function",
+  }
+end
 
 -- Sonda de capacidade: um host e utilizavel quando exports.lib existe e
 -- devolve os tres modulos obrigatorios, e SpriteBillboards.mesh e uma
@@ -2308,7 +2811,7 @@ local function probeHost(handle)
   if type(modules.SpriteBillboards.mesh) ~= "function" then
     return nil, "SpriteBillboards.mesh is not a function"
   end
-  return modules
+  return modules, nil, probeCapabilities(modules)
 end
 
 local function findHost()
@@ -2318,7 +2821,7 @@ local function findHost()
     if not handle then
       rejected[#rejected + 1] = host.id .. ": not found"
     else
-      local modules, why = probeHost(handle)
+      local modules, why, caps = probeHost(handle)
       if modules then
         local okVersion, versionWhy = Semver.satisfies(handle.version, host.supported)
         if not okVersion then
@@ -2334,6 +2837,7 @@ local function findHost()
           supported = host.supported,
           handle = handle,
           modules = modules,
+          caps = caps,
         }
       end
       rejected[#rejected + 1] = ("%s: found %s but %s")

@@ -86,68 +86,121 @@ host function.
 
 Each step is cheap to undo, and the next only makes sense if the previous one worked.
 
-### 1. Prove the position arrives clean in the running game
+Everything below marked DONE was measured, not asserted. The measurements are named where they
+live so anyone can re-run them.
 
-Wrap `Voxel3D.draw`, read the matrix, log the position. Change nothing else. The arithmetic is
-already proved on paper; this proves it with NPCs walking, turning and stopping.
+### 1. Prove the position arrives clean in the running game — DONE
 
-**Enables:** knowing in an afternoon whether the ambitious version exists at all. If the number
-arrives dirty, the plan shrinks to subtle shared animation and this document is amended to say so.
+`tools/ingame/probe_draw.lua` wraps `Voxel3D.draw` in the live game and checks eight properties.
+All eight passed, in Viridian City with 25 characters on screen:
 
-### 2. Extend the capability probe to the second patch point
+```
+  P1 the wrap intercepts        50 character draws in one frame
+  P2 m[12]-8 is the WORLD py    every entity on the map has its draw
+  P3 instances are distinct     25 characters, 0 position collisions
+  P4 the value is stable        0 of 60 frames diverged
+  P5 the mirror does not dirty  m[12] moved 0.000; m[4] moved +16
+  P6 the camera rung does not   0 of 7 rungs changed it
+  P7 walking stays continuous   largest jump 1.00 px, zero NaN
+  P8 the CAMERA does not leak   0 of 24 frames, with the camera moving
+```
 
-The probe already refuses a host that does not export the modules this mod calls. It must also
-check the second function, and the feature must simply not switch on when the host does not match,
-leaving the rest of the mod working.
+**P8 was the one that decided everything else.** The position is world space, not camera relative,
+so phase-by-position does not turn into a wave when the player walks.
 
-**Enables:** touching more of the host without betting the whole mod on it. This is what let v1.5.0
-survive the original repository going offline twice.
+Two corrections to what this document said before: `m[4]` is `px`, or `px + 16` when mirrored, not
+plus or minus 8. And each character is drawn **twice** per frame from the same call site, because
+the host draws the water reflection copy through the same function.
 
-### 3. Baked phases instead of runtime rewriting
+### 2. Extend the capability probe to the second patch point — DONE
 
-Build a small number of pre-deformed variants of each mesh and select between them, rather than
-rewriting vertices while the game draws.
+`probeCapabilities` asks whether `Voxel3D.draw` exists and is callable. When it does not, the draw
+wrap is never installed, the three life options do not appear in the menu, and the LIFE row reads
+`NO CHANNEL`. The rest of the mod works untouched.
 
-**Enables:** animation with no runtime buffer writes at all, which removes the static-buffer misuse
-and the driver risk on weaker hardware that neither review could rule out.
+### 3. Baked phases instead of runtime rewriting — DROPPED, and this is why
 
-### 4. Breathing
+This step existed to avoid rewriting a `static` vertex buffer every frame. **The whole problem
+turned out to be avoidable**: the animation lives in the model matrix, which the host allocates
+fresh per character per frame, so there is no buffer write at all.
 
-The upper body rises and falls by a fraction of a pixel. Not an animation a player watches; the
-absence of the frozen feeling.
+The algebra that makes it work: the host builds
 
-**Enables:** exercising the whole new machine with the smallest possible effect, where a mistake is
-easy to see and easy to switch off.
+```
+  M = T(px+8, y, py+8) . Rx(lean - pi/2) . [S(-1,1,1)] . T(-8,0,0)
+```
 
-### 5. Judge it in the game, not in the harness
+and a local scale `S(1,s,1)` commutes with both the mirror and the `T(-8,0,0)`, so
+`M . S(1,s,1)` puts the scale exactly where it belongs: before the lean, pivoted on the feet.
+Only column 2 of the matrix changes; the other twelve numbers are copied. Two independent reviews
+were asked to break this and both confirmed the injection point.
 
-The offline harness measures geometry in two seconds, but it draws on flat grey at ten times the
-real on-screen size and cannot show motion at all. The in-game gate exists and works; what it still
-fails at is getting past the launcher unattended.
+So the static-buffer objection and the untested ARM handheld risk both disappear, not because
+they were answered but because nothing writes a buffer any more.
 
-**Enables:** comparisons from the real game instead of asking the owner to record video.
+What it costs, measured in Viridian City with 25 characters on screen, vsync off, warmed up first
+and interleaved A/B/A/B so warm-up drift cannot pass for effect:
 
-### 6. Desynchronise
+```
+  all three off      4.412 and 4.150 ms      mean 4.281
+  all three on       4.377 and 4.517 ms      mean 4.447
+  difference         0.166 ms of a 16.7 ms budget
+  ruler noise floor  0.261 ms
+```
 
-With per-instance position, two identical NPCs in a room breathe at different points in the cycle
-automatically, because they stand in different places.
+The difference is **smaller than the noise floor**, so the honest statement is not "it is cheap"
+but "this ruler cannot measure it." An earlier version of this benchmark reported the feature
+making the game 2.6 times faster, which is impossible; that was mesh construction landing on
+whichever condition ran first.
 
-**Enables:** the difference between two puppets on one string and two people. This is the step that
-turns the trick into an illusion that holds.
+### 4. Breathing — DONE
 
-### 7. Per-sheet personality
+`BREATH`, off by default, three levels. Scales the solid vertically about its feet, out of phase
+per character. Measured on screen by `tools/ingame/probe_life.lua`, in an empty room so nothing
+else can move:
 
-A small table saying this one breathes slowly, that one sways, this one barely moves. The mod
-already has exactly this shape of table for eye marks, with 112 entries.
+```
+  everything off      envelope    0 pixels     (the control)
+  BREATH SUBTLE       envelope   36 pixels
+  BREATH NORMAL       envelope  246 pixels
+  BREATH STRONG       envelope  275 pixels
+  VOXEL CHARS off     envelope    0 pixels     (proves the change is ours)
+```
 
-**Enables:** characters with temperament without anyone drawing a new pixel.
+### 5. Judge it in the game, not in the harness — DONE
 
-### 8. Secondary motion
+`tools/ingame/run.sh` now reaches the overworld and photographs the mod with nobody clicking
+anything. Two independent bugs were in the way and neither was what the symptom suggested: the
+scripted boot ignores `POKEPORT_GAME` and was booting a version that was not ready, and vsync on
+an occluded window stalls the whole loop at under a frame per second. Details in the commit.
 
-Hair, bag and coat lagging behind the step.
+### 6. Desynchronise — DONE
 
-**Enables:** the demonstrable moment. This is what separates an animated model from a character in
-any 3D game, and it is what a ten second clip can carry.
+An instance tracker matches each draw to a remembered character by cell, then by nearest
+neighbour within 24 px, so a character keeps its phase while it walks. The phase advances with the
+**clock**, never with position, which is what stops a walking character from breathing at double
+speed. Two characters in the same room are out of phase because they were seeded from where they
+stood.
+
+### 7. Per-sheet personality — DONE
+
+`LIFE_PERSONALITY`, keyed by sheet name, multiplies rate, breath and sway. A sleeping gambler
+breathes slowly and does not sway; a swimmer sways more; a guard at attention barely moves. And
+`poke_ball` and `boulder` are pinned to zero, because an item ball that breathes is the most
+obvious possible defect of this whole idea.
+
+### 8. Secondary motion — PARTLY DONE, and the rest is named honestly
+
+`MOTION LAG` gives the body inertia: a second-order spring per instance shears the solid backward
+from its feet while it moves and overshoots when it stops.
+
+**What it is not:** per-part motion. A single matrix transforms the whole mesh one way; it cannot
+hold the bag back while the torso follows the step. Both external reviews said so and both are
+right. What ships here reads as weight, not as hair.
+
+Real per-part secondary motion needs the generated mesh split into regions (body, head, bag) and
+each region drawn with its own matrix. That is the next real piece of work on this front, and it
+is not started.
 
 ### 9. The parallel front, which depends on none of the above
 
@@ -158,8 +211,8 @@ The branch already carries three finished, unreleased options: `FRONT SHAPE`, `T
 
 ### 10. What does not happen without a decision
 
-No release, and no work on secondary motion before breathing has proved the machine. The order is
-the point: each step is cheap to undo, and stopping at any of them leaves something that works.
+No release. Six new options now sit on this branch with conservative defaults, and none of them
+has been judged by eye on a real screen by the person whose taste decides.
 
 ## Standing decisions
 
