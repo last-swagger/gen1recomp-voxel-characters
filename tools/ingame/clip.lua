@@ -20,10 +20,25 @@ return function(game)
     print("[clip] " .. (ok and s or tostring(fmt)))
   end
 
+  -- DOIS LADOS ARBITRARIOS, nao so desligado contra ligado.
+  --
+  -- VC_CLIP_OPT="breath=0.020"            esquerda OFF, direita 0.020
+  -- VC_CLIP_OPT="breath=0.010:0.035"      esquerda 0.010, direita 0.035
+  --
+  -- A segunda forma existe para o loop de escolha: julgar entre dois
+  -- candidatos e mais facil e mais confiavel do que julgar um sozinho, e e o
+  -- unico jeito de a preferencia de quem assiste virar sinal aproveitavel.
+  -- Comparar contra OFF responde "faz alguma coisa?"; comparar dois niveis
+  -- responde "qual deles?", que e a pergunta que sobra depois que a feature ja
+  -- existe.
   local OPT = os.getenv("VC_CLIP_OPT") or "breath=0.020"
-  local CHAVE, VALOR = OPT:match("^([%w_]+)=(.+)$")
+  local CHAVE, RESTO = OPT:match("^([%w_]+)=(.+)$")
   if not CHAVE then log("opcao ilegivel: %s", OPT); return end
-  local NUM = tonumber(VALOR) or VALOR
+  local ESQ, DIR = RESTO:match("^([^:]+):(.+)$")
+  if not ESQ then ESQ, DIR = "off", RESTO end
+  local VALOR = DIR
+  local VAL_ESQ = tonumber(ESQ) or ESQ
+  local NUM = tonumber(DIR) or DIR
   local QUADROS = tonumber(os.getenv("VC_CLIP_FRAMES")) or 96
   local PASSO = tonumber(os.getenv("VC_CLIP_STEP")) or 2  -- captura 1 em cada N
   local ZOOM = tonumber(os.getenv("VC_CLIP_ZOOM")) or 0
@@ -84,7 +99,10 @@ return function(game)
   -- dois lados, confundindo quem tenta ver o que a opcao muda.
   opcao("blink", "off")
   opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
+  opcao("footfall", "off")
   U.wait(30)
+  -- O lado esquerdo pode ser um NIVEL, nao so o desligado.
+  if VAL_ESQ ~= "off" then opcao(CHAVE, VAL_ESQ); U.wait(30) end
 
   -- MOTION LAG so existe com o personagem SE MOVENDO: parado, a mola esta em
   -- repouso e os dois lados sairiam identicos, o que faria o clipe provar que a
@@ -169,6 +187,7 @@ return function(game)
     if desenhoOriginal then desenhoOriginal() end
     if not legendaTag then return end
     local antes = legendaTag == "off"
+    local rotuloLado = antes and tostring(VAL_ESQ):upper() or nil
     love.graphics.push("all")
     love.graphics.origin()
     love.graphics.setBlendMode("alpha")
@@ -178,12 +197,18 @@ return function(game)
     love.graphics.rectangle("fill", RX, RY, RW, 52)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(fonteGrande)
-    love.graphics.print(antes and "BEFORE" or "AFTER", RX + 12, RY + 5)
+    -- BEFORE e AFTER so fazem sentido quando um dos lados e o estado atual.
+    -- Num A/B entre dois niveis os dois sao candidatos, entao a legenda passa a
+    -- ser A e B: chamar um deles de "before" mentiria sobre o que se compara.
+    local ehContraOff = tostring(VAL_ESQ) == "off"
+    love.graphics.print(
+      ehContraOff and (antes and "BEFORE" or "AFTER") or (antes and "A" or "B"),
+      RX + 12, RY + 5)
     love.graphics.setFont(fonteMedia)
     love.graphics.setColor(1, 1, 1, 0.85)
     love.graphics.print(
-      string.upper(CHAVE) .. "   " .. (antes and "OFF"
-        or (rotuloDoNivel(CHAVE) or tostring(VALOR))),
+      string.upper(CHAVE) .. "   " .. (rotuloDoNivel(CHAVE)
+        or tostring(antes and VAL_ESQ or VALOR)):upper(),
       RX + 12, RY + 31)
 
     -- faixa de baixo: o que olhar
