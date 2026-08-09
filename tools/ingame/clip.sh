@@ -25,7 +25,7 @@
 set -u
 REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
 SAVE="$HOME/Library/Application Support/LOVE/pokemon-love2d"
-. "$(cd "$(dirname "$0")/.." && pwd)/love_bin.sh"
+. "$(cd "$(dirname "$0")/.." && pwd)/tools_bin.sh"
 DRIVER="$REPO/mods/voxel_characters/tools/ingame/clip.lua"
 
 SAIDA="${1:?uso: clip.sh <pasta-de-saida> <chave=valor>}"
@@ -33,7 +33,7 @@ OPCAO="${2:?uso: clip.sh <pasta-de-saida> <chave=valor>}"
 CHAVE="${OPCAO%%=*}"
 SUFIXO=$(echo "${OPCAO#*=}" | tr ":" "-" | tr -d " ")
 
-command -v ffmpeg >/dev/null || { echo "ffmpeg nao encontrado"; exit 1; }
+[ -n "$FFMPEG" ] || { echo "ffmpeg nao encontrado (PATH, \$FFMPEG_BIN, /opt/homebrew, /usr/local)"; exit 1; }
 [ -f "$DRIVER" ] || { echo "driver nao encontrado: $DRIVER"; exit 1; }
 
 # Mesma deteccao de versao do run.sh, pelo mesmo motivo: POKEPORT_GAME e letra
@@ -97,7 +97,7 @@ ESCALA="${VC_CLIP_ESCALA:-640}"
 RECORTE="${VC_CLIP_RECORTE:-560:420:232:200}"
 
 monta() {  # $1 = lado, $2 = arquivo de saida
-  ffmpeg -y -loglevel error -framerate "$FPS" -start_number 1 \
+  "$FFMPEG" -y -loglevel error -framerate "$FPS" -start_number 1 \
     -i "$TMP/vc_clip_$1_%04d.png" \
     -vf "crop=$RECORTE,scale=$ESCALA:-2:flags=neighbor" \
     -c:v libx264 -pix_fmt yuv420p -crf 18 "$2"
@@ -109,17 +109,17 @@ monta on  "$SAIDA/$CHAVE-$SUFIXO-b.mp4"  || { echo "ffmpeg falhou no lado on"; e
 # para nao restar duvida de onde um acaba. Sem legenda em cima do video de
 # proposito: este ffmpeg nao tem drawtext (sem libfreetype), e um pipeline que
 # depende de build de terceiro quebra no primeiro usuario que nao tem.
-ffmpeg -y -loglevel error \
+"$FFMPEG" -y -loglevel error \
   -i "$SAIDA/$CHAVE-$SUFIXO-a.mp4" -i "$SAIDA/$CHAVE-$SUFIXO-b.mp4" \
   -filter_complex "[0:v]pad=iw+4:ih:0:0:color=white[e];[e][1:v]hstack=inputs=2" \
   -c:v libx264 -pix_fmt yuv420p -crf 18 "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
   || { echo "ffmpeg falhou no lado a lado"; exit 1; }
 
 # GIF em duas passadas: paleta propria, senao o degrade do ceu vira faixa.
-ffmpeg -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
+"$FFMPEG" -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
   -vf "fps=$FPS,scale=720:-2:flags=neighbor,palettegen=stats_mode=diff" \
   "$TMP/paleta.png" || { echo "ffmpeg falhou na paleta"; exit 1; }
-ffmpeg -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" -i "$TMP/paleta.png" \
+"$FFMPEG" -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" -i "$TMP/paleta.png" \
   -lavfi "fps=$FPS,scale=720:-2:flags=neighbor[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
   "$SAIDA/$CHAVE-$SUFIXO-ab.gif" || { echo "ffmpeg falhou no gif"; exit 1; }
 

@@ -8,7 +8,7 @@
 # errado. Uma medicao feita com regua torta e pior que nenhuma: ela produz
 # confianca.
 set -u
-. "$(cd "$(dirname "$0")/.." && pwd)/love_bin.sh"
+. "$(cd "$(dirname "$0")/.." && pwd)/tools_bin.sh"
 H=mods/voxel_characters/tools/render
 FAIL=0
 
