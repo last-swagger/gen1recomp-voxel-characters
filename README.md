@@ -112,19 +112,42 @@ breathes slowly and does not sway, a swimmer sways more, a guard at attention
 barely moves. Item balls and boulders do not breathe at all, for reasons that
 should be obvious the moment you picture the alternative.
 
-### SHAPE, in one paragraph each
+### SHAPE is not a quality ladder
 
-**SLAB** takes the sprite and gives it thickness, like a cookie cutter. Fast,
-predictable, and it keeps every one of the artist's pixels facing you.
+It is a choice between two different things, and the menu order is historical,
+not a ranking.
 
-**CARVED** builds a real volume by intersecting the three views the game
-already has of each character: front, back and side. It looks like 3D Dot Game
-Heroes. It also loses detail, and that is not a bug we can fix: a shape built
-from silhouettes cannot reconstruct a dent. An armpit, the gap between an arm
-and the body, the space between the legs, none of them survive, because none of
-them shows up in any silhouette.
+**SLAB** takes the sprite and gives it thickness, like a cookie cutter. The
+artist's front face stays flat and whole, which is exactly what this game's
+camera spends its time looking at. This is the mode this game wants.
+
+**CARVED** builds a real volume by intersecting the three views the game already
+has of each character: front, back and side. Its silhouette is correct from any
+angle. It looks like 3D Dot Game Heroes.
+
+It also loses detail here, and the reason is measurable rather than a matter of
+taste. On `red`, SLAB emits 104 quads with 16 of them facing up; CARVED emits
+1068 with **216** facing up. Upward facing surface is surface the artist never
+drew, and a camera looking down is looking straight at it.
+
+That is the same law that killed three earlier attempts at variable depth in
+this mod: any change in depth creates a step, every step exposes an upward face,
+and upward faces carry no art. **In this game, flat geometry with varied shading
+wins.** Which is what `FRONT SHAPE` and `TOP DOME` are: they buy the reading of
+volume with shading alone, leaving the silhouette pixel identical.
+
+There is a second, harder limit on CARVED worth knowing: a shape built from
+silhouettes cannot reconstruct a dent. An armpit, the gap between an arm and the
+body, the space between the legs, none survive, because none appears in any
+silhouette. And the side view is a separate drawing rather than a projection of
+the same object, so the three views do not fully agree with each other.
 
 **CARVED+** is CARVED with tone relief added back.
+
+**So when would you pick CARVED?** When you care about the silhouette from
+angles this game never uses, or when you want an actual volume rather than a
+thick card. It is the only one of the two that produces something a 3D pipeline
+outside this game could start from.
 
 ## What it does not do
 

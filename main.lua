@@ -103,7 +103,26 @@ local OPTIONS = {
       { "SLAB", "slab" }, { "CARVED", "carved" }, { "CARVED+", "carved_plus" },
     },
     defaultIndex = 1,
-    help = "SLAB keeps the v1.1.0 extrusion. CARVED builds visual-hull volume from three views. CARVED+ adds tone relief.",
+    -- OS TRES NAO SAO UMA ESCADA DE QUALIDADE, e o menu vinha sugerindo que sao.
+    --
+    -- Medido no red frame 0: SLAB tem 104 quads, dos quais 16 sao de topo.
+    -- CARVED tem 1068, dos quais 216 sao de topo. Treze vezes mais superficie
+    -- virada para cima, e superficie de topo e por definicao superficie que o
+    -- artista nunca desenhou. Nesta camera, que olha de cima, e justamente ela
+    -- que o jogador ve.
+    --
+    -- Isso nao e ajuste, e a lei que explica as tres tentativas de profundidade
+    -- variavel que ja morreram aqui (relevo por tom, mapa por IA, profundidade
+    -- por linha): toda variacao de profundidade cria degrau, todo degrau expoe
+    -- topo, e topo nao carrega arte.
+    --
+    -- O que o CARVED compra em troca e silhueta correta de QUALQUER angulo. Num
+    -- jogo que gira a camera isso e tudo; neste, que nunca gira em yaw, e um
+    -- beneficio que a camera nunca cobra. Entao ele nao e o modo melhor nem o
+    -- pior: e o modo independente de camera, e e o unico dos dois que produz um
+    -- volume de verdade, que e o que serviria de base para qualquer coisa fora
+    -- deste jogo.
+    help = "SLAB keeps the artist's front face flat and whole, which is what this game's camera looks at. CARVED builds real volume from three views: correct from any angle, but it trades the art for stair steps here. CARVED+ adds tone relief to CARVED.",
     clears = "mesh",
   },
   {
