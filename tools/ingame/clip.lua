@@ -91,12 +91,118 @@ return function(game)
   -- feature nao faz nada. Entao para essa opcao os dois lados andam, e andam
   -- IGUAL: mesma direcao, mesmo numero de quadros, invertendo no meio para o
   -- personagem nao sair do enquadramento.
-  local ANDA = (CHAVE == "lag") or os.getenv("VC_CLIP_ANDAR") == "1"
+  -- MOTION LAG e FOOTFALL so existem com o personagem SE MOVENDO. Parado, a
+  -- mola esta em repouso e a velocidade e zero, entao os dois lados sairiam
+  -- identicos e o clipe provaria que a feature nao faz nada.
+  local ANDA = (CHAVE == "lag" or CHAVE == "footfall")
+    or os.getenv("VC_CLIP_ANDAR") == "1"
+  -- Quantos quadros ANDANDO antes de inverter o sentido. Trocar de direcao
+  -- custa uma parada, e parada mata justamente o efeito que se quer filmar,
+  -- entao o padrao anda o suficiente para tres passos inteiros de 16 quadros
+  -- em cada sentido antes de virar.
+  local TRECHO = tonumber(os.getenv("VC_CLIP_TRECHO")) or 48
+
+  -- ------------------------------------------------------- LEGENDA NO QUADRO
+  -- O rotulo e desenhado DENTRO DO JOGO, nao colado depois pelo ffmpeg, e a
+  -- razao e concreta: o ffmpeg desta maquina foi compilado sem libfreetype,
+  -- entao nao tem o filtro drawtext. Um pipeline de trailer que depende de um
+  -- build de terceiro quebra no primeiro colaborador que nao tem o mesmo.
+  --
+  -- Desenhando aqui, o texto entra no quadro de origem e sobrevive a tudo que
+  -- vem depois: recorte, escala, mp4 e gif. E cada lado carrega o proprio
+  -- rotulo, entao quando os dois sao empilhados o BEFORE cai na esquerda e o
+  -- AFTER na direita sem ninguem coordenar nada.
+  --
+  -- O QUE OLHAR e o pedido do Kim e e a parte que mais vale: um clipe sem isso
+  -- exige que quem assiste ja saiba o que a feature faz. Com isso, o clipe se
+  -- explica sozinho, que e o que um trailer precisa fazer.
+  local O_QUE_OLHAR = {
+    breath = "os ombros subindo e descendo com o personagem parado",
+    sway = "o corpo trocando o peso de um lado para o outro",
+    lag = "o corpo ficando para tras ao arrancar e passando do ponto ao parar",
+    footfall = "o corpo comprimindo a cada pisada e esticando entre elas",
+    front_shape = "o degrade em degraus na face da frente",
+    top_dome = "o topo da cabeca deixando de ser uma tampa chata",
+    step_weight = "o solido inclinando junto com o passo da arte",
+    shape = "como o volume e construido",
+  }
+
+  -- O ROTULO DO NIVEL VEM DO PROPRIO MOD, nao de uma tabela aqui.
+  --
+  -- A legenda precisa dizer "NORMAL", nao "0.7". Manter um mapa de valor para
+  -- rotulo neste arquivo criaria uma segunda fonte da verdade que envelhece na
+  -- primeira vez que alguem mexer num nivel, e o clipe passaria a mentir sem
+  -- nenhum teste reclamar. Em vez disso a gente monta as rows do menu pelo
+  -- mesmo hook que o jogo usa e le o valor da row, que e literalmente o texto
+  -- que aparece na tela de opcoes.
+  local function rotuloDoNivel(chave)
+    local ok, Runtime = pcall(require, "src.mods.Runtime")
+    if not ok then return nil end
+    local okRows, rows = pcall(Runtime.call, "ui.options.rows",
+      function(_, r) return r end, game, {})
+    if not (okRows and type(rows) == "table") then return nil end
+    for _, row in ipairs(rows) do
+      if tostring(row.id) == "voxel_characters:" .. chave and row.value then
+        local okVal, v = pcall(row.value, game)
+        if okVal then return v end
+      end
+    end
+  end
+
+  local fonteGrande = love.graphics.newFont(22)
+  local fonteMedia = love.graphics.newFont(15)
+  local legendaTag = nil
+
+  -- A area que o clip.sh recorta, em coordenadas de janela. A legenda precisa
+  -- cair DENTRO dela, senao ela existe no quadro cheio e some no recorte.
+  local RX, RY, RW, RH = 232, 200, 560, 420
+  do
+    local r = os.getenv("VC_CLIP_RECORTE")
+    if r then
+      local w, h, xx, yy = r:match("^(%d+):(%d+):(%d+):(%d+)$")
+      if w then RX, RY, RW, RH = tonumber(xx), tonumber(yy), tonumber(w), tonumber(h) end
+    end
+  end
+
+  local desenhoOriginal = love.draw
+  love.draw = function()
+    if desenhoOriginal then desenhoOriginal() end
+    if not legendaTag then return end
+    local antes = legendaTag == "off"
+    love.graphics.push("all")
+    love.graphics.origin()
+    love.graphics.setBlendMode("alpha")
+
+    -- faixa de cima: BEFORE / AFTER e a opcao com o nivel
+    love.graphics.setColor(0, 0, 0, 0.62)
+    love.graphics.rectangle("fill", RX, RY, RW, 52)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setFont(fonteGrande)
+    love.graphics.print(antes and "BEFORE" or "AFTER", RX + 12, RY + 5)
+    love.graphics.setFont(fonteMedia)
+    love.graphics.setColor(1, 1, 1, 0.85)
+    love.graphics.print(
+      string.upper(CHAVE) .. "   " .. (antes and "OFF"
+        or (rotuloDoNivel(CHAVE) or tostring(VALOR))),
+      RX + 12, RY + 31)
+
+    -- faixa de baixo: o que olhar
+    local dica = O_QUE_OLHAR[CHAVE]
+    if dica then
+      love.graphics.setColor(0, 0, 0, 0.62)
+      love.graphics.rectangle("fill", RX, RY + RH - 30, RW, 30)
+      love.graphics.setColor(1, 1, 1, 0.92)
+      love.graphics.setFont(fonteMedia)
+      love.graphics.printf("olhe " .. dica, RX + 12, RY + RH - 22, RW - 24)
+    end
+    love.graphics.pop()
+  end
 
   local function grava(tag)
+    legendaTag = tag
     for i = 1, QUADROS do
       if ANDA then
-        local dir = (math.floor((i - 1) / 24) % 2 == 0) and "left" or "right"
+        local dir = (math.floor((i - 1) / TRECHO) % 2 == 0) and "left" or "right"
         table.insert(game.input.pressQueue, dir)
         game.input.state[dir] = true
         game.input.state[dir == "left" and "right" or "left"] = false
@@ -112,7 +218,20 @@ return function(game)
     log("lado %s gravado%s", tag, ANDA and " (andando)" or "")
   end
 
+  -- MESMO PONTO DE PARTIDA NOS DOIS LADOS, e isto foi aprendido olhando o
+  -- resultado. Quando o clipe anda, o segundo lado comecava de onde o primeiro
+  -- tinha parado, entao o lado a lado mostrava o personagem em LUGARES
+  -- diferentes e ninguem conseguia ver o efeito: o olho compara a posicao
+  -- antes de comparar a deformacao. Voltar para a mesma celula antes de cada
+  -- lado deixa a unica diferenca visivel ser a opcao.
+  local function reposiciona()
+    if not ANDA then return end
+    U.teleport(game, mapa, x, y, os.getenv("VC_FACING") or "down")
+    U.wait(45)
+  end
+
   -- Lado esquerdo: desligado.
+  reposiciona()
   grava("off")
 
   -- Lado direito: a opcao pedida. MOTION LAG so aparece com o personagem se
@@ -120,8 +239,11 @@ return function(game)
   -- ficam parados. O que os dois lados nunca fazem e coisas diferentes.
   opcao(CHAVE, NUM)
   U.wait(30)
+  reposiciona()
   grava("on")
 
+  legendaTag = nil
+  love.draw = desenhoOriginal
   log("quadros por lado: %d", QUADROS)
   U.wait(10)
 end
