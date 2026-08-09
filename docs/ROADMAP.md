@@ -247,3 +247,117 @@ has been judged by eye on a real screen by the person whose taste decides.
 - **The silhouette gate is not negotiable:** `IoU 1.000` against the flat card at pitch 0.
 - **Measurement guards against regression; it does not decide whether something looks good.** An AI
   redraw once satisfied every numeric constraint in this project and produced worse art.
+
+
+---
+
+# Next: the world notices you
+
+1.6.0 is out. What follows was decided by crossing three independent reads of
+the same question, and the disagreements are where the useful part is.
+
+## What was asked
+
+Three candidates plus an open slot, put to two external reviewers and to a
+reading of our own code:
+
+- **A. Split the mesh into regions** drawn with their own matrices, so a head or
+  a bag can lag behind a torso.
+- **B. React to the world** instead of only to the clock: notice the player,
+  lean into weather, settle when alone.
+- **C. Use the battle art** already on the player's disk, 56x56 against the
+  overworld's 16x16, twelve times the pixels.
+- **D. Something none of us had thought of.**
+
+## A. Regions: NOT next, and the reason is ours, not theirs
+
+One reviewer called it a trap; the other said it is worth doing but only as
+continuous vertical bands, never as a limb rig. Reading our own builders found
+two blockers that neither of them named, and they are the ones that decide it:
+
+**The cut row has no faces.** Top and bottom quads are emitted only where the
+silhouette is exposed (`if not at(sx, ly - 1)`). At an interior row boundary
+that test is false on both sides, so slicing there leaves a hole, and the host
+draws with culling off. You would not see a gap, you would see the inside of the
+far wall.
+
+**The draw range is sticky global state on a shared mesh.** `setDrawRange` is
+set on the mesh, not on the draw call, and the same mesh is drawn by
+`ShadowMap.draw` **outside our wrap**. Any range left set truncates the shadow.
+Every one of the five early-return paths in the draw wrap would have to reset it.
+
+The good news, for later: emission is already row-major top to bottom in both
+builders, so "top N rows" is already a contiguous prefix. `CARVED` needs no
+reordering at all. Blink survives, because it captures vertex indices live at
+emission rather than recomputing them, so restructuring loops is safe and only
+permuting the finished arrays would corrupt it silently. **This is moderate
+work, not a rewrite, and it is worth doing after the cheaper wins.**
+
+## B. React to the world: YES, with one hard rule
+
+The reviewer who liked it most called it the largest gain per unit of risk. The
+other one agreed for scale and **refused it for yaw**, and that refusal is
+correct, because it lands on a ceiling we measured ourselves.
+
+**Never rotate in Y.** The side faces of every character carry 0.0% of the
+artist's art, and the only reason the player never sees that is that the game
+never yaws. A character that turns to look at the player would expose them.
+
+So the effect must be built from what does not rotate in Y: lean, scale, shear,
+timing. That is enough for attention (the body inclines toward the player),
+anticipation (posture rises as they approach), and settling (it decays when they
+leave). Both reviewers independently warned about the same failure: reaction
+that snaps at an exact radius reads as nervous. It needs hysteresis and a
+damped spring, which the instance tracker already has.
+
+## C. Battle art: DEAD, and this closes it
+
+The roadmap has kept this open since it was written. One fact retires it:
+**battle sprites have no walk cycle and exist in only two directions.** There is
+nothing to animate a character walking north, east or west with. Add 19 of 67
+sheets having a counterpart, and twelve times the pixel density sitting beside
+16x16 neighbours, and it is not a near miss, it is the wrong asset.
+
+## D. What neither of us had: the footfall
+
+The strongest new idea is the cheapest. **Squash on the step's impact**, synced
+to the walk frame, which this mod already knows: the mesh cache is keyed by
+frame and the draw wrap can read it. A small vertical squash at the moment the
+feet meet, released at the top of the step, transmits the weight transfer of the
+walk cycle to the solid without segmenting a single limb.
+
+Both reviewers, from different directions, arrived at the same shape: **more
+inertia, no anatomy.**
+
+## The order
+
+1. **Footfall squash.** Cheapest, physical, uses the frame we already have.
+2. **Attention and anticipation**, with hysteresis, and no yaw ever.
+3. **Per-instance temperament**, extending the personality table from amplitudes
+   to responsiveness: a child reacts faster, a guard barely at all.
+4. **Regions**, once the two blockers above are solved on purpose rather than
+   discovered by a seam in a screenshot.
+
+## One disagreement left open, to be measured and not argued
+
+One reviewer proposes easing the 90 degree turn over 0.08 to 0.12 seconds,
+arguing the eye cannot register missing side art that briefly. Our own
+measurement says those faces carry no art at all. **That is a testable
+disagreement and we now have the tool to settle it**: `clip.sh` films the same
+turn with and without, side by side. Measure before building.
+
+## Tooling, which earned its own line
+
+The owner is right that tooling has paid off more than any single feature. Two
+of the three defects found today were found by tools built the same day, and the
+third was found by a person because no tool covered that surface.
+
+- `tools/ingame/menu.lua` presses keys in the real options menu. It exists
+  because the A-on-STATUS bug shipped past every other gate, and it measured
+  something worth knowing on its first run: our rows start at index 43 of 48,
+  and `BREATH` is 45 presses of DOWN away from the player.
+- `tools/release_check.sh` asks the game whether a release is installable, by
+  running the game's own updater code against the live GitHub response. It
+  exists because every release from 1.0.0 to 1.6.0 was invisible to the in game
+  updater and no test we owned could have seen it: the bug lived in the shape of
+  a filename on GitHub.
