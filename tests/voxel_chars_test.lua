@@ -1200,18 +1200,19 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 12, "hook anexa as rows do voxel characters, mais STATUS e LIFE")
+  eq(#rows, 13, "hook anexa as rows, mais STATUS, LIFE e CAMERA FIT")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
   eq(rows[3].label, "LIFE", "hook anexa a row de LIFE logo depois do STATUS")
-  local option = rows[4]
-  eq(rows[5].label, "SIDE COLOR", "hook anexa a row de cor lateral")
-  eq(rows[6].label, "SHAPE", "hook anexa a row de shape")
-  eq(rows[7].label, "GROUND SHADE", "hook anexa a row de ground shade")
-  eq(rows[8].label, "BLINK", "hook anexa a row de blink")
-  eq(rows[9].label, "TOP EDGE", "hook anexa a row de top edge")
-  eq(rows[10].label, "FRONT SHAPE", "hook anexa a row de front shape")
-  eq(rows[11].label, "TOP DOME", "hook anexa a row de top dome")
-  eq(rows[12].label, "STEP WEIGHT", "hook anexa a row de step weight")
+  eq(rows[4].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE, antes das opcoes")
+  local option = rows[5]
+  eq(rows[6].label, "SIDE COLOR", "hook anexa a row de cor lateral")
+  eq(rows[7].label, "SHAPE", "hook anexa a row de shape")
+  eq(rows[8].label, "GROUND SHADE", "hook anexa a row de ground shade")
+  eq(rows[9].label, "BLINK", "hook anexa a row de blink")
+  eq(rows[10].label, "TOP EDGE", "hook anexa a row de top edge")
+  eq(rows[11].label, "FRONT SHAPE", "hook anexa a row de front shape")
+  eq(rows[12].label, "TOP DOME", "hook anexa a row de top dome")
+  eq(rows[13].label, "STEP WEIGHT", "hook anexa a row de step weight")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -1247,7 +1248,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[8]
+  local option = rows[9]
   eq(option.label, "TOP EDGE", "row de TOP EDGE fica depois de BLINK")
   eq(option.value(), "ON", "TOP EDGE default e ON")
   check(option.step(game, 1), "step de TOP EDGE informa mudanca")
@@ -1282,7 +1283,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[9]
+  local option = rows[10]
   eq(option.label, "FRONT SHAPE", "row de FRONT SHAPE fica depois de TOP EDGE")
   eq(option.value(), "OFF", "FRONT SHAPE default e OFF")
   check(option.step(game, 1), "step de FRONT SHAPE informa mudanca")
@@ -1324,7 +1325,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[10]
+  local option = rows[11]
   eq(option.label, "TOP DOME", "row de TOP DOME fica depois de FRONT SHAPE")
   eq(option.value(), "OFF", "TOP DOME default e OFF")
   check(option.step(game, 1), "step de TOP DOME informa mudanca")
@@ -1365,7 +1366,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[11]
+  local option = rows[12]
   eq(option.label, "STEP WEIGHT", "row de STEP WEIGHT fica depois de TOP DOME")
   eq(option.value(), "OFF", "STEP WEIGHT default e OFF")
   check(option.step(game, 1), "step de STEP WEIGHT informa mudanca")
@@ -4064,18 +4065,19 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 11, "com host, onze rows: STATUS, LIFE, mais as nove de sempre")
+  eq(#rows, 12, "com host, doze rows: STATUS, LIFE, CAMERA FIT e as nove de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
   eq(rows[2].label, "LIFE", "LIFE vem logo depois do STATUS")
-  eq(rows[3].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
-  eq(rows[4].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
-  eq(rows[5].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
-  eq(rows[6].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
-  eq(rows[7].label, "BLINK", "BLINK continua na mesma posicao relativa")
-  eq(rows[8].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
-  eq(rows[9].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
-  eq(rows[10].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
-  eq(rows[11].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
+  eq(rows[3].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE")
+  eq(rows[4].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
+  eq(rows[5].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
+  eq(rows[6].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
+  eq(rows[7].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
+  eq(rows[8].label, "BLINK", "BLINK continua na mesma posicao relativa")
+  eq(rows[9].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
+  eq(rows[10].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
+  eq(rows[11].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
+  eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
 
   -- APERTAR A NUMA ROW SO DE LEITURA NAO PODE FECHAR O MENU.
   --
@@ -5107,6 +5109,47 @@ do
 end
 
 do
+  -- CAMERA FIT: a tabela medida, e o que a row promete.
+  --
+  -- A recomendacao por degrau saiu do harness, nao de gosto: para cada camera,
+  -- a maior espessura que ainda mantem a proporcao de arte do padrao de hoje
+  -- (rung 35 com depth 3, que da 73.4%). Sai 1, 3, 5, 10.
+  --
+  -- O teste amarra as duas pontas que podem quebrar sem ninguem ver: a tabela
+  -- continuar monotona (camera mais deitada nunca pode pedir MAIS espessura, ou
+  -- a logica se inverteu) e a row ser uma ACAO e nao um ciclo, porque uma row
+  -- com value e sem step nem activate e tratada como CANCEL pelo motor.
+  local pixels = {}
+  pixels[0] = 1
+  for _, caso in ipairs({
+    { angulo = 15, esperado = 1 }, { angulo = 35, esperado = 3 },
+    { angulo = 50, esperado = 5 }, { angulo = 75, esperado = 10 },
+    -- entre degraus, o preset escolhe o mais proximo
+    { angulo = 20, esperado = 1 }, { angulo = 60, esperado = 5 },
+  }) do
+    local handle = makeVoxelHandle("1.6.0", pixels, 16, 16, math.rad(caso.angulo))
+    local mod = loadWith(makeMod(handle, { depth = 1 }))
+    local rows = {}
+    mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+    local fit
+    for _, row in ipairs(rows) do
+      if row.label == "CAMERA FIT" then fit = row end
+    end
+    check(fit ~= nil, "CAMERA FIT existe com a camera em " .. caso.angulo)
+    if fit then
+      local esperado = caso.esperado == 1 and "OK AT " .. caso.angulo
+        or ("SET DEPTH " .. caso.esperado)
+      eq(fit.value(), esperado,
+        "camera em " .. caso.angulo .. " graus recomenda espessura "
+        .. caso.esperado)
+      eq(type(fit.activate), "function",
+        "CAMERA FIT e uma ACAO: A aplica, e nao fecha o menu")
+      eq(fit.step, nil, "CAMERA FIT nao cicla com esquerda e direita")
+    end
+  end
+end
+
+do
   -- OS DEFAULTS QUE O JOGADOR RECEBE SEM ESCOLHER NADA.
   --
   -- Nenhum teste cobria isto, e a falta apareceu do jeito mais caro possivel:
@@ -5154,13 +5197,13 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 15,
-     "com canal, quinze rows: STATUS, LIFE e as treze opcoes")
-  eq(rows[11].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
-  eq(rows[12].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
-  eq(rows[13].label, "SWAY", "SWAY aparece depois de BREATH")
-  eq(rows[14].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
-  eq(rows[15].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
+  eq(#rows, 16,
+     "com canal, dezesseis rows: STATUS, LIFE, CAMERA FIT e as treze opcoes")
+  eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
+  eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
+  eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
+  eq(rows[15].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
+  eq(rows[16].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
 end
 
 do

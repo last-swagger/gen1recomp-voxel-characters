@@ -74,7 +74,8 @@ that fork.
 
 ## What you can turn on
 
-Fifteen rows under `OPTIONS`. The first two are read only.
+Sixteen rows under `OPTIONS`. The first two are read only, and the third is a
+button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
 and `BREATH`, and both earned it: they were shipped off, people used them, and
@@ -85,6 +86,7 @@ button away.
 ```
 STATUS         read only, see above
 LIFE           read only, the animation channel
+CAMERA FIT     press A to set the thickness this camera can afford
 
 VOXEL CHARS    OFF / 1 / 2 / 3 / 5 / 10          default 3      how thick
 SIDE COLOR     BODY / OUTLINE                    default BODY   what the new faces are painted with
@@ -111,6 +113,36 @@ pulse in unison. A few sheets have their own temperament: someone asleep
 breathes slowly and does not sway, a swimmer sways more, a guard at attention
 barely moves. Item balls and boulders do not breathe at all, for reasons that
 should be obvious the moment you picture the alternative.
+
+### CAMERA FIT, and why thickness is not one number
+
+Press `3` in game and the camera tilts through the voxel mod's ladder. How much
+of a character you see from the front, versus how much you see of its top, moves
+a lot along that ladder. And the top is the part the artist never drew.
+
+Rendered on `red`, share of the drawn pixels that is the artist's own art:
+
+```
+              rung 15   rung 35   rung 50   rung 75
+  depth  1     76.3      88.4      92.8      97.6
+  depth  2     62.2      80.0      86.9      95.5
+  depth  3     52.4      73.4      81.6      93.3
+  depth  5     40.1      62.9      73.8      89.1
+  depth 10     26.0      49.6      62.1      81.0
+```
+
+The default this mod ships, rung 35 at depth 3, sits at 73.4%. Take that as the
+bar, and the thickest setting each camera can afford is **1, 3, 5 and 10**. Set
+that way, every camera lands in the same place: roughly three quarters art.
+
+`CAMERA FIT` is a button, not a setting. It reads the camera you are on, shows
+what it would do, and applies it when you press A. It never changes anything on
+its own, because a mod quietly undoing your choice every time you press `3` is
+worse than a mod that lets you keep a setting you like.
+
+**The one worth knowing:** on the most upright camera you can run the thickest
+setting in the menu and still have more of the artist's art on screen than the
+default has today. If you play there, you are leaving volume on the table.
 
 ### SHAPE is not a quality ladder
 

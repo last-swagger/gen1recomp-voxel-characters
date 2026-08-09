@@ -60,10 +60,15 @@ return function(game)
 
   -- --------------------------------------------------------------- mundo
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
+  -- QUARTO VAZIO, e a licao veio do outro gate. M8 mede um efeito de meio
+  -- pixel comparando dois quadros; num mapa aberto o ciclo de dia, a agua e o
+  -- NPC perambulando fazem a linha de base ser milhares de pixels e o efeito
+  -- afunda no ruido. REDS_HOUSE_2F tem ZERO object events: o unico personagem
+  -- na tela e o jogador, e a linha de base fica em zero.
   local mapa, x, y = Pouso.escolher(game,
-    os.getenv("VC_MAP") or "PALLET_TOWN",
-    tonumber(os.getenv("VC_X")) or 10,
-    tonumber(os.getenv("VC_Y")) or 8)
+    os.getenv("VC_MAP") or "REDS_HOUSE_2F",
+    tonumber(os.getenv("VC_X")) or 3,
+    tonumber(os.getenv("VC_Y")) or 4)
   U.teleport(game, mapa, x, y, "down")
   U.wait(60)
   if topo() ~= game.overworld then
@@ -134,12 +139,14 @@ return function(game)
 
   -- ---------------------------------------------------------------- M2
   local ESPERADAS = {
-    { "status", "STATUS" }, { "life", "LIFE" }, { "depth", "VOXEL CHARS" },
+    { "status", "STATUS" }, { "life", "LIFE" },
+    { "camera_preset", "CAMERA FIT" }, { "depth", "VOXEL CHARS" },
     { "side_color", "SIDE COLOR" }, { "shape", "SHAPE" },
     { "ground_shade", "GROUND SHADE" }, { "blink", "BLINK" },
     { "top_edge", "TOP EDGE" }, { "front_shape", "FRONT SHAPE" },
     { "top_dome", "TOP DOME" }, { "step_weight", "STEP WEIGHT" },
     { "breath", "BREATH" }, { "sway", "SWAY" }, { "lag", "MOTION LAG" },
+    { "footfall", "FOOTFALL" },
   }
   local faltando, foraDeOrdem, anterior = {}, {}, 0
   for _, esperada in ipairs(ESPERADAS) do
@@ -154,10 +161,22 @@ return function(game)
       anterior = i
     end
   end
+  -- EXTRAS TAMBEM CONTAM. A primeira versao so perguntava se cada row esperada
+  -- existia, entao esquecer FOOTFALL na lista nao aparecia aqui: ela passava e
+  -- quem pegava era a M7, que conta. Um teste de inventario tem que reclamar
+  -- dos dois lados, senao ele so cobre o que alguem lembrou de escrever.
+  local nomeados = {}
+  for _, e in ipairs(ESPERADAS) do nomeados[e[1]] = true end
+  local extras = {}
+  for _, r in ipairs(rows()) do
+    local chave = tostring(r.id):match("^voxel_characters:(.+)$")
+    if chave and not nomeados[chave] then extras[#extras + 1] = chave end
+  end
   nota("%d rows na tela de opcoes, %d nossas", #rows(), #ESPERADAS - #faltando)
-  veredito("M2", #faltando == 0 and #foraDeOrdem == 0, string.format(
-    "faltando: [%s] | fora de ordem: [%s]",
-    table.concat(faltando, ", "), table.concat(foraDeOrdem, ", ")))
+  veredito("M2", #faltando == 0 and #foraDeOrdem == 0 and #extras == 0,
+    string.format("faltando: [%s] | fora de ordem: [%s] | nao esperadas: [%s]",
+      table.concat(faltando, ", "), table.concat(foraDeOrdem, ", "),
+      table.concat(extras, ", ")))
 
   -- ---------------------------------------------------------------- M3
   -- Alcancavel so com o teclado. A janela mostra quatro rows por vez

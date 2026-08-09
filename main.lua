@@ -2303,6 +2303,95 @@ local function lifeStatusRow()
   return readOnlyRow("life", "LIFE", lifeStatusValue)
 end
 
+-- ====================================================== PRESET DE CAMERA
+--
+-- MEDIDO, nao escolhido. O harness rendeu o red frame 0 em cada degrau de
+-- camera do host contra cada espessura do menu, e contou que fracao dos pixels
+-- desenhados vem da arte do artista (faces de frente e de costas) contra
+-- superficie que este mod inventou (topo, laterais, base):
+--
+--                 rung 15   rung 35   rung 50   rung 75
+--     depth  1     76.3      88.4      92.8      97.6
+--     depth  2     62.2      80.0      86.9      95.5
+--     depth  3     52.4      73.4      81.6      93.3
+--     depth  5     40.1      62.9      73.8      89.1
+--     depth 10     26.0      49.6      62.1      81.0
+--
+-- O criterio nao foi inventado: e o que JA E O PADRAO. rung 35 com depth 3 da
+-- 73.4% de arte, e essa e a configuracao que a comunidade viu, usou e aprovou.
+-- Entao para cada degrau a recomendacao e a maior espessura que ainda fica
+-- nesse patamar. Sai 1, 3, 5, 10, e a monotonia e consequencia da tabela, nao
+-- um arredondamento nosso.
+--
+-- O RESULTADO INTERESSANTE: com essas espessuras a composicao fica quase
+-- constante em todo degrau (arte entre 73 e 81%). Uma camera mais deitada olha
+-- mais para o topo, e o preset compensa exatamente isso tirando espessura. E
+-- por isso que ele NAO mexe em FRONT SHAPE nem em TOP DOME: depois de acertar a
+-- espessura, a proporcao entre a face da frente e a de topo ja e a mesma em
+-- todo lugar, entao nao existe motivo medido para variar o sombreamento junto.
+--
+-- E o de baixo para cima tambem vale: no degrau 75 da para usar a espessura
+-- MAXIMA do menu e ainda ter mais arte na tela do que a configuracao padrao tem
+-- hoje. Quem joga naquela camera esta deixando volume na mesa sem saber.
+local CAMERA_PRESET = {
+  { rung = 15, depth = 1 },
+  { rung = 35, depth = 3 },
+  { rung = 50, depth = 5 },
+  { rung = 75, depth = 10 },
+}
+
+-- O degrau atual em graus, do jeito que o host mede (0 deita o card no chao, 90
+-- levanta ele). Devolve nil quando nao da para saber, e ai a row diz isso em
+-- vez de chutar.
+local function cameraRung()
+  if not VoxelState then return nil end
+  local ok, value = pcall(function() return VoxelState.angle end)
+  if not ok then return nil end
+  local rad = tonumber(value)
+  if not rad then return nil end
+  return math.deg(rad)
+end
+
+local function presetParaAgora()
+  local graus = cameraRung()
+  if not graus then return nil end
+  local melhor, distancia = nil, math.huge
+  for _, entrada in ipairs(CAMERA_PRESET) do
+    local d = math.abs(entrada.rung - graus)
+    if d < distancia then melhor, distancia = entrada, d end
+  end
+  return melhor, graus
+end
+
+-- Row de ACAO, nao de ciclo. Apertar A aplica; esquerda e direita nao fazem
+-- nada. E deliberado que ela nao seja automatica: o mod mexer sozinho na
+-- escolha de alguem toda vez que a pessoa troca de camera e a mesma familia do
+-- defeito em que A numa row de leitura fechava o menu, ou seja fazer o que
+-- ninguem pediu. Aqui a pessoa pede, ve o valor mudar na row de VOXEL CHARS
+-- logo abaixo, e o save guarda o que ela escolheu.
+local function cameraPresetRow()
+  return {
+    id = mod.id .. ":camera_preset",
+    label = "CAMERA FIT",
+    value = function()
+      local entrada, graus = presetParaAgora()
+      if not entrada then return "NO CAMERA" end
+      local atual = optionState.depth
+      if atual == entrada.depth then
+        return string.format("OK AT %d", math.floor(graus + 0.5))
+      end
+      return string.format("SET DEPTH %d", entrada.depth)
+    end,
+    activate = function(game)
+      local entrada = presetParaAgora()
+      if not entrada then return end
+      local opt = OPTION_BY_KEY.depth
+      local valor = setOption(opt, entrada.depth)
+      writeOption(game, opt.key, valor)
+    end,
+  }
+end
+
 -- v1.4.2: registrado SEMPRE, com ou sem host (Colonel_Aureliano perdeu vinte
 -- minutos numa reinstalacao limpa, e o Angelus achou que era o Wilds of
 -- Kanto, porque sem host a row nem aparecia). Sem host, so a row de STATUS
@@ -2317,6 +2406,7 @@ local function registerOptionsRows()
     out[#out + 1] = statusRow()
     if patched then
       out[#out + 1] = lifeStatusRow()
+      out[#out + 1] = cameraPresetRow()
       for _, opt in ipairs(OPTIONS) do
         -- As tres opcoes de vida so aparecem quando o canal existe. Um menu
         -- que oferece BREATH num host sem Voxel3D.draw substituivel promete o
