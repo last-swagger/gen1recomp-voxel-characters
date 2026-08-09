@@ -89,6 +89,25 @@ echo "nao com a nossa suposicao sobre o que ele aceita."
 #
 # Entao isto nao conserta o passado, impede o proximo. Publicar com a conta
 # errada e o tipo de erro que so aparece depois de publicado, que e tarde.
+# ------------------------------------------------------------------
+# O TEXTO DA RELEASE.
+#
+# Regra do Kim, 2026-08-09: direto ao ponto, com imagem ou video, sem lenga
+# lenga. O corpo da v1.6.0 tinha 125 linhas e nenhuma midia. Isto nao reprova,
+# avisa: julgar prosa por contagem de linha seria fingir precisao que nao
+# existe, mas 40 linhas e o dobro do que qualquer uma das nossas releases
+# precisou para dizer o que mudou, e midia ausente e binario.
+LINHAS=$(python3 -c "import json;print(len(json.load(open('$TMP')).get('body','').splitlines()))" 2>/dev/null || echo 0)
+TEM_MIDIA=$(python3 -c "
+import json,re
+b=json.load(open('$TMP')).get('body','')
+print('sim' if re.search(r'!\[|<img|<video|\.png|\.gif|\.mp4', b) else 'nao')
+" 2>/dev/null || echo "?")
+echo ""
+echo "corpo       $LINHAS linhas, midia: $TEM_MIDIA"
+[ "${LINHAS:-0}" -gt 40 ] && echo "  AVISO: passou de 40 linhas; o formato acordado e titulo, 3 a 5 bullets, midia, instalacao, creditos"
+[ "$TEM_MIDIA" = "nao" ] && echo "  AVISO: sem imagem nem video; use o GIF do clip.sh ou do trailer.sh"
+
 ESPERADO="${VC_RELEASE_AUTHOR:-last-swagger}"
 AUTOR=$(python3 -c "import json,sys; print(json.load(open('$TMP')).get('author',{}).get('login',''))" 2>/dev/null)
 echo ""
