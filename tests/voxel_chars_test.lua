@@ -500,6 +500,48 @@ local function sameMatrix(a, b)
   return true
 end
 
+-- vida, magnitude: mesma ideia de withLoveTime, mas para uma SEQUENCIA de
+-- instantes em vez de um so. `fn` recebe `setClock`, que o teste chama a
+-- cada quadro simulado antes de desenhar. Restaura love.timer.getTime no
+-- final, mesmo se `fn` lancar.
+local function withDrivenClock(fn)
+  local prev = love.timer.getTime
+  local now = 0
+  love.timer.getTime = function() return now end
+  local ok, err = pcall(fn, function(value) now = value end)
+  love.timer.getTime = prev
+  if not ok then error(err) end
+end
+
+-- vida, magnitude: compara dois numeros com tolerancia RELATIVA (fracao de
+-- `want`). Os niveis do menu vao de 0.010 (BREATH SUBTLE) a 1.2 (MOTION LAG
+-- NORMAL); uma tolerancia absoluta fixa como a de `close` nao serve nos
+-- dois extremos.
+local function closePercent(got, want, pct)
+  return math.abs(got - want) <= math.abs(want) * pct
+end
+
+-- vida, magnitude: diferente de lifeModel (que so precisa provar "essa
+-- celula mudou" ou "nao mudou"), os testes de magnitude precisam ler s, kx
+-- e kz separados a partir da SAIDA. Esta matriz isola os tres numa linha
+-- cada, direto da formula de lifeApply (out[c+2] = m[c+2]*s + m[c+1]*kx +
+-- m[c+3]*kz):
+--   linha 0 (c=0): m[1]=sinal (contrato), m[2]=0, m[3]=0 -> out[2] = sinal*kx
+--   linha 1 (c=4): m[5]=0, m[6]=1, m[7]=0 -> out[6] = s
+--   linha 2 (c=8): m[9]=0, m[10]=0, m[11]=1 -> out[10] = kz
+-- (linha 3 nao e lida por ninguem, fica de recheio). Os contratos de
+-- model[1] (sinal do espelho), model[4] (px) e model[12] (py + 8) continuam
+-- valendo.
+local function lifeProbeModel(px, py, mirrored)
+  local sign = mirrored and -1 or 1
+  return {
+    sign, 0, 0, mirrored and (px + 16) or px,
+    0, 1, 0, 0,
+    0, 0, 1, py + 8,
+    0, 0, 0, 1,
+  }
+end
+
 local function paintBlinkFace(pixels, sheetW, cellW, frame)
   local skin = rgba(0.80, 0.55, 0.40, 1)
   local eye = rgba(0.05, 0.05, 0.05, 1)
@@ -5334,6 +5376,209 @@ do
   local calls = modules.Voxel3D.drawCalls
   check(sameMatrix(calls[1].model, calls[2].model),
         "duas chamadas na mesma posicao e no mesmo instante: as duas saidas saem iguais")
+end
+
+-- ========================================================================
+-- VIDA: MAGNITUDE (nao so "mudou?", mas "mudou QUANTO?")
+-- ========================================================================
+--
+-- O defeito que motivou este bloco: MOTION LAG cisalhava quase 45 graus no
+-- nivel 0.70 antigo (faltava dividir por LIFE_CELL, igual SWAY ja fazia), e
+-- os 465 checks acima mais os oito checks in-game passaram do mesmo jeito,
+-- porque todos perguntavam "mudou?" e nenhum perguntava "mudou quanto?".
+-- Quem pegou foi olhar um clipe. Os testes abaixo leem a MAGNITUDE real em
+-- pixels de mundo a partir da saida da matriz, usando lifeProbeModel (que
+-- isola s, kx e kz cada um numa linha, ver comentario da funcao).
+--
+-- O contrato em uma frase: o numero do menu e o deslocamento da CABECA em
+-- pixels de mundo, e a cabeca esta em y = 16 no espaco local da malha (o
+-- cisalhamento e proporcional a y, entao o deslocamento maximo, em y = 16,
+-- e |kx| * 16).
+
+do
+  -- item 1: a escala de BREATH bate com o nivel escolhido. O desvio maximo
+  -- de s em relacao a 1, varrendo um ciclo inteiro do relogio, tem que ser
+  -- o proprio valor do nivel (0.010 SUBTLE, 0.020 NORMAL, 0.035 STRONG),
+  -- com 5% de folga. Confere tambem que STRONG sai 3.5x SUBTLE, a
+  -- proporcao que nenhum teste antigo checava.
+  local levels = {
+    { name = "SUBTLE", value = 0.010 },
+    { name = "NORMAL", value = 0.020 },
+    { name = "STRONG", value = 0.035 },
+  }
+  local peaks = {}
+  for _, level in ipairs(levels) do
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { breath = level.value }))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    local peak = 0
+    withDrivenClock(function(setClock)
+      -- BREATH_PERIOD (main.lua) e 3.1s; 400 quadros a 1/60 cobrem quase
+      -- 6.7s, mais de dois ciclos inteiros, sem depender do valor exato da
+      -- constante.
+      for frame = 0, 400 do
+        setClock(frame / 60)
+        local model = lifeProbeModel(0, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+        local d = math.abs(out[6] - 1)
+        if d > peak then peak = d end
+      end
+    end)
+    peaks[level.name] = peak
+    check(closePercent(peak, level.value, 0.05),
+          "BREATH " .. level.name .. ": desvio maximo de s bate com o nivel, 5% de folga")
+  end
+  check(closePercent(peaks.STRONG / peaks.SUBTLE, 3.5, 0.05),
+        "BREATH STRONG sai 3.5x SUBTLE, a proporcao que nenhum teste antigo checava")
+end
+
+do
+  -- item 2: o deslocamento da cabeca de SWAY (|kx| * 16 no pico do ciclo)
+  -- bate com o nivel escolhido, 5% de folga.
+  local levels = { { name = "SUBTLE", value = 0.20 }, { name = "NORMAL", value = 0.45 } }
+  for _, level in ipairs(levels) do
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { sway = level.value }))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    local peak = 0
+    withDrivenClock(function(setClock)
+      -- SWAY_PERIOD (main.lua) e 6.2s; 500 quadros a 1/60 cobrem quase
+      -- 8.3s, mais de um ciclo inteiro.
+      for frame = 0, 500 do
+        setClock(frame / 60)
+        local model = lifeProbeModel(0, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+        local d = math.abs(out[2]) * 16
+        if d > peak then peak = d end
+      end
+    end)
+    check(closePercent(peak, level.value, 0.05),
+          "SWAY " .. level.name .. ": deslocamento maximo da cabeca bate com o nivel, 5% de folga")
+  end
+end
+
+do
+  -- item 3: MOTION LAG, o teste que teria pego o defeito. Personagem
+  -- andando 1 px por quadro (16 px em 16 quadros, a velocidade de
+  -- caminhada do jogo), relogio avancando 1/60 por quadro, 40 quadros:
+  -- tempo de sobra pra mola assentar. O pico de |kx| * 16 tem que ficar
+  -- perto do nivel, com folga para o passar-do-ponto da mola (~8%,
+  -- documentado em main.lua): aceita ate 1.4x, reprova acima disso. Com o
+  -- bug antigo (multiplicar por LIFE_CELL em vez de dividir) o pico sairia
+  -- uma ordem de grandeza maior (16x maior, ~19px em vez de ~1.3px no
+  -- nivel NORMAL) e o teste de 1.4x reprovaria.
+  local levels = { { name = "SUBTLE", value = 0.6 }, { name = "NORMAL", value = 1.2 } }
+  for _, level in ipairs(levels) do
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { lag = level.value }))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    local peak = 0
+    withDrivenClock(function(setClock)
+      for frame = 0, 40 do
+        setClock(frame / 60)
+        local model = lifeProbeModel(frame, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+        local d = math.abs(out[2]) * 16
+        if d > peak then peak = d end
+      end
+    end)
+    check(peak <= level.value * 1.4,
+          "MOTION LAG " .. level.name .. ": pico nao passa de 1.4x o nivel")
+    check(peak >= level.value * 0.5,
+          "MOTION LAG " .. level.name .. ": pico chega perto do nivel, nao fica muito abaixo")
+  end
+end
+
+do
+  -- item 4: teto absoluto de seguranca, independente de nivel e
+  -- personalidade. As tres opcoes no maximo (BREATH STRONG, SWAY NORMAL,
+  -- MOTION LAG NORMAL) na folha mais agressiva de LIFE_PERSONALITY
+  -- (main.lua): swimmer tem a maior soma breath (1.10) + sway (1.60) =
+  -- 2.70 da tabela (a segunda maior, fisher, fica em 1.05 + 1.25 = 2.30);
+  -- MOTION LAG nao tem entrada customizada pra gente, entao vale
+  -- multiplicador 1 em qualquer folha de personagem, igual em todas.
+  -- Anda na diagonal por 500 quadros (cobre o ciclo inteiro de BREATH e
+  -- SWAY e mantem a mola de LAG excitada o tempo todo) e guarda o pico dos
+  -- tres, cada um em pixels de mundo.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { breath = 0.035, sway = 0.45, lag = 1.2 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "swimmer.png", frames = 1 }, 0)
+  local maxS, maxKx, maxKz = 0, 0, 0
+  withDrivenClock(function(setClock)
+    for frame = 0, 500 do
+      setClock(frame / 60)
+      local model = lifeProbeModel(frame, frame, false)
+      modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+      local out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+      maxS = math.max(maxS, math.abs(out[6] - 1) * 16)
+      maxKx = math.max(maxKx, math.abs(out[2]) * 16)
+      maxKz = math.max(maxKz, math.abs(out[10]) * 16)
+    end
+  end)
+  check(maxS < 3, "teto de seguranca: |s - 1| * 16 fica abaixo de 3px mesmo no maximo")
+  check(maxKx < 3, "teto de seguranca: |kx| * 16 fica abaixo de 3px mesmo no maximo")
+  check(maxKz < 3, "teto de seguranca: |kz| * 16 fica abaixo de 3px mesmo no maximo")
+end
+
+do
+  -- item 5: a personalidade ESCALA a amplitude, nao so liga e desliga.
+  -- guard tem breath = 0.80 em LIFE_PERSONALITY; uma folha ausente da
+  -- tabela usa multiplicador 1. As duas tem o mesmo rate (guard: 1.00 na
+  -- tabela; ausente: default 1) e a mesma posicao (0, 0), entao a fase
+  -- avanca igual nas duas e a razao entre as amplitudes vale em qualquer
+  -- instante onde o seno nao esta perto de zero -- varre o relogio e
+  -- compara no instante de maior amplitude da folha sem personalidade.
+  local pixels = {}
+  pixels[0] = 1
+
+  local handleGuard, modulesGuard = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handleGuard, { breath = 0.035 }))
+  local guardMesh = modulesGuard.SpriteBillboards.mesh(
+    { image = "guard.png", frames = 1 }, 0)
+
+  local handlePlain, modulesPlain = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handlePlain, { breath = 0.035 }))
+  local plainMesh = modulesPlain.SpriteBillboards.mesh(
+    { image = "sheet.png", frames = 1 }, 0)
+
+  local bestPlainAmp, bestGuardAmp = 0, 0
+  withDrivenClock(function(setClock)
+    for frame = 0, 400 do
+      setClock(frame / 60)
+      local guardModel = lifeProbeModel(0, 0, false)
+      modulesGuard.Voxel3D.draw(guardMesh, "tex", guardModel, "pull", nil)
+      local plainModel = lifeProbeModel(0, 0, false)
+      modulesPlain.Voxel3D.draw(plainMesh, "tex", plainModel, "pull", nil)
+      local sGuard = modulesGuard.Voxel3D.drawCalls[#modulesGuard.Voxel3D.drawCalls].model[6]
+      local sPlain = modulesPlain.Voxel3D.drawCalls[#modulesPlain.Voxel3D.drawCalls].model[6]
+      local ampPlain = math.abs(sPlain - 1)
+      if ampPlain > bestPlainAmp then
+        bestPlainAmp = ampPlain
+        bestGuardAmp = math.abs(sGuard - 1)
+      end
+    end
+  end)
+  check(bestPlainAmp > 0.001,
+        "controle: a folha sem personalidade realmente respirou alguma coisa neste teste")
+  check(closePercent(bestGuardAmp, bestPlainAmp * 0.80, 0.05),
+        "guard (breath 0.80 na tabela) respira proporcionalmente menos que uma folha ausente")
 end
 
 T.finish("voxel_chars_test")
