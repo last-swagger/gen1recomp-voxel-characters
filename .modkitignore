@@ -37,6 +37,10 @@ docs/images/exposure.png
 tools/ingame/driver.lua
 tools/ingame/run.sh
 
+# A sonda do passo 1 do roadmap: envolve Voxel3D.draw no jogo rodando e mede se
+# a posicao por instancia chega limpa. So medicao, nao muda nada. Ferramenta.
+tools/ingame/probe_draw.lua
+
 # Mais renders de comparacao para as notas de release.
 docs/images/walk-offset.png
 docs/images/blink-walk.png
