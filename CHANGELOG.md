@@ -6,7 +6,7 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
-## [1.6.0] - 2026-08-08
+## [1.6.0] - 2026-08-09
 
 ### Added
 
@@ -146,6 +146,88 @@ the direction is named in the entry their contribution landed in.
   cache eviction happened to clear the old mesh. Quad count is unchanged
   at every strength: this moves vertices that already existed, it never
   adds a face.
+
+- **A life channel: `BREATH`, `SWAY` and `MOTION LAG`, each off by default.**
+  Until now every character was a solid that stood perfectly still, and a room
+  of them read as a diorama of statues. These three make the body do something.
+
+  `BREATH: OFF / SUBTLE / NORMAL / STRONG` scales the body vertically from the
+  feet. `SWAY: OFF / SUBTLE / NORMAL` shears it side to side at half the breath
+  rate with its own phase, so the two never reach their extremes together.
+  `MOTION LAG: OFF / SUBTLE / NORMAL` runs a spring per character that leans the
+  body back while it moves and overshoots when it stops.
+
+  **None of this writes a vertex.** The host builds a fresh transform matrix for
+  every character every frame, and this mod multiplies a small local transform
+  into it. That matters for two reasons. The mesh is created with the `static`
+  usage hint and is shared by every instance of a sheet, so rewriting its
+  vertices every frame would be both the misuse that hint exists to prevent and
+  a guarantee that two identical NPCs move in lockstep. Working in the matrix
+  avoids both: nothing is uploaded, and every instance gets its own transform
+  for free.
+
+  The algebra is what makes it legal. The host builds
+  `T(px+8, y, py+8) . Rx(lean - pi/2) . [mirror] . T(-8,0,0)`, and a local
+  `S(1,s,1)` commutes with both the mirror and that last translate, so
+  post-multiplying puts the scale exactly where it belongs: before the lean,
+  pivoted on the feet. Only column 2 of the matrix changes; the translation
+  column is copied untouched, which is why the feet stay planted by
+  construction rather than by care. The shadow matrix gets the same scale, so
+  the body never separates from its own shadow.
+
+  Each character keeps its own phase across frames, tracked by matching every
+  draw to a remembered instance by cell and then by nearest neighbour. The phase
+  advances with the **clock**, never with position. Deriving it from position
+  was the first design and it is wrong: a walking character would breathe at
+  double speed going one way and freeze going the other.
+
+  A small table gives some sheets their own temperament: a sleeping gambler
+  breathes slowly and does not sway, a swimmer sways more, a guard at attention
+  barely moves. `poke_ball` and `boulder` are pinned to zero, because an item
+  ball that breathes is the most obvious possible defect of the whole idea.
+
+  Measured cost, Viridian City with 25 characters on screen, vsync off, warmed
+  up and interleaved so warm-up drift cannot pass for effect: 0.166 ms against a
+  ruler noise floor of 0.261 ms. The honest statement is not that it is cheap,
+  but that this ruler cannot measure it.
+
+  What this is **not**: per part secondary motion. One matrix transforms the
+  whole mesh one way, so it cannot hold a bag back while the torso follows the
+  step. `MOTION LAG` is the whole body carrying weight, not hair moving
+  independently. That would need the mesh split into regions drawn with their
+  own matrices, and it is not started.
+
+- **A second patch point, and a capability probe that guards it.** The life
+  channel needs to wrap `Voxel3D.draw`, which is more of the host's surface than
+  this mod touched before. The probe now asks whether that function exists and
+  is callable, the wrap is installed only if it does and only after the
+  mandatory patch has committed, and a host without it loses the animation while
+  everything else keeps working. The three animation rows do not even appear in
+  the menu on such a host.
+
+- **A `LIFE` row, read only, next to `STATUS`.** Reports `NO HOST`,
+  `NO CHANNEL`, `REPLACED`, `FIRST PERSON`, `OFF`, or which of the three is on.
+  Same reasoning as `STATUS`: a channel that depends on a second host function
+  has more ways to be silently absent, so it says which one it is.
+
+### Fixed
+
+- **`MOTION LAG` was shearing the body nearly 45 degrees.** The level number was
+  being used as a slope instead of a head displacement in pixels, because the
+  divide by the 16 pixel cell height that `SWAY` already had was missing. At the
+  old top level the head moved 11 world pixels, most of a tile, and the
+  character read as falling over rather than walking. Caught by watching a video
+  clip, after passing 465 offline checks and 8 in game checks that all asked
+  whether something changed and never asked by how much. The suite now carries
+  magnitude bounds, including an absolute ceiling no future level can exceed.
+
+- **The instance tracker could lose a character and restart its phase.** The
+  neighbour search covered eight cells while the match radius was 24 pixels, and
+  24 pixels over 16 pixel cells reaches two cells, not one. In that gap an
+  instance was not found and was reborn with a new phase, which is exactly the
+  slipping the tracker exists to prevent. The search range is now derived from
+  the radius so the two cannot drift apart again. Found by an independent review
+  of the code, not by a test.
 
 ## [1.5.0] - 2026-08-08
 
