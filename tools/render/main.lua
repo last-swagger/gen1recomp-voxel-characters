@@ -85,6 +85,13 @@ local opts = {
   -- laboratorio poder ser CHECADO sem ninguem apertar tecla: uma ferramenta
   -- interativa que ninguem testa quebra calada.
   labshot = "",
+  labab = "",
+  -- Onde as escolhas caem, e uma escolha simulada para o gate. O arquivo e
+  -- parametrizavel porque o gate NAO pode escrever escolha inventada no
+  -- arquivo que vai treinar o juiz: seria envenenar o dado com a propria
+  -- ferramenta de teste.
+  labfile = "escolhas.txt",
+  labpick = "",
 }
 
 -- O schema que o proprio mod registra, capturado na ultima construcao. O
@@ -1618,7 +1625,37 @@ local lab = {
   folhas = {}, i = 1, facing = 1, andando = false, tocando = true,
   rung = 35, yaw = 0, sel = 1, valores = {}, opcoes = {},
   row = nil, erro = nil, sujo = true, t = 0, construcoes = 0,
+  -- modo escolha
+  ab = false, par = nil, rowA = nil, rowB = nil, escolhas = 0, pulos = 0,
 }
+
+-- Onde as escolhas ficam. Uma linha por escolha, chave=valor, para o ajuste
+-- do juiz poder ser refeito do zero e auditado depois.
+--
+-- Deliberadamente NAO grava feature nenhuma aqui: as features se recalculam
+-- a partir do estado gravado, pela propria regua, quando for a hora. Gravar
+-- numero medido junto congelaria a lista de features na primeira versao, e a
+-- lista de features e exatamente o que vai mudar quando o juiz empacar.
+-- Declarado aqui porque love.labsetup, mais abaixo, precisa chamar isto e o
+-- modo escolha e definido depois dele.
+local labMontaPar
+
+local function labGrava(linha)
+  local caminho = love.filesystem.getSaveDirectory() .. "/" .. opts.labfile
+  local f = io.open(caminho, "a")
+  if not f then print("NAO CONSEGUI GRAVAR A ESCOLHA em " .. caminho); return false end
+  f:write(linha .. "\n")
+  f:close()
+  return true
+end
+
+local function labEstadoTexto(v)
+  local partes = {}
+  for _, o in ipairs(LAB_SCHEMA or {}) do
+    partes[#partes + 1] = o.key .. "=" .. tostring(v[o.key])
+  end
+  return table.concat(partes, " ")
+end
 
 local function labFolhas()
   local out = {}
@@ -1796,7 +1833,173 @@ function love.labsetup()
   local pal = PALETTES[opts.palette] or PALETTES.obj
   for i = 1, 4 do state.shader:send("pal" .. (i - 1), pal[i]) end
   state.rows = {}
+  math.randomseed(os.time())
   labRebuild()
+  if opts.labab == "1" then
+    lab.ab = true
+    labMontaPar()
+    if lab.par then
+      print(string.format("modo escolha: %s, %s, %s contra %s",
+        lab.par.folha, lab.par.opcao.key, lab.par.rotuloA, lab.par.rotuloB))
+    else
+      print("modo escolha: NENHUM PAR (nenhuma opcao com dois niveis)")
+    end
+  end
+end
+
+--------------------------------------------------------------------------
+-- MODO ESCOLHA (tecla t)
+--------------------------------------------------------------------------
+-- Duas variantes lado a lado, uma tecla escolhe, e a escolha vira linha de
+-- arquivo. E a unica coisa que este projeto nao consegue computar.
+--
+-- Tres decisoes que nao sao obvias:
+--
+--   PAR DIFERE EM UMA OPCAO SO. Se os dois lados diferem em varias, a
+--   escolha nao atribui credito a nenhuma delas, e o registro nao serve para
+--   ajustar nada. Comparacao de estados inteiros vem depois, quando houver
+--   juiz para propor os estados.
+--
+--   A FOLHA SORTEIA JUNTO. Toda opcao deste mod foi julgada no red, e o que
+--   agrada no red pode nao agradar na nurse ou no snorlax. Se a folha nao
+--   variar, o juiz aprende o gosto do Kim PARA O RED.
+--
+--   PULAR E RESPOSTA. Forcar escolha entre duas coisas indistinguiveis
+--   injeta ruido com cara de sinal. "Nao vejo diferenca" e informacao: diz
+--   que a distancia entre os dois niveis esta abaixo do limiar de quem olha.
+-- Nem toda diferenca esta sempre na tela, e um par montado num instante em
+-- que os dois lados sao IDENTICOS nao coleta preferencia, coleta moeda.
+--
+-- Dois casos, os dois medidos e nao supostos:
+--   BLINK so difere durante 0,12 s de cada periodo de 3 a 6 s.
+--   STEP WEIGHT so difere na pose de caminhada (main.lua:1407).
+--
+-- Entao antes de mostrar um par, procura uma condicao (pose, instante) em que
+-- os dois lados de fato diferem, e CONGELA ali. Congelar e melhor que animar
+-- aqui: a pergunta e qual dos dois, e a resposta nao pode depender do quadro
+-- em que a pessoa apertou a tecla.
+--
+-- Achar em vez de calcular e deliberado. Replicar a formula de fase da
+-- piscada seria testar a implementacao contra ela mesma, e este harness ja
+-- resolve isso assim em outro lugar (blinkscan).
+local function labCondicao(folha, o, va, vb)
+  local relogio = love.timer.getTime
+  local achou, sempre = nil, true
+  for _, frame in ipairs({ 0, 3 }) do
+    for i = 0, 60 do
+      local t = i * 0.1
+      love.timer.getTime = function() return t end
+      local ra = labMalha(folha, frame, va)
+      local rb = labMalha(folha, frame, vb)
+      local difere = labAssinatura(ra and ra.mesh) ~= labAssinatura(rb and rb.mesh)
+      if difere and not achou then achou = { frame = frame, t = t } end
+      if not difere then sempre = false end
+      if achou and not sempre then
+        love.timer.getTime = relogio
+        return achou, false
+      end
+    end
+  end
+  love.timer.getTime = relogio
+  return achou, sempre
+end
+
+local function labSorteiaPar()
+  local candidatas = {}
+  for _, o in ipairs(lab.opcoes) do
+    if #(o.choices or {}) > 1 then candidatas[#candidatas + 1] = o end
+  end
+  if #candidatas == 0 then return nil end
+  local o = candidatas[math.random(#candidatas)]
+  local a = math.random(#o.choices)
+  local b = a
+  while b == a do b = math.random(#o.choices) end
+  local folha = lab.folhas[math.random(#lab.folhas)]
+  local base = {}
+  for _, oo in ipairs(LAB_SCHEMA) do base[oo.key] = lab.valores[oo.key] end
+  local va, vb = {}, {}
+  for k, v in pairs(base) do va[k] = v; vb[k] = v end
+  va[o.key] = o.choices[a][2]
+  vb[o.key] = o.choices[b][2]
+  local cond, sempre = labCondicao(folha, o, va, vb)
+  if not cond then
+    -- Os dois niveis produzem a mesma malha NESTA folha em toda condicao
+    -- varrida. Perguntar seria pedir para escolher entre duas imagens iguais.
+    return nil
+  end
+  return {
+    opcao = o, folha = folha,
+    rotuloA = o.choices[a][1], rotuloB = o.choices[b][1],
+    valoresA = va, valoresB = vb,
+    congela = (not sempre) and cond or nil,
+  }
+end
+
+-- Sorteia ate cair um par que de fato mostra diferenca. Tenta um numero fixo
+-- de vezes e desiste em voz alta: laco sem teto num sorteio que pode nunca
+-- acertar e como uma ferramenta trava sem ninguem entender por que.
+local function labSorteiaParValido()
+  for _ = 1, 40 do
+    local p = labSorteiaPar()
+    if p then return p end
+  end
+  print("modo escolha: 40 sorteios sem par visivel; ver a lista de opcoes")
+  return nil
+end
+
+-- Reconstroi as malhas do par ATUAL. Separado do sorteio de proposito: a
+-- animacao reconstroi todo quadro e nao pode trocar o par debaixo de quem
+-- esta decidindo.
+local function labConstroiPar()
+  if not lab.par then return end
+  local f = FACINGS[lab.facing]
+  local frame = lab.andando and f.anda or f.pose
+  local relogio
+  if lab.par.congela then
+    frame = lab.par.congela.frame
+    relogio = love.timer.getTime
+    local t = lab.par.congela.t
+    love.timer.getTime = function() return t end
+  end
+  local function monta(valores)
+    local r = labMalha(lab.par.folha, frame, valores)
+    if r then
+      r.pitch = math.rad(90 - lab.rung)
+      lab.texturas = lab.texturas or {}
+      local tex = lab.texturas[r.sprite]
+      if not tex then
+        tex = love.graphics.newImage(r.data)
+        tex:setFilter("nearest", "nearest")
+        lab.texturas[r.sprite] = tex
+      end
+      r.texture = tex
+      if r.mesh then r.kinds = classifyMesh(r.mesh, r.role) end
+    end
+    return r
+  end
+  lab.rowA = monta(lab.par.valoresA)
+  lab.rowB = monta(lab.par.valoresB)
+  lab.construcoes = lab.construcoes + 2
+  if relogio then love.timer.getTime = relogio end
+end
+
+function labMontaPar()
+  lab.par = labSorteiaParValido()
+  labConstroiPar()
+end
+
+local function labEscolhe(lado)
+  local p = lab.par
+  if not p then return end
+  labGrava(string.format(
+    "t=%s folha=%s pose=%s rung=%d yaw=%d opcao=%s a=%s b=%s escolha=%s | A: %s | B: %s",
+    os.date("%Y-%m-%dT%H:%M:%S"), p.folha, FACINGS[lab.facing].nome,
+    lab.rung, lab.yaw, p.opcao.key, tostring(p.valoresA[p.opcao.key]),
+    tostring(p.valoresB[p.opcao.key]), lado,
+    labEstadoTexto(p.valoresA), labEstadoTexto(p.valoresB)))
+  if lado == "pulo" then lab.pulos = lab.pulos + 1
+  else lab.escolhas = lab.escolhas + 1 end
+  labMontaPar()
 end
 
 local function labCicla(o, dir)
@@ -1828,6 +2031,27 @@ function love.labkeys(key)
   if opts.labshot ~= "" then return end
   local n = #lab.folhas
   if key == "escape" then return love.event.quit() end
+
+  if key == "t" then
+    lab.ab = not lab.ab
+    if lab.ab then labMontaPar() end
+    return
+  end
+  if lab.ab then
+    if key == "left" then return labEscolhe("A") end
+    if key == "right" then return labEscolhe("B") end
+    if key == "space" then return labEscolhe("pulo") end
+    if key == "f" then
+      lab.facing = lab.facing % #FACINGS + 1; return labMontaPar()
+    end
+    if key:match("^[1-4]$") then
+      lab.rung = LAB_RUNGS[tonumber(key)]; return labMontaPar()
+    end
+    if key == "q" then lab.yaw = (lab.yaw - 15) % 360 end
+    if key == "e" then lab.yaw = (lab.yaw + 15) % 360 end
+    return
+  end
+
   if key == "right" then lab.i = lab.i % n + 1; lab.sujo = true
   elseif key == "left" then lab.i = (lab.i - 2) % n + 1; lab.sujo = true
   elseif key == "down" then lab.sel = lab.sel % #lab.opcoes + 1
@@ -1859,8 +2083,57 @@ local function labTexto(x, y, s, cor)
   love.graphics.print(s, x, y)
 end
 
+local function labDrawAB()
+  local S, GY = 520, 130
+  local AX, BX = 140, 680
+  love.graphics.setDepthMode("always", false)
+  love.graphics.setShader()
+  for _, x in ipairs({ AX, BX }) do
+    love.graphics.setColor(0.16, 0.17, 0.20, 1)
+    love.graphics.rectangle("fill", x, GY, S, S)
+  end
+  for _, par in ipairs({ { AX, lab.rowA }, { BX, lab.rowB } }) do
+    if par[2] and par[2].mesh then
+      love.graphics.setDepthMode("less", true)
+      love.graphics.setShader(state.shader)
+      love.graphics.setColor(1, 1, 1, 1)
+      drawCell(par[2], math.rad(lab.yaw), par[1], GY, S)
+      love.graphics.setShader()
+      love.graphics.setDepthMode("always", false)
+    end
+  end
+
+  labTexto(AX, 26, "QUAL DOS DOIS?", { 0.9, 0.92, 0.95, 1 })
+  labTexto(AX, 48,
+    "seta esquerda escolhe A, seta direita escolhe B, espaco = nao vejo diferenca",
+    { 0.55, 0.60, 0.70, 1 })
+  local p = lab.par
+  if p then
+    labTexto(AX, 72, string.format(
+      "%s, %s, rung %d, e o resto esta igual dos dois lados",
+      p.folha, FACINGS[lab.facing].nome, lab.rung), { 0.5, 0.54, 0.60, 1 })
+    labTexto(AX, GY - 24, "A", { 1, 1, 1, 1 })
+    labTexto(BX, GY - 24, "B", { 1, 1, 1, 1 })
+    labTexto(AX + 22, GY - 24, p.opcao.label .. "  " .. p.rotuloA,
+      { 1, 0.9, 0.55, 1 })
+    labTexto(BX + 22, GY - 24, p.opcao.label .. "  " .. p.rotuloB,
+      { 1, 0.9, 0.55, 1 })
+    if p.congela then
+      labTexto(AX + 400, 72,
+        "congelado no instante e na pose em que os dois diferem",
+        { 0.55, 0.5, 0.35, 1 })
+    end
+  end
+  labTexto(AX, GY + S + 24, string.format(
+    "%d escolhas, %d pulos", lab.escolhas, lab.pulos), { 0.7, 0.73, 0.78, 1 })
+  labTexto(AX, GY + S + 46,
+    "f vira o personagem, 1-4 troca a camera, q/e gira, t volta ao editor",
+    { 0.45, 0.48, 0.53, 1 })
+end
+
 function love.labdraw()
   love.graphics.clear(state.bg[1], state.bg[2], state.bg[3], 1, true, true)
+  if lab.ab then return labDrawAB() end
 
   local VX, VY, VS = 330, 70, 620
   love.graphics.setDepthMode("always", false)
@@ -2011,11 +2284,14 @@ function love.update(dt)
     -- reconstruida com o relogio andando: por isso reconstroi por quadro
     -- enquanto toca, e so quando muda alguma coisa enquanto parado.
     lab.t = lab.t + (dt or 0)
-    if lab.tocando then
-      local anda = (lab.t % 0.5) < 0.25
-      if anda ~= lab.andando then lab.andando = anda end
-      labRebuild()
-    elseif lab.sujo then
+    if lab.tocando then lab.andando = (lab.t % 0.5) < 0.25 end
+    if lab.ab then
+      -- Os dois lados reconstroem no MESMO quadro, com o mesmo relogio: se um
+      -- piscasse e o outro nao, a escolha seria sobre a piscada e nao sobre a
+      -- opcao que o par diz estar comparando.
+      if lab.tocando or lab.sujo then labConstroiPar() end
+      lab.sujo = false
+    elseif lab.tocando or lab.sujo then
       labRebuild()
     end
     if opts.labshot ~= "" then
@@ -2026,6 +2302,11 @@ function love.update(dt)
           print("LAB FOTO " .. love.filesystem.getSaveDirectory() .. "/" ..
                 opts.labshot)
         end)
+      elseif lab.quadros == 202 and opts.labpick ~= "" then
+        -- Prova o caminho da gravacao inteiro, do par ate a linha no arquivo.
+        labEscolhe(opts.labpick)
+        print(string.format("escolha simulada gravada: %d escolhas, %d pulos",
+          lab.escolhas, lab.pulos))
       elseif lab.quadros > 204 then
         print(string.format(
           "laboratorio ok: %d construcoes em %d quadros, %d fps, %d folhas, %d opcoes",

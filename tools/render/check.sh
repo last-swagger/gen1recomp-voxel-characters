@@ -164,6 +164,29 @@ say "opcoes de matriz nao mexem na malha" \
     "$([ -z "$FALTOU" ] && echo ok || echo "FALHOU:$FALTOU")"
 [ -z "$FALTOU" ] || FAIL=1
 
+# 7. O MODO ESCOLHA propoe um par visivel e grava a escolha.
+#
+#    Um par cujos dois lados sao identicos na tela nao coleta preferencia,
+#    coleta cara ou coroa, e cara ou coroa entra no ajuste do juiz com a mesma
+#    cara de dado que uma escolha de verdade. Entao o sorteio so entrega par
+#    depois de ACHAR uma condicao (pose, instante) em que os dois diferem, e
+#    este check prova que ele entrega.
+#
+#    Grava em arquivo separado de proposito: o gate nao pode escrever escolha
+#    inventada onde o juiz vai aprender.
+rm -f "$HOME/Library/Application Support/LOVE/render/chk_escolhas.txt"
+AB=$($LOVE $H lab=1 labab=1 labpick=A labfile=chk_escolhas.txt \
+     labshot=chk_lab_ab.png 2>&1)
+R=$(echo "$AB" | grep "modo escolha:" | grep -vc "NENHUM PAR")
+say "modo escolha propoe par visivel" \
+    "$(echo "$AB" | grep -o 'modo escolha: .*' | head -1)"
+[ "$R" = "1" ] || FAIL=1
+
+LINHAS=$(wc -l < "$HOME/Library/Application Support/LOVE/render/chk_escolhas.txt" 2>/dev/null | tr -d ' ')
+say "a escolha vira linha de arquivo" \
+    "$([ "${LINHAS:-0}" -ge 1 ] && echo "ok, $LINHAS linha" || echo FALHOU)"
+[ "${LINHAS:-0}" -ge 1 ] || FAIL=1
+
 echo
 [ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: nao confie em medicao ate consertar"
 exit $FAIL
