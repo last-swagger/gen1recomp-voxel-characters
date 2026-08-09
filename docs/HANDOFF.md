@@ -35,23 +35,40 @@ Green today: **546/546**, `REGUA OK`, `10/10`, `8/8`, `GATE OK 11 fotos`, `ok va
 The core repo's own suite is red with 18 pre-existing failures. Verified against
 a baseline without this mod. Ignore it.
 
-## Two machines, and the boundary is not a choice
+## Two machines, both with a full test room
 
-`ssh mbp` reaches the MacBook Pro. It has `git`, `python3`, `luajit` and the
-`claude` CLI, plus both repos under `~/Projects/gen1recomp`. Two things bite in
-a non-interactive shell: `brew` lives at `/usr/local/bin/brew` and is off the
-PATH, and there is no passwordless sudo.
+`ssh mbp` reaches the MacBook Pro, and as of 2026-08-09 it runs **the entire
+battery**, with the same numbers this machine reports: 546/546, `REGUA OK`,
+10/10 pixel, 8/8 menu (16 rows ours, 34 from elsewhere, `BREATH` at index 46),
+`GATE OK`, `CLIPE OK`, `RELEASE OK`.
 
-**The MBP runs 485 of 486.** The one failure is a test reading
-`assets/generated/sprites/lorelei.png`, which is derived from the player's own
-ROM at first boot and is in no clone. So:
+A clone alone cannot do that. What a second machine needs, none of it in git:
 
-- **MBP:** code, and everything that does not touch ROM-derived art.
-- **This machine:** every visual gate, because they all read the extracted
-  sprites and the LOVE save cache. Also the release.
+```
+~/Applications/love.app                            rsync'd (universal binary)
+baserom.gb  +  assets/generated/                   derived from the owner's ROM
+mods/DramaticShapeVoxelMod                         the host; without it we no-op
+mods/gen1_modern_ui                                changes the menu row count
+~/Library/Application Support/LOVE/pokemon-love2d  save, options, blue cache
+luajit, ffmpeg, gh                                 brew
+```
 
-Consequence worth stating plainly: **no visual change can be called done from
-the MBP.** Green there is 485/486; green here is 546 plus four visual gates.
+Two non-interactive-shell traps: `brew` is at `/usr/local/bin` and off the PATH,
+and there is no passwordless sudo, which is why LOVE went to `~/Applications`
+rather than `/Applications`. The save dir has a space in its path and Apple's
+`rsync` mishandles it: use `tar czf - … | ssh mbp tar xzf -`.
+
+An earlier version of this file claimed the visual gates could only run here.
+That was wrong. Nothing was blocked; files had not been copied.
+
+**What is still true:** a fresh clone scores 485/486, failing on
+`assets/generated/sprites/lorelei.png`. That is the suite reporting an unbuilt
+test room, not a broken test.
+
+Code moves between the machines by `git bundle --all` + `scp` + `git fetch`
+from `/tmp`, so nothing is pushed. Screenshots never match byte for byte across
+machines: wandering NPCs and the day cycle differ. Compare visually, or compare
+the harness's numbers.
 
 ## What is waiting on Kim's eye
 
