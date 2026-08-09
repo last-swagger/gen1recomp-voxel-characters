@@ -1460,6 +1460,56 @@ local function computeMetrics(screen)
       end
     end
   end
+
+  -- ESTRUTURA TONAL, por classe de face.
+  --
+  -- O art% acima e provenance PURA: ele conta de onde a superficie veio, e o
+  -- passe que o mede reaproveita o canal de shade para carregar a classe da
+  -- face, entao ele e cego a iluminacao POR CONSTRUCAO. Nenhuma opcao de
+  -- sombreamento pode move-lo, nem em principio. Isso deixou duas features
+  -- desta branch sem regua nenhuma, julgadas so no olho.
+  --
+  -- Isto mede outra coisa: quanta ESTRUTURA existe na superficie desenhada.
+  -- Uma tampa chapada tem um nivel de tom so e amplitude zero. Um domo em
+  -- degraus tem tres. Nao decide se ficou bonito, e nao tenta: essa licao ja
+  -- foi paga quando um redesenho por IA satisfez toda restricao numerica e
+  -- entregou arte pior. Serve para dizer O QUE MUDOU e para pegar regressao.
+  print("")
+  print("estrutura tonal na superficie desenhada, por classe de face")
+  print("  niveis  quantos tons distintos aparecem (chapado = 1)")
+  print("  ampl    diferenca entre o tom mais claro e o mais escuro")
+  for r, row in ipairs(state.rows) do
+    local y0 = (r - 1) * (cell + labelH) + labelH
+    for c, yawDeg in ipairs(state.yaws) do
+      local x0 = (c - 1) * cell
+      local tons, lo, hi = {}, {}, {}
+      for _, k in ipairs(KINDS) do tons[k] = {}; lo[k] = 2; hi[k] = -1 end
+      for y = 0, cell - 1 do
+        for x = 0, cell - 1 do
+          local kind = kindAt(img:getPixel(x0 + x, y0 + y))
+          if kind then
+            local sr, sg, sb = screen:getPixel(x0 + x, y0 + y)
+            local lum = sr * 0.3 + sg * 0.6 + sb * 0.1
+            -- quantiza em 64 baldes: o adversario mostrou que contar valores
+            -- unicos de ponto flutuante sempre devolve "muitos", tanto para um
+            -- degrade bonito quanto para ruido, entao nao discrimina nada.
+            tons[kind][math.floor(lum * 64 + 0.5)] = true
+            if lum < lo[kind] then lo[kind] = lum end
+            if lum > hi[kind] then hi[kind] = lum end
+          end
+        end
+      end
+      for _, k in ipairs({ "front", "top" }) do
+        local n = 0
+        for _ in pairs(tons[k]) do n = n + 1 end
+        if n > 0 then
+          print(string.format(
+            "  %-11s %-9s yaw %2d   %-6s niveis %2d   ampl %.3f",
+            row.shape, row.pitchLabel, yawDeg, k, n, hi[k] - lo[k]))
+        end
+      end
+    end
+  end
   colour:release()
   depth:release()
 end
