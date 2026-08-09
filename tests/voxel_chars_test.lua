@@ -741,6 +741,34 @@ do
 end
 
 do
+  -- A versao REAL e atual do Dramaless Shape, travada aqui de proposito.
+  --
+  -- O repositorio do Dramatic Shape original saiu do ar pela segunda vez, e
+  -- este fork passou a ser o host que a maior parte da comunidade roda. A
+  -- faixa `>=1.5.0 <2.0.0` cobre 1.6.4 hoje; se alguem apertar essa faixa numa
+  -- rodada futura sem perceber, o mod passa a logar "untested version" para o
+  -- host mais usado que existe, e ninguem descobre porque nada quebra. Este
+  -- teste existe para quebrar antes disso.
+  --
+  -- Conferido contra a release de verdade: id DRAMALESS_SHAPE, api 2, e os
+  -- seis modulos que a gente consome presentes, com SpriteBillboards.mesh
+  -- ainda campo de tabela.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("1.6.4", pixels, 16, 16,
+    nil, nil, nil, nil, "DRAMALESS_SHAPE")
+  local mod = loadWith(makeMod(handle))
+  check(modules.SpriteBillboards.mesh ~= original,
+        "Dramaless Shape 1.6.4 e aceito")
+  local avisoDeVersao = false
+  for _, w in ipairs(mod._logs.warn or {}) do
+    if w:find("untested version", 1, true) then avisoDeVersao = true end
+  end
+  check(not avisoDeVersao,
+        "Dramaless Shape 1.6.4 esta DENTRO da faixa testada, sem aviso")
+end
+
+do
   -- sem host: a row de STATUS aparece dizendo NO HOST (em vez do vazio de
   -- antes, que fez o Colonel_Aureliano perder vinte minutos numa
   -- reinstalacao limpa e o Angelus achar que era o Wilds of Kanto).
