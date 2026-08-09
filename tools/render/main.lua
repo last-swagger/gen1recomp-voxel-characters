@@ -80,7 +80,19 @@ local opts = {
   selftest = "",
   topedge = "",
   opt = "",
+  lab = "",
+  -- `labshot=arquivo.png` abre o laboratorio, fotografa e sai. Existe para o
+  -- laboratorio poder ser CHECADO sem ninguem apertar tecla: uma ferramenta
+  -- interativa que ninguem testa quebra calada.
+  labshot = "",
 }
+
+-- O schema que o proprio mod registra, capturado na ultima construcao. O
+-- laboratorio monta o menu dele a partir daqui em vez de manter uma copia:
+-- tabela paralela apodrece, e ja apodreceu neste projeto (uma opcao nova ficou
+-- sem medicao visual porque a ferramenta nao sabia que ela existia).
+local LAB_SCHEMA = nil
+local MOD_CHUNK = nil
 
 local function parseArgs(argv)
   for _, a in ipairs(argv or {}) do
@@ -292,8 +304,14 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
     end
   end
   local mod = makeMod(handle, stored)
-  local chunk = assert(loadfile(MAIN_PATH))
-  chunk(mod)
+  -- O chunk e compilado UMA vez e reexecutado por construcao. Antes isto
+  -- reparseava 2800 linhas a cada malha, o que ninguem notava com vinte
+  -- celulas e domina o custo quando o laboratorio constroi centenas para
+  -- descobrir quais opcoes mexem na geometria. Reexecutar e o que importa:
+  -- cada execucao devolve um mod novo, com estado proprio.
+  MOD_CHUNK = MOD_CHUNK or assert(loadfile(MAIN_PATH))
+  MOD_CHUNK(mod)
+  LAB_SCHEMA = mod._schema or LAB_SCHEMA
   if #pedidas > 0 then
     local conhecidas = {}
     for _, row in ipairs(mod._schema or {}) do
@@ -957,6 +975,7 @@ function love.load(argv)
     local ok = selftest()
     return love.event.quit(ok and 0 or 1)
   end
+  if opts.lab == "1" then return love.labsetup() end
   -- Antes de qualquer malha ser construida: estes parametros mudam geometria.
   if opts.shade == "host" then SHADE_OVERRIDE = HOST_SHADE end
   if tonumber(opts.aostrength) then setAoStrength(tonumber(opts.aostrength)) end
@@ -1572,7 +1591,356 @@ local function computeMetrics(screen)
   depth:release()
 end
 
+--------------------------------------------------------------------------
+-- LABORATORIO  (lab=1)
+--------------------------------------------------------------------------
+-- Um editor de personagem: uma folha grande no meio, todas as opcoes do mod
+-- na lateral, e navegacao pelas 67 folhas do jogo. Serve a tres coisas ao
+-- mesmo tempo:
+--
+--   1. ver uma opcao mudar na hora, em vez de esperar um contact sheet;
+--   2. ver a opcao em QUEM NAO E O RED, que e onde as regressoes moram
+--      (nurse tem tres frames, boulder tem um, snorlax e mais largo);
+--   3. registrar ESCOLHA, que e a unica coisa que nenhum numero aqui produz.
+--
+-- O terceiro e o motivo real. Este projeto ja mediu que um redesenho por IA
+-- satisfaz toda restricao numerica e entrega arte pior, entao o gerador nao
+-- pode ser treinado contra as reguas que a gente tem. Falta juiz, e juiz
+-- comeca com alguem escolhendo entre dois.
+
+local FACINGS = {
+  { nome = "FRENTE", pose = 0, anda = 3 },
+  { nome = "COSTAS", pose = 1, anda = 4 },
+  { nome = "LADO",   pose = 2, anda = 5 },
+}
+
+local lab = {
+  folhas = {}, i = 1, facing = 1, andando = false, tocando = true,
+  rung = 35, yaw = 0, sel = 1, valores = {}, opcoes = {},
+  row = nil, erro = nil, sujo = true, t = 0, construcoes = 0,
+}
+
+local function labFolhas()
+  local out = {}
+  local p = io.popen("ls " .. SPRITE_DIR .. " 2>/dev/null")
+  if p then
+    for linha in p:lines() do
+      local nome = linha:match("^(.+)%.png$")
+      if nome then out[#out + 1] = nome end
+    end
+    p:close()
+  end
+  table.sort(out)
+  return out
+end
+
+-- Constroi a malha do estado atual. Passa TODA opcao pela passagem generica
+-- `opt=`, entao uma opcao nova aparece aqui sem nenhuma linha nova.
+local function labMalha(nomeFolha, frame, valores)
+  local path = SPRITE_DIR .. nomeFolha .. ".png"
+  local ok, data = pcall(loadImageData, path)
+  if not ok then return nil, "sem folha: " .. path end
+  local sw, sh = data:getDimensions()
+  local def = { image = path, frames = math.max(1, math.floor(sh / 16)) }
+  if frame >= def.frames then frame = frame % def.frames end
+  local pares = {}
+  for _, o in ipairs(LAB_SCHEMA or {}) do
+    if valores[o.key] ~= nil then
+      pares[#pares + 1] = o.key .. ":" .. tostring(valores[o.key])
+    end
+  end
+  opts.opt = table.concat(pares, ",")
+  local shape = valores.shape or "slab"
+  local depth = tonumber(valores.depth) or 3
+  local mesh, why = buildGeometry(data, def, frame, shape, depth,
+                                  valores.side_color or "body")
+  return {
+    sprite = nomeFolha, frame = frame, shape = shape, mesh = mesh, why = why,
+    texture = nil, data = data,
+    cellW = sw, cellH = sh / def.frames, frames = def.frames,
+    role = (shape == "carved" or shape == "carved_plus") and (frame % 3) or 0,
+  }
+end
+
+-- Assinatura de uma malha, para responder "esta opcao muda a GEOMETRIA?".
+local function labAssinatura(m)
+  if not m or not m.verts then return "sem malha" end
+  local s = #m.verts
+  for i = 1, #m.verts do
+    local v = m.verts[i]
+    s = s + v[1] * 7 + v[2] * 13 + v[3] * 17 + v[4] * 23 + v[5] * 29 + v[6] * 31
+  end
+  return string.format("%d:%.4f", #m.verts, s)
+end
+
+-- Quais opcoes este laboratorio consegue mostrar, MEDIDO e nao suposto.
+--
+-- BREATH, SWAY, MOTION LAG e FOOTFALL nao mexem em vertice: eles
+-- pos-multiplicam a matriz que o host passa para Voxel3D.draw, e aqui nao
+-- existe host de verdade nem matriz. Um controle que nao faz nada e pior que
+-- controle ausente, porque a pessoa mexe, nao ve efeito e conclui que a
+-- feature esta quebrada. Entao em vez de manter uma lista escrita na mao
+-- (que apodrece com a proxima opcao nova), a gente CONSTROI cada nivel e
+-- compara: se nenhum nivel muda a malha, a opcao e de jogo, nao daqui.
+--
+-- A primeira versao disto errou DUAS opcoes de uma vez, e as duas por comparar
+-- num ponto so em vez de nos eixos onde o efeito vive. Os eixos, agora
+-- explicitos, cada um por um mecanismo lido no mod:
+--
+--   FRAME. STEP WEIGHT so desloca z quando `andando` (main.lua:1407). Medido
+--   so na pose parada, ele nao muda nada e parecia opcao de jogo. Entao a
+--   varredura inclui uma pose de caminhada.
+--
+--   RELOGIO. A piscada fecha por 0,12 s num periodo entre 3 e 6 s, com fase
+--   por folha (main.lua:408, 1085-1096). Tres instantes escolhidos a esmo caem
+--   fora quase sempre. Passo de 0,1 s cobre qualquer janela de 0,12 s, entao a
+--   varredura ACHA a piscada em vez de torcer para acerta-la. Este projeto ja
+--   concluiu que a piscada nao funcionava quando funcionava, exatamente assim.
+--
+-- Sai cedo na primeira diferenca, entao o custo real e alto so para a opcao
+-- que de fato nao mexe na malha, que e o que se quer provar com cuidado.
+local LAB_CLOCK_PASSO = 0.1
+local LAB_CLOCK_ATE = 6.0
+
+local function labClassifica(base)
+  local relogio = love.timer.getTime
+  local geometrica, construcoes = {}, 0
+  for _, o in ipairs(LAB_SCHEMA or {}) do
+    local muda = false
+    local t = 0
+    while t <= LAB_CLOCK_ATE and not muda do
+      love.timer.getTime = function() return t end
+      for _, frame in ipairs({ 0, 3 }) do
+        local vista = nil
+        for _, nivel in ipairs(o.choices or {}) do
+          local v = {}
+          for k, val in pairs(base) do v[k] = val end
+          v[o.key] = nivel[2]
+          local r = labMalha(lab.folhas[lab.i] or "red", frame, v)
+          construcoes = construcoes + 1
+          local a = labAssinatura(r and r.mesh)
+          if vista and a ~= vista then muda = true break end
+          vista = a
+        end
+        if muda then break end
+      end
+      t = t + LAB_CLOCK_PASSO
+    end
+    geometrica[o.key] = muda
+  end
+  love.timer.getTime = relogio
+  return geometrica, construcoes
+end
+
+local function labRebuild()
+  local f = FACINGS[lab.facing]
+  local frame = (lab.andando and lab.tocando) and f.anda or f.pose
+  local row, erro = labMalha(lab.folhas[lab.i], frame, lab.valores)
+  lab.erro = erro
+  if row then
+    row.pitch = math.rad(90 - lab.rung)
+    -- Textura por FOLHA, nao por quadro. Enquanto toca, isto era um upload de
+    -- imagem por quadro para reenviar bytes identicos.
+    lab.texturas = lab.texturas or {}
+    local tex = lab.texturas[row.sprite]
+    if not tex then
+      tex = love.graphics.newImage(row.data)
+      tex:setFilter("nearest", "nearest")
+      lab.texturas[row.sprite] = tex
+    end
+    row.texture = tex
+    if row.mesh then row.kinds = classifyMesh(row.mesh, row.role) end
+    lab.row = row
+    lab.construcoes = lab.construcoes + 1
+  end
+  lab.sujo = false
+end
+
+-- Global de proposito: love.load e definido ACIMA desta secao, entao um local
+-- daqui nao existiria como upvalue la. Mesmo motivo de love.labdraw/labkeys.
+function love.labsetup()
+  lab.folhas = labFolhas()
+  if #lab.folhas == 0 then return fail("nenhuma folha em " .. SPRITE_DIR) end
+  for i, n in ipairs(lab.folhas) do if n == opts.sprite then lab.i = i end end
+
+  -- Uma construcao so para o mod se registrar e o schema existir.
+  labMalha(lab.folhas[lab.i], 0, {})
+  if not LAB_SCHEMA then return fail("o mod nao registrou schema de opcoes") end
+  for _, o in ipairs(LAB_SCHEMA) do lab.valores[o.key] = o.default end
+
+  local t0 = love.timer.getTime()
+  local geometrica, construcoes = labClassifica(lab.valores)
+  local custo = love.timer.getTime() - t0
+  local aqui, la = {}, {}
+  for _, o in ipairs(LAB_SCHEMA) do
+    if geometrica[o.key] then
+      lab.opcoes[#lab.opcoes + 1] = o
+      aqui[#aqui + 1] = o.key
+    else
+      la[#la + 1] = o.key
+    end
+  end
+  print("laboratorio: " .. #lab.opcoes .. " opcoes mexem na malha e aparecem aqui")
+  print("  aqui:  " .. table.concat(aqui, ", "))
+  print("  sem efeito na malha: " .. table.concat(la, ", "))
+  print(string.format("  classificacao: %d construcoes em %.1f s, varrendo o " ..
+    "relogio ate %.1f s de %.2f em %.2f e as poses 0 e 3",
+    construcoes, custo, LAB_CLOCK_ATE, LAB_CLOCK_PASSO, LAB_CLOCK_PASSO))
+  print("  folhas: " .. #lab.folhas)
+
+  love.window.setMode(1280, 800, { depth = 24, vsync = 1 })
+  love.window.setTitle("voxel characters - laboratorio")
+  state.width, state.height = 1280, 800
+  state.bg = { 0.10, 0.11, 0.13 }
+  state.shader = love.graphics.newShader(SHADER)
+  local pal = PALETTES[opts.palette] or PALETTES.obj
+  for i = 1, 4 do state.shader:send("pal" .. (i - 1), pal[i]) end
+  state.rows = {}
+  labRebuild()
+end
+
+local function labCicla(o, dir)
+  local idx = 1
+  for i, nivel in ipairs(o.choices) do
+    if nivel[2] == lab.valores[o.key] then idx = i end
+  end
+  idx = idx + dir
+  if idx < 1 then idx = #o.choices end
+  if idx > #o.choices then idx = 1 end
+  lab.valores[o.key] = o.choices[idx][2]
+  lab.sujo = true
+end
+
+local function labRotulo(o)
+  for _, nivel in ipairs(o.choices) do
+    if nivel[2] == lab.valores[o.key] then return nivel[1] end
+  end
+  return tostring(lab.valores[o.key])
+end
+
+local LAB_RUNGS = { 15, 35, 50, 75 }
+
+function love.labkeys(key)
+  -- Sob labshot a corrida e automatica e tem que ser reprodutivel. Uma tecla
+  -- solta chegando na janela ja mudou o resultado uma vez: a corrida saiu com
+  -- duas construcoes em vez de duzentas porque alguma coisa entregou `space`,
+  -- e eu quase li isso como a reconstrucao estar lenta.
+  if opts.labshot ~= "" then return end
+  local n = #lab.folhas
+  if key == "escape" then return love.event.quit() end
+  if key == "right" then lab.i = lab.i % n + 1; lab.sujo = true
+  elseif key == "left" then lab.i = (lab.i - 2) % n + 1; lab.sujo = true
+  elseif key == "down" then lab.sel = lab.sel % #lab.opcoes + 1
+  elseif key == "up" then lab.sel = (lab.sel - 2) % #lab.opcoes + 1
+  elseif key == "d" or key == "]" then labCicla(lab.opcoes[lab.sel], 1)
+  elseif key == "a" or key == "[" then labCicla(lab.opcoes[lab.sel], -1)
+  elseif key == "f" then
+    lab.facing = lab.facing % #FACINGS + 1; lab.sujo = true
+  elseif key == "space" then lab.tocando = not lab.tocando; lab.sujo = true
+  elseif key == "q" then lab.yaw = (lab.yaw - 15) % 360
+  elseif key == "e" then lab.yaw = (lab.yaw + 15) % 360
+  elseif key == "r" then
+    for _, o in ipairs(LAB_SCHEMA) do lab.valores[o.key] = o.default end
+    lab.sujo = true
+  elseif key:match("^[1-4]$") then
+    lab.rung = LAB_RUNGS[tonumber(key)]; lab.sujo = true
+  elseif key == "s" then
+    local nome = string.format("lab_%s_%s.png", lab.row and lab.row.sprite or "x",
+      os.date("%H%M%S"))
+    love.graphics.captureScreenshot(function(img)
+      img:encode("png", nome)
+      print("FOTO " .. love.filesystem.getSaveDirectory() .. "/" .. nome)
+    end)
+  end
+end
+
+local function labTexto(x, y, s, cor)
+  love.graphics.setColor(cor or { 1, 1, 1, 1 })
+  love.graphics.print(s, x, y)
+end
+
+function love.labdraw()
+  love.graphics.clear(state.bg[1], state.bg[2], state.bg[3], 1, true, true)
+
+  local VX, VY, VS = 330, 70, 620
+  love.graphics.setDepthMode("always", false)
+  love.graphics.setShader()
+  love.graphics.setColor(0.16, 0.17, 0.20, 1)
+  love.graphics.rectangle("fill", VX, VY, VS, VS)
+
+  if lab.row and lab.row.mesh then
+    love.graphics.setDepthMode("less", true)
+    love.graphics.setShader(state.shader)
+    love.graphics.setColor(1, 1, 1, 1)
+    drawCell(lab.row, math.rad(lab.yaw), VX, VY, VS)
+    love.graphics.setShader()
+    love.graphics.setDepthMode("always", false)
+  end
+
+  -- coluna das opcoes
+  labTexto(20, 20, "OPCOES", { 0.55, 0.60, 0.70, 1 })
+  local y = 46
+  for i, o in ipairs(lab.opcoes) do
+    local sel = (i == lab.sel)
+    if sel then
+      love.graphics.setColor(0.20, 0.34, 0.52, 1)
+      love.graphics.rectangle("fill", 12, y - 3, 296, 20)
+    end
+    labTexto(20, y, o.label, sel and { 1, 1, 1, 1 } or { 0.72, 0.75, 0.80, 1 })
+    local r = labRotulo(o)
+    love.graphics.setColor(sel and 1 or 0.85, sel and 0.92 or 0.85,
+                           sel and 0.6 or 0.85, 1)
+    love.graphics.print(r, 300 - love.graphics.getFont():getWidth(r), y)
+    y = y + 21
+  end
+
+  y = y + 14
+  labTexto(20, y, "NAO APARECEM AQUI", { 0.55, 0.60, 0.70, 1 }); y = y + 20
+  labTexto(20, y, "respiracao, balanco, inercia e", { 0.5, 0.52, 0.56, 1 }); y = y + 16
+  labTexto(20, y, "pisada mexem na MATRIZ, nao na", { 0.5, 0.52, 0.56, 1 }); y = y + 16
+  labTexto(20, y, "malha. So no jogo: clip.sh", { 0.5, 0.52, 0.56, 1 })
+
+  -- cabecalho do personagem
+  local r = lab.row
+  if r then
+    labTexto(VX, 28, string.format("%s", r.sprite:upper()), { 1, 1, 1, 1 })
+    local sub = string.format("%d de %d    %s    frame %d de %d    rung %d    yaw %d",
+      lab.i, #lab.folhas, FACINGS[lab.facing].nome, r.frame, r.frames,
+      lab.rung, lab.yaw)
+    labTexto(VX, 46, sub, { 0.6, 0.64, 0.70, 1 })
+    if r.mesh then
+      local q = math.floor(#r.mesh.verts / 4)
+      local topo = 0
+      for _, k in ipairs(r.kinds or {}) do if k == "top" then topo = topo + 1 end end
+      labTexto(VX + VS - 210, 28, string.format("%d quads, %d de topo", q, topo),
+        { 0.55, 0.60, 0.70, 1 })
+    elseif r.why then
+      labTexto(VX + VS - 210, 28, "sem malha: " .. tostring(r.why), { 1, 0.6, 0.4, 1 })
+    end
+  end
+  if lab.erro then labTexto(VX, VY + VS + 8, lab.erro, { 1, 0.5, 0.4, 1 }) end
+
+  -- vizinhanca na lista de folhas, para nao navegar as cegas
+  labTexto(980, 20, "PERSONAGENS", { 0.55, 0.60, 0.70, 1 })
+  y = 46
+  for d = -8, 8 do
+    local j = (lab.i - 1 + d) % #lab.folhas + 1
+    local sel = (d == 0)
+    labTexto(980, y, lab.folhas[j],
+      sel and { 1, 0.9, 0.55, 1 } or { 0.45, 0.48, 0.53, 1 })
+    y = y + 17
+  end
+
+  labTexto(20, 760,
+    "setas: <- -> personagem, cima/baixo opcao   a/d muda valor   f vira   " ..
+    "espaco anda   q/e gira   1-4 camera   r reseta   s foto   esc sai",
+    { 0.45, 0.48, 0.53, 1 })
+  labTexto(1150, 780, string.format("%d fps", love.timer.getFPS()),
+    { 0.35, 0.38, 0.43, 1 })
+end
+
 function love.draw()
+  if opts.lab == "1" then return love.labdraw() end
   -- The window carries its own depth buffer (conf.lua sets t.window.depth),
   -- so the whole sheet is one depth-tested pass with no canvas juggling.
   love.graphics.clear(state.bg[1], state.bg[2], state.bg[3], 1, true, true)
@@ -1636,7 +2004,38 @@ local function reportDiff(img)
   end
 end
 
-function love.update()
+function love.update(dt)
+  if opts.lab == "1" then
+    -- O passo alterna pose e caminhada. A piscada e uma janela curta com fase
+    -- por folha, e ela vive na UV da malha, entao so aparece se a malha for
+    -- reconstruida com o relogio andando: por isso reconstroi por quadro
+    -- enquanto toca, e so quando muda alguma coisa enquanto parado.
+    lab.t = lab.t + (dt or 0)
+    if lab.tocando then
+      local anda = (lab.t % 0.5) < 0.25
+      if anda ~= lab.andando then lab.andando = anda end
+      labRebuild()
+    elseif lab.sujo then
+      labRebuild()
+    end
+    if opts.labshot ~= "" then
+      lab.quadros = (lab.quadros or 0) + 1
+      if lab.quadros == 200 then
+        love.graphics.captureScreenshot(function(img)
+          img:encode("png", opts.labshot)
+          print("LAB FOTO " .. love.filesystem.getSaveDirectory() .. "/" ..
+                opts.labshot)
+        end)
+      elseif lab.quadros > 204 then
+        print(string.format(
+          "laboratorio ok: %d construcoes em %d quadros, %d fps, %d folhas, %d opcoes",
+          lab.construcoes, lab.quadros, love.timer.getFPS(), #lab.folhas,
+          #lab.opcoes))
+        love.event.quit()
+      end
+    end
+    return
+  end
   state.frames = (state.frames or 0) + 1
   if state.frames == 3 then
     love.graphics.captureScreenshot(function(img)
@@ -1651,5 +2050,6 @@ function love.update()
 end
 
 function love.keypressed(key)
+  if opts.lab == "1" then return love.labkeys(key) end
   if key == "escape" then love.event.quit() end
 end

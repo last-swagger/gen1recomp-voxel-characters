@@ -141,6 +141,29 @@ B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
 say "estrutura tonal distingue forca" "0.12 -> $A / 0.22 -> $B"
 [ "$A" != "$B" ] || FAIL=1
 
+# 6. O LABORATORIO abre, e classifica as opcoes do lado certo.
+#
+#    Ferramenta interativa que ninguem testa quebra calada, entao ela sabe
+#    abrir sozinha, fotografar e sair (`labshot=`). Alem de abrir, o que se
+#    afirma aqui e uma invariante de ARQUITETURA e nao um numero: respiracao,
+#    balanco, inercia e pisada pos-multiplicam a matriz que o host passa para
+#    Voxel3D.draw, entao elas NAO PODEM mudar a malha. No dia em que uma delas
+#    aparecer do lado de ca, ou virou geometria sem ninguem dizer, ou o
+#    classificador quebrou. As duas merecem parar a fila.
+LAB=$($LOVE $H lab=1 labshot=chk_lab.png sprite=red 2>&1)
+R=$(echo "$LAB" | grep -c "laboratorio ok")
+say "laboratorio abre" "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
+[ "$R" = "1" ] || FAIL=1
+
+SEM=$(echo "$LAB" | grep "sem efeito na malha:" | sed 's/.*malha: //')
+FALTOU=""
+for k in breath sway lag footfall; do
+  echo "$SEM" | grep -q "\b$k\b" || FALTOU="$FALTOU $k"
+done
+say "opcoes de matriz nao mexem na malha" \
+    "$([ -z "$FALTOU" ] && echo ok || echo "FALHOU:$FALTOU")"
+[ -z "$FALTOU" ] || FAIL=1
+
 echo
 [ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: nao confie em medicao ate consertar"
 exit $FAIL
