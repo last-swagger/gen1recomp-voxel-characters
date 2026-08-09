@@ -24,8 +24,9 @@ own, because it works by extending a voxel mod that is already running.
    - **Battle Art Voxel Fork** by absol89
    - **Dramaless Shape Voxel Mod** by artyrambles
 
-2. **Download `voxel_characters.zip`** from the
+2. **Download `voxel_characters-1.6.0.modpkg`** from the
    [latest release](https://github.com/last-swagger/gen1recomp-voxel-characters/releases/latest).
+   It is a zip with a different extension; do not unzip it.
 
 3. **In game: `MODS`, then `Import mod .zip`.** Pick the file you downloaded.
 
