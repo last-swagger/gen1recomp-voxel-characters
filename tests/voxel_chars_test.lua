@@ -4062,6 +4062,30 @@ do
   eq(rows[9].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
   eq(rows[10].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
   eq(rows[11].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
+
+  -- APERTAR A NUMA ROW SO DE LEITURA NAO PODE FECHAR O MENU.
+  --
+  -- OptionsMenu:update (src/ui/OptionsMenu.lua:549-566) resolve A, esquerda e
+  -- direita no mesmo ramo, nesta ordem: `activate`, senao `step`, senao, se foi
+  -- A, trata como CANCEL e da pop no menu. STATUS e LIFE tem `value` e mais
+  -- nada, entao caiam no terceiro caso: A em cima delas fechava a tela de
+  -- opcoes inteira. E A e a primeira tecla que alguem aperta numa linha que nao
+  -- reconhece, que e exatamente o publico da row de STATUS.
+  --
+  -- O teste amarra o CONTRATO do motor, nao a nossa implementacao: toda row que
+  -- oferece `value` sem `step` precisa de `activate`, senao o motor a confunde
+  -- com o CANCEL.
+  for _, row in ipairs(rows) do
+    if row.value and not row.step then
+      check(type(row.activate) == "function",
+        "row so de leitura " .. tostring(row.label) ..
+        " tem activate, senao A nela fecharia o menu")
+    end
+  end
+  eq(type(rows[1].activate), "function", "STATUS tem activate")
+  eq(type(rows[2].activate), "function", "LIFE tem activate")
+  eq(rows[1].step, nil, "STATUS continua sem step: nao e para ciclar nada")
+  eq(rows[2].step, nil, "LIFE continua sem step")
 end
 
 do

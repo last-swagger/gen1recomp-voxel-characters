@@ -2180,12 +2180,34 @@ local function statusValue()
   return "ACTIVE"
 end
 
-local function statusRow()
+-- `activate` VAZIO NAO E ENFEITE, e o conserto de um defeito de verdade.
+--
+-- OptionsMenu:update (src/ui/OptionsMenu.lua:549-566) trata A, esquerda e
+-- direita no mesmo ramo, e escolhe o que fazer nesta ordem: se a linha tem
+-- `activate`, chama; senao, se tem `step`, cicla; SENAO, se foi A, trata como
+-- CANCEL e da POP NO MENU. Uma linha so de leitura, com `value` e sem os dois
+-- outros, cai nesse terceiro caso: apertar A em cima de STATUS fechava a tela
+-- de opcoes inteira, como se o jogador tivesse escolhido sair.
+--
+-- E o A e a tecla que a pessoa aperta primeiro quando quer entender uma linha
+-- que ela nao reconhece, que e exatamente a situacao para a qual a row de
+-- STATUS foi criada. Um `activate` que nao faz nada mantem o cursor onde
+-- estava, que e o comportamento certo para uma linha que so informa.
+--
+-- Achado por revisao independente lendo o motor, nao por teste nosso: nenhum
+-- gate daqui aperta tecla no menu de verdade. Ver o passo de tooling da
+-- proxima versao.
+local function readOnlyRow(id, label, value)
   return {
-    id = mod.id .. ":status",
-    label = "STATUS",
-    value = statusValue,
+    id = mod.id .. ":" .. id,
+    label = label,
+    value = value,
+    activate = function() end,
   }
+end
+
+local function statusRow()
+  return readOnlyRow("status", "STATUS", statusValue)
 end
 
 local warnedReplacedDraw = false
@@ -2216,11 +2238,7 @@ local function lifeStatusValue()
 end
 
 local function lifeStatusRow()
-  return {
-    id = mod.id .. ":life",
-    label = "LIFE",
-    value = lifeStatusValue,
-  }
+  return readOnlyRow("life", "LIFE", lifeStatusValue)
 end
 
 -- v1.4.2: registrado SEMPRE, com ou sem host (Colonel_Aureliano perdeu vinte

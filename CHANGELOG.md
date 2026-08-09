@@ -212,6 +212,18 @@ the direction is named in the entry their contribution landed in.
 
 ### Fixed
 
+- **Pressing A on the `STATUS` or `LIFE` row closed the options menu.** The
+  engine resolves A, Left and Right in one branch, in this order: call
+  `activate` if the row has one, else cycle `step` if it has one, else treat A
+  as CANCEL and pop the menu (`src/ui/OptionsMenu.lua:549-566`). A read only row
+  offers `value` and neither of the other two, so it landed in the third case.
+  A is also the first key anyone presses on a row they do not recognise, which
+  is exactly the audience the `STATUS` row was built for. Both rows now carry an
+  empty `activate`, so A leaves the cursor where it is. Found by an independent
+  reading of the engine, not by any gate here: nothing in this mod's test suite
+  presses a key in the real menu, and that is the first thing the next version
+  fixes.
+
 - **`MOTION LAG` was shearing the body nearly 45 degrees.** The level number was
   being used as a slope instead of a head displacement in pixels, because the
   divide by the 16 pixel cell height that `SWAY` already had was missing. At the
