@@ -77,33 +77,41 @@ return function(game)
     if not (game.overworld.player and game.overworld.player.moving) then break end
     U.wait(1)
   end
-  U.tap(game, "start"); U.wait(12)
-  local inicio = topo()
-  if not (inicio and inicio.items) then
-    veredito("M1", false, "o menu START nao abriu"); return
+  -- Abrir a tela de opcoes pelo caminho do jogador, reutilizavel: M8 precisa
+  -- fechar e reabrir, e a segunda abertura NAO pode assumir o mesmo indice da
+  -- primeira, porque o menu START lembra onde o cursor estava
+  -- (StartMenu.lua:153, game.save.startMenuIndex).
+  local function abrirOpcoes()
+    for _ = 1, 120 do
+      if topo() == game.overworld
+        and not (game.overworld.player and game.overworld.player.moving) then break end
+      U.wait(1)
+    end
+    U.tap(game, "start"); U.wait(12)
+    local inicio = topo()
+    if not (inicio and inicio.items) then return nil, "o menu START nao abriu" end
+    local rotulo = Strings("OPTION")
+    local destino
+    for i, item in ipairs(inicio.items) do
+      if item.label == rotulo then destino = i break end
+    end
+    if not destino then return nil, "nao achei a linha OPTION" end
+    for _ = 1, #inicio.items + 2 do
+      if inicio.index == destino then break end
+      U.tap(game, "down"); U.wait(3)
+    end
+    if inicio.index ~= destino then return nil, "o cursor nao chegou em OPTION" end
+    U.tap(game, "a"); U.wait(15)
+    if getmetatable(topo()) ~= OptionsMenu then
+      return nil, "OPTION nao abriu a tela de opcoes"
+    end
+    return topo()
   end
 
-  -- Achar OPTION pelo ROTULO, nunca contando posicoes: as linhas do START vao e
-  -- vem com o estado do save (POKEDEX so aparece depois de ganhar, LINK depende
-  -- de ter time) e com o hook ui.start_menu.items de outros mods.
-  local alvoRotulo = Strings("OPTION")
-  local alvo
-  for i, item in ipairs(inicio.items) do
-    if item.label == alvoRotulo then alvo = i break end
-  end
-  if not alvo then
-    veredito("M1", false, "nao achei a linha OPTION no menu START"); return
-  end
-  for _ = 1, #inicio.items + 2 do
-    if inicio.index == alvo then break end
-    U.tap(game, "down"); U.wait(3)
-  end
-  U.tap(game, "a"); U.wait(15)
-  local menu = topo()
-  local abriu = getmetatable(menu) == OptionsMenu
-  veredito("M1", abriu, abriu and "START, OPTION, A: a tela de opcoes abriu"
-    or "OPTION nao abriu a tela de opcoes")
-  if not abriu then return end
+  local menuAberto, porqueNao = abrirOpcoes()
+  veredito("M1", menuAberto ~= nil, menuAberto
+    and "START, OPTION, A: a tela de opcoes abriu" or tostring(porqueNao))
+  if not menuAberto then return end
 
   -- O Dramatic Shape TROCA menu.rows no lugar em certas mudancas
   -- (DramaticShapeVoxelMod/main.lua:958), entao nunca cachear o array: sempre
@@ -114,7 +122,15 @@ return function(game)
       if tostring(r.id):match(":" .. sufixo .. "$") then return i, r end
     end
   end
-  local function valorDe(r) return r.value and r.value(game) or "" end
+  -- Defensivo de proposito: rowPorId devolve nil quando o menu esta fechado, e
+  -- a primeira versao disto estourou em M8 exatamente assim, depois de sair do
+  -- menu para fotografar. Um gate que morre no meio nao reprova nada, ele so
+  -- some com o resto dos checks.
+  local function valorDe(r) return (r and r.value) and r.value(game) or "" end
+  local function valorDaRow(sufixo)
+    local _, r = rowPorId(sufixo)
+    return valorDe(r)
+  end
 
   -- ---------------------------------------------------------------- M2
   local ESPERADAS = {
@@ -176,13 +192,7 @@ return function(game)
       U.tap(game, "a"); U.wait(8)
       if getmetatable(topo()) ~= OptionsMenu then
         ruins[#ruins + 1] = id .. " fechou o menu"
-        -- reabre para os testes seguintes continuarem valendo
-        U.tap(game, "start"); U.wait(12)
-        for _ = 1, #(topo().items or {}) + 2 do
-          if topo().index == alvo then break end
-          U.tap(game, "down"); U.wait(3)
-        end
-        U.tap(game, "a"); U.wait(15)
+        abrirOpcoes()  -- reabre para os checks seguintes continuarem valendo
       end
     else
       ruins[#ruins + 1] = id .. " nao alcancavel"
@@ -201,11 +211,11 @@ return function(game)
   for _, chave in ipairs({ "breath", "sway", "lag", "front_shape", "shape" }) do
     local i = rowPorId(chave)
     if i and vaiPara(i) then
-      local antes = valorDe(select(2, rowPorId(chave)))
+      local antes = valorDaRow(chave)
       U.tap(game, "right"); U.wait(4)
-      local depois = valorDe(select(2, rowPorId(chave)))
+      local depois = valorDaRow(chave)
       U.tap(game, "left"); U.wait(4)
-      local voltou = valorDe(select(2, rowPorId(chave)))
+      local voltou = valorDaRow(chave)
       local persistiu = game.save and game.save.options
         and game.save.options.modOptions
         and game.save.options.modOptions.voxel_characters
@@ -245,16 +255,6 @@ return function(game)
   -- ---------------------------------------------------------------- M8
   -- Sair do menu pelo caminho do jogador e conferir que a mudanca chegou na
   -- tela. Sem isto, tudo acima poderia ser uma tabela bonita que nao desenha.
-  local iBreath2 = rowPorId("breath")
-  if iBreath2 and vaiPara(iBreath2) then
-    -- garante BREATH desligado, fotografa, liga no maximo, fotografa de novo
-    for _ = 1, 6 do
-      if valorDe(select(2, rowPorId("breath"))) == "OFF" then break end
-      U.tap(game, "right"); U.wait(4)
-    end
-  end
-  U.tap(game, "b"); U.wait(20)
-  local noMundo = topo() == game.overworld
   local function foto()
     local pronto
     love.graphics.captureScreenshot(function(d) pronto = d end)
@@ -272,34 +272,58 @@ return function(game)
     end
     return n
   end
-  local desligado = noMundo and foto()
-  U.wait(46)
-  local desligado2 = noMundo and foto()
-  local base = difere(desligado, desligado2)
 
-  -- volta ao menu e liga BREATH no maximo, tudo por tecla
-  U.tap(game, "start"); U.wait(12)
-  for _ = 1, #(topo().items or {}) + 2 do
-    if topo().index == alvo then break end
-    U.tap(game, "down"); U.wait(3)
+  -- Poe BREATH num valor dado, so com tecla, e devolve o rotulo que ficou.
+  local function porBreath(rotulo)
+    local i = rowPorId("breath")
+    if not (i and vaiPara(i)) then return nil end
+    for _ = 1, 8 do
+      if valorDaRow("breath") == rotulo then return rotulo end
+      U.tap(game, "right"); U.wait(4)
+    end
+    return valorDaRow("breath")
   end
-  U.tap(game, "a"); U.wait(15)
-  local iB = rowPorId("breath")
-  if iB then vaiPara(iB) end
-  for _ = 1, 6 do
-    if valorDe(select(2, rowPorId("breath"))) == "STRONG" then break end
-    U.tap(game, "right"); U.wait(4)
+
+  -- SAIR ATE O MUNDO, nao um B so. A tela de opcoes foi empurrada POR CIMA do
+  -- menu START, entao um B devolve ao START e nao ao mundo. A primeira versao
+  -- disto media um quadro com o menu na frente, achava que nao estava no mundo
+  -- e desistia, e o veredito saia "nao consegui montar a comparacao" sem dizer
+  -- que o problema era o numero de teclas.
+  local function sairParaOMundo()
+    for _ = 1, 6 do
+      if topo() == game.overworld then return true end
+      U.tap(game, "b"); U.wait(20)
+    end
+    return topo() == game.overworld
   end
-  local ligadoRotulo = valorDe(select(2, rowPorId("breath")))
-  U.tap(game, "b"); U.wait(20)
-  local ligado = (topo() == game.overworld) and foto()
-  U.wait(46)
-  local ligado2 = (topo() == game.overworld) and foto()
-  local comEfeito = difere(ligado, ligado2)
-  nota("pixels que mudam em 46 quadros: %d desligado, %d com BREATH %s",
-    base, comEfeito, ligadoRotulo)
-  veredito("M8", base >= 0 and comEfeito > base + 40,
-    "mudar a opcao SO PELO MENU muda a tela")
+
+  -- Mede a variacao da tela com o menu FECHADO, na configuracao corrente.
+  local function medeNoMundo()
+    if not sairParaOMundo() then return -1 end
+    local a = foto()
+    U.wait(46)
+    local b = foto()
+    return difere(a, b)
+  end
+
+  local m8ok, detalheM8 = false, "nao consegui montar a comparacao"
+  if porBreath("OFF") then
+    local base = medeNoMundo()
+    if abrirOpcoes() and porBreath("STRONG") == "STRONG" then
+      local ligado = medeNoMundo()
+      nota("pixels que mudam em 46 quadros: %d com BREATH OFF, %d com STRONG",
+        base, ligado)
+      m8ok = base >= 0 and ligado > base + 40
+      detalheM8 = string.format("OFF %d, STRONG %d", base, ligado)
+    end
+  end
+  -- M8 prova o CAMINHO, nao a magnitude. Ele roda no mapa aberto, onde NPC
+  -- perambula e agua se mexe, entao a linha de base ja e alta e a diferenca e
+  -- de poucos por cento. Quem mede quanto o efeito vale e o probe_life.lua, num
+  -- quarto sem mais ninguem. Os dois juntos cobrem: aqui, que mexer no menu
+  -- chega na tela; la, que o que chega tem o tamanho pedido.
+  veredito("M8", m8ok, detalheM8 ..
+    " (mudar a opcao SO PELO MENU tem que mudar a tela)")
 
   nota("")
   local todos = true
