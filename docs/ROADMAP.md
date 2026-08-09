@@ -361,3 +361,27 @@ third was found by a person because no tool covered that surface.
   exists because every release from 1.0.0 to 1.6.0 was invisible to the in game
   updater and no test we owned could have seen it: the bug lived in the shape of
   a filename on GitHub.
+
+## Parked, with the reason written down
+
+Two lines the owner asked to keep visible without starting them.
+
+**Battles.** Paused deliberately, not dropped. Worth recording because an
+earlier note here read as closing it and did not: the verdict "battle art is
+dead" answered *can battle sprites enrich the OVERWORLD character*, where it
+still holds, since a battle sprite has no walk cycle and cannot animate someone
+walking north. Rendering the battle itself is a different question, and three of
+the arguments that killed variable depth do not survive the change of camera:
+the top-face law was measured under a camera that looks DOWN, the AI depth map's
+52% art was measured there too, and the missing side view is the one view a
+battle never shows. Before any depth estimator, the cheap step is a capability
+probe of the battle path, the same step 1 the overworld got: find out whether
+there is a seam to patch at all.
+
+**Weather and wind.** Roadmapped rather than built, because it depends on mods
+we do not control and on game state we have not confirmed exists. The mechanism
+is already shipped and proven: wind is one more shear term in `lifeApply`, which
+post-multiplies the draw matrix exactly like `SWAY` does today. What is missing
+is not geometry, it is a source. The first question is whether the host or
+another mod exposes a wind or weather state we can read, and that is a
+measurement, not a design.
