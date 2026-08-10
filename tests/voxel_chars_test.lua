@@ -5179,6 +5179,11 @@ do
   eq(valor.BLINK, "ON", "default de BLINK: ON, a comunidade aprovou a feature")
   eq(valor.BREATH, "SUBTLE",
      "default de BREATH: SUBTLE, o menor nivel que ainda faz diferenca")
+  -- Nasce em CARD, que e o comportamento desde a v1.3.0. Que os jogadores
+  -- tenham PEDIDO o solido em primeira pessoa conta como pedido, nao como
+  -- aprovacao: ninguem viu ainda.
+  eq(valor["FIRST PERSON"], "CARD",
+     "default de FIRST PERSON: CARD, ninguem viu o solido nessa camera ainda")
   -- Estas continuam desligadas: mudam a LEITURA da forma ou do movimento de um
   -- jeito que ninguem julgou ainda.
   for _, chave in ipairs({ "FRONT SHAPE", "TOP DOME", "STEP WEIGHT", "SWAY",
@@ -5204,6 +5209,11 @@ do
   eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
   eq(rows[15].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
   eq(rows[16].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
+  -- A row de FIRST PERSON so ganhou teste depois que uma auditoria apontou que
+  -- ela era a unica opcao do mod sem cobertura de MENU: comportamento tinha,
+  -- row nao. E foi assim que o inventario do gate in-game ficou desatualizado
+  -- sem ninguem ver.
+  eq(rows[17].label, "FIRST PERSON", "FIRST PERSON aparece depois de FOOTFALL")
 end
 
 do

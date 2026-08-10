@@ -234,16 +234,25 @@ host or another mod exposes a wind or weather state we can read.
 
 ## 0. The risk that outranks everything above
 
-**`main.lua` is 199 locals against LuaJIT's hard ceiling of 200.**
+**`main.lua` uses 159 of LuaJIT's 200 chunk locals. Headroom: 41.**
 
-This is written in our own file (`main.lua:52-58`) and was the reason for the
-refactor that introduced the generic `OPTIONS` table: every menu option used to
-bring a handful of chunk locals with it, and seven options in, the next one did
-not fit. Exceeding `LUAI_MAXVARS` is a **compile** error, so the symptom is not
-a broken feature, it is the entire mod failing to load.
+**Measured, and the measurement corrected the claim.** Both this document and an
+external review read `main.lua:52-58` and reported the file as sitting at 199,
+one local from not compiling. That comment records where the file WAS before the
+refactor that introduced the generic `OPTIONS` table, not where it is. Appending
+chunk locals until LuaJIT refuses puts the real figure at 41 free
+(`tools/folga_locais.sh`).
 
-The refactor bought headroom, and v2 spends it: regions, per-region state, a
-character creator and more host integration are all new state in the same file.
+So the risk is real and not imminent, which changes what to do about it: no
+refactor is needed now, a gate is. Exceeding `LUAI_MAXVARS` is a **compile**
+error, so the symptom is not a broken feature, it is the entire mod failing to
+load for everyone, and it arrives on whichever commit crosses the line rather
+than on the one that caused the growth.
+
+`tools/folga_locais.sh` now measures the headroom and fails below a floor of 15.
+It counts by construction rather than by reading `local` out of the text, which
+would miss multiple assignment, block scope and every declaration inside a
+function.
 
 **What changes when this is addressed:** the mod stops being one edit away from
 not loading at all. And note which file this is. An earlier draft of this
