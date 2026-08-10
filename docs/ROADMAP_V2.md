@@ -137,20 +137,53 @@ through it is the work.
 
 ### 9. Per-part secondary motion
 
-**State:** blocked, with the blockers named from our own code rather than
-guessed. Body-wide inertia already ships. Real hair and bag lag needs the mesh
-split into regions drawn with their own matrices, and two things stand in the
-way: the cut line has no cap faces, so slicing shows the inside of the back
-wall, and `setDrawRange` is sticky state on a mesh that `ShadowMap.draw` renders
-outside our wrap, so a forgotten range truncates the shadow.
+**State:** blocked. Body-wide inertia already ships. Real hair and bag lag needs
+the mesh split into regions drawn with their own matrices.
+
+**CORRECTION, and it matters because this document is about to become a spec.**
+Two of the three things previously written here were wrong, and an adversarial
+review caught them:
+
+- **The cap faces blocker is real.** SLAB emits top and bottom only where the
+  neighbouring row is empty (`main.lua:1662`, `:1669`) and CARVED does the same
+  against solid neighbours (`:2066`, `:2070`). Cutting anywhere else exposes the
+  inside of the back wall, because the host draws with culling disabled.
+
+- **The shadow blocker was invented.** I wrote that `setDrawRange` is sticky
+  state on a mesh `ShadowMap.draw` renders outside our wrap, so a forgotten
+  range truncates the shadow. `setDrawRange` appears nowhere in this codebase
+  except in the two roadmap files that claim it, and the shadow pass draws
+  `SpriteBillboards.shadowQuad` (`VoxelScene.lua:853`), the original flat quad,
+  not our slab. Our own file says in capitals not to patch `shadowQuad`
+  (`main.lua:8`). The shadow was never going to be truncated because the shadow
+  never touches our mesh. What survives in weakened form is that a draw range
+  is sticky per mesh OBJECT, and our mesh is shared between every instance of a
+  sheet in the frame, so a range set for one instance is still set for the next.
+  That is a real hazard and a much smaller one.
+
+- **"The top N rows is a contiguous prefix" is false for SLAB.** Front and back
+  faces are emitted row by row, but side faces accumulate into `sideRuns`
+  (`main.lua:1511`) and are emitted only after the whole row scan, sorted by key
+  (`:1694`). A prefix split would drop or misplace every side face.
+
+**Three more blockers the review found, all verified:**
+
+- **Animation state is per character, not per region.** One `lifeInstance`
+  carries one lag vector and one phase (`main.lua:2642`), `lifeDrawWrap`
+  computes one transform (`:2893`) and applies it once to the whole mesh
+  (`:2942`).
+- **Region identity does not exist.** `ourMeshes` records `{ base, frame,
+  frames }` (`main.lua:3012`), which is enough to know a mesh is ours and
+  nothing about which part of it is hair.
+- **The mesh is shared between instances**, so any per-region state has to live
+  beside the draw call and not on the mesh.
 
 **What changes:** characters stop moving as one rigid piece, which is the
-difference between a breathing statue and something that reads as alive. It is
-also the groundwork for anything rig-shaped later.
+difference between a breathing statue and something that reads as alive.
 
-**Cost:** high, and it needs a design decision before code. The good news is
-that emission is already top-to-bottom row by row in both builders, so "the top
-N rows" is already a contiguous prefix.
+**Cost:** high, and higher than this document said an hour ago. It needs the
+emission order reworked so a region is addressable at all, which is a change to
+both builders and not a draw-range trick.
 
 ### 10. Attention and anticipation
 
@@ -196,6 +229,32 @@ Roadmapped rather than built because it depends on mods we do not control. The
 mechanism already ships: wind is one more shear term in `lifeApply`, exactly
 like `SWAY`. What is missing is a source, and the first question is whether the
 host or another mod exposes a wind or weather state we can read.
+
+---
+
+## 0. The risk that outranks everything above
+
+**`main.lua` is 199 locals against LuaJIT's hard ceiling of 200.**
+
+This is written in our own file (`main.lua:52-58`) and was the reason for the
+refactor that introduced the generic `OPTIONS` table: every menu option used to
+bring a handful of chunk locals with it, and seven options in, the next one did
+not fit. Exceeding `LUAI_MAXVARS` is a **compile** error, so the symptom is not
+a broken feature, it is the entire mod failing to load.
+
+The refactor bought headroom, and v2 spends it: regions, per-region state, a
+character creator and more host integration are all new state in the same file.
+
+**What changes when this is addressed:** the mod stops being one edit away from
+not loading at all. And note which file this is. An earlier draft of this
+roadmap proposed splitting the render harness because it had grown to six jobs,
+which is true and comparatively harmless: the harness failing is a bad day, the
+mod failing to compile is every player's install. The production file is the one
+that needed naming and it was the one missing.
+
+**Cost:** medium, and it is the same shape as the refactor that already happened
+once here, so there is a precedent in the repository to copy rather than a
+design to invent.
 
 ---
 

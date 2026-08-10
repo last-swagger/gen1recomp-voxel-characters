@@ -281,10 +281,19 @@ that test is false on both sides, so slicing there leaves a hole, and the host
 draws with culling off. You would not see a gap, you would see the inside of the
 far wall.
 
-**The draw range is sticky global state on a shared mesh.** `setDrawRange` is
-set on the mesh, not on the draw call, and the same mesh is drawn by
-`ShadowMap.draw` **outside our wrap**. Any range left set truncates the shadow.
-Every one of the five early-return paths in the draw wrap would have to reset it.
+**CORRIGIDO EM 2026-08-09, e a correcao vale mais que o texto original.** O
+paragrafo que ficava aqui dizia que `setDrawRange` e estado grudento numa malha
+que o `ShadowMap.draw` desenha fora do nosso wrap, e que por isso um range
+esquecido truncaria a sombra. Uma revisao adversarial foi conferir: `setDrawRange`
+nao aparece em lugar nenhum deste repositorio a nao ser nos dois roadmaps que o
+citavam, e o passe de sombra desenha `SpriteBillboards.shadowQuad`
+(VoxelScene.lua:853), o card plano original, nao a nossa malha. Este proprio
+arquivo diz em caixa alta para NAO patchear `shadowQuad`. A sombra nunca ia ser
+truncada porque a sombra nunca toca no que a gente constroi.
+
+O que sobra de verdadeiro, e e bem menor: o range e grudento por OBJETO de
+malha, e a nossa malha e compartilhada por todas as instancias da mesma folha no
+quadro. Range setado para uma instancia continua setado para a proxima.
 
 The good news, for later: emission is already row-major top to bottom in both
 builders, so "top N rows" is already a contiguous prefix. `CARVED` needs no
