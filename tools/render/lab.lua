@@ -41,6 +41,8 @@ local lab = {
   row = nil, erro = nil, sujo = true, t = 0, construcoes = 0,
   -- choice mode
   ab = false, par = nil, rowA = nil, rowB = nil, escolhas = 0, pulos = 0,
+  -- region boundary overlay (roadmap item 11, key `b`)
+  overlay = false,
 }
 
 -- Where choices are stored. One line per choice, key=value, so the judge's
@@ -210,6 +212,69 @@ local function labRebuild()
   lab.sujo = false
 end
 
+--------------------------------------------------------------------------
+-- REGION OVERLAY  (key `b`, roadmap item 11)
+--------------------------------------------------------------------------
+-- Roadmap item 9 (per-part secondary motion) needs the mesh split into
+-- regions, each with its own matrix, and the one place a cut is SAFE is a
+-- row that already has a cap: the SLAB builder only emits a top or bottom
+-- face where the neighbouring row is empty (main.lua's `at(sx, ly - 1)` /
+-- `at(sx, ly + 1)` guards), and the host draws characters with culling
+-- disabled, so cutting anywhere else leaves the un-drawn inside of the back
+-- wall facing the camera.
+--
+-- Read straight off the BUILT mesh instead of reimplementing that row scan:
+-- classifyMesh already answers "is this quad top/bottom" from the quad's own
+-- winding, verified against both builders (main.lua's comment above KINDS),
+-- and a top/bottom quad's four vertices share one Y by construction (the cap
+-- is a horizontal plane). So the cap rows ARE the distinct Y values already
+-- sitting on classified top/bottom quads; nothing here re-derives the mod's
+-- own row-emptiness test.
+local function labRegioes(row)
+  if not row or not row.mesh or not row.kinds then return nil end
+  local verts, kinds = row.mesh.verts, row.kinds
+  local vistoY, kindDoY = {}, {}
+  local counts = {}
+  for _, k in ipairs({ "front", "back", "side_e", "side_w", "top", "bottom" }) do
+    counts[k] = 0
+  end
+  for i = 1, #verts, 4 do
+    local kind = kinds[(i - 1) / 4 + 1]
+    counts[kind] = (counts[kind] or 0) + 1
+    if kind == "top" or kind == "bottom" then
+      local yv = verts[i][2]
+      local chave = string.format("%.3f", yv)
+      if not vistoY[chave] then
+        vistoY[chave] = yv
+        kindDoY[chave] = kind
+      elseif kindDoY[chave] ~= kind then
+        kindDoY[chave] = "ambos"
+      end
+    end
+  end
+  local ys = {}
+  for _, yv in pairs(vistoY) do ys[#ys + 1] = yv end
+  table.sort(ys)
+
+  -- Bands: what a cut at two consecutive cap rows would isolate. Counted
+  -- from EVERY quad's own vertices, not just the caps, so the readout
+  -- answers "how much mesh would this region carry" for whoever is planning
+  -- the cut.
+  local bands = {}
+  for b = 1, #ys - 1 do bands[b] = { lo = ys[b], hi = ys[b + 1], quads = 0 } end
+  for i = 1, #verts, 4 do
+    local midY = (verts[i][2] + verts[i + 1][2] + verts[i + 2][2]
+      + verts[i + 3][2]) / 4
+    for _, band in ipairs(bands) do
+      if midY >= band.lo and midY <= band.hi then
+        band.quads = band.quads + 1
+        break
+      end
+    end
+  end
+  return { ys = ys, kindDoY = kindDoY, counts = counts, bands = bands }
+end
+
 -- Global on purpose: love.load is defined ABOVE this section, so a local
 -- here would not exist as an upvalue there. Same reason as love.labdraw/labkeys.
 function love.labsetup()
@@ -252,6 +317,9 @@ function love.labsetup()
   ctx.state.rows = {}
   math.randomseed(os.time())
   labRebuild()
+  -- `labregions=1` forces the overlay on for the gate, which cannot press
+  -- keys under labshot (love.labkeys returns early there).
+  lab.overlay = ctx.opts.labregions == "1"
   if ctx.opts.labab == "1" then
     lab.ab = true
     labMontaPar()
@@ -578,12 +646,87 @@ function love.labkeys(key)
       img:encode("png", nome)
       print("FOTO " .. love.filesystem.getSaveDirectory() .. "/" .. nome)
     end)
+  elseif key == "b" then
+    -- Region overlay, roadmap item 11: `r` was already taken by "reset
+    -- options to default" (above), so this one gets its own letter instead
+    -- of displacing a binding someone's fingers already know.
+    lab.overlay = not lab.overlay
+  elseif key == "g" or key == "n" then
+    -- The host's own grid and day/night settings (roadmap item 11) are NOT
+    -- reachable from here: love.load never receives a `game`, and
+    -- makeVoxelHandle's V.require only stubs Voxel3D, ImageCache,
+    -- SpriteBillboards, VoxelState, VoxelScene and FirstPerson, so asking for
+    -- VoxelGrid or DayNight throws "unexpected module" instead of silently
+    -- doing nothing. Rather than fake either one, the key prints why, same
+    -- as the note under NAO APARECEM AQUI on screen.
+    if key == "g" then
+      print("grade do voxel: fora do alcance deste harness autonomo (sem " ..
+        "`game`; o host tambem nunca grade personagens de proposito -- " ..
+        "VoxelScene.lua chama Voxel3D.seams(false) em drawCast, medido em " ..
+        "tools/ingame/probe_grid.lua)")
+    else
+      print("hora do dia: fora do alcance deste harness autonomo (sem " ..
+        "`game`, sem ModSetting/PaletteFX e sem save; " ..
+        "DayNight.setting:setIndex grava no save do jogador -- o padrao " ..
+        "correto, que restaura no fim, esta em tools/ingame/trailer.lua)")
+    end
   end
 end
 
 local function labTexto(x, y, s, cor)
   love.graphics.setColor(cor or { 1, 1, 1, 1 })
   love.graphics.print(s, x, y)
+end
+
+local CAP_LINE_COR = {
+  top = { 0.25, 1, 1, 0.9 }, bottom = { 1, 0.6, 0.15, 0.9 },
+  ambos = { 1, 1, 1, 0.9 },
+}
+
+-- Draws the cap lines and the band readout over an already-drawn character.
+-- Two passes: a translucent recolour of the mesh itself (drawCell's asOverlay,
+-- reusing classifyMesh's kind per quad so top/bottom read as visibly distinct
+-- from front/back), then the cap-row lines and the quad-per-band count in
+-- text, both read straight off `labRegioes`.
+local function labDesenhaRegioes(row, x, y, size)
+  if not (row and row.mesh) then return end
+  love.graphics.setDepthMode("lequal", false)
+  love.graphics.setShader(ctx.state.shader)
+  ctx.state.shader:send("provenance", 1)
+  love.graphics.setColor(1, 1, 1, 0.55)
+  ctx.drawCell(row, math.rad(lab.yaw), x, y, size, false, false, true)
+  ctx.state.shader:send("provenance", 0)
+  love.graphics.setShader()
+  love.graphics.setDepthMode("always", false)
+  love.graphics.setColor(1, 1, 1, 1)
+
+  local info = labRegioes(row)
+  if not info then return end
+  local cam = ctx.cellCamera(row, math.rad(lab.yaw), x, y, size)
+  local cx = (row.cellW or 16) / 2
+  local prevScissor = { love.graphics.getScissor() }
+  love.graphics.setScissor(x, y, size, size)
+  for _, yv in ipairs(info.ys) do
+    local pts = ctx.projectScreen({ { cx, yv, 0 } }, cam)
+    local py = pts[1][2]
+    local chave = string.format("%.3f", yv)
+    love.graphics.setColor(CAP_LINE_COR[info.kindDoY[chave]] or { 1, 1, 1, 0.9 })
+    love.graphics.line(x, py, x + size, py)
+  end
+  love.graphics.setScissor(unpack(prevScissor))
+  love.graphics.setColor(1, 1, 1, 1)
+
+  local ty = y + size + (lab.erro and 26 or 8)
+  labTexto(x, ty, string.format(
+    "REGIOES: %d linhas de corte (%d topo, %d fundo), %d bandas",
+    #info.ys, info.counts.top or 0, info.counts.bottom or 0, #info.bands),
+    { 0.6, 0.85, 0.9, 1 })
+  local partes = {}
+  for _, band in ipairs(info.bands) do
+    partes[#partes + 1] = tostring(band.quads)
+  end
+  labTexto(x, ty + 18, "quads por banda: " .. table.concat(partes, ","),
+    { 0.55, 0.6, 0.65, 1 })
 end
 
 local function labDrawAB()
@@ -653,6 +796,7 @@ function love.labdraw()
     ctx.drawCell(lab.row, math.rad(lab.yaw), VX, VY, VS)
     love.graphics.setShader()
     love.graphics.setDepthMode("always", false)
+    if lab.overlay then labDesenhaRegioes(lab.row, VX, VY, VS) end
   end
 
   -- options column
@@ -676,7 +820,9 @@ function love.labdraw()
   labTexto(20, y, "NAO APARECEM AQUI", { 0.55, 0.60, 0.70, 1 }); y = y + 20
   labTexto(20, y, "respiracao, balanco, inercia e", { 0.5, 0.52, 0.56, 1 }); y = y + 16
   labTexto(20, y, "pisada mexem na MATRIZ, nao na", { 0.5, 0.52, 0.56, 1 }); y = y + 16
-  labTexto(20, y, "malha. So no jogo: clip.sh", { 0.5, 0.52, 0.56, 1 })
+  labTexto(20, y, "malha. So no jogo: clip.sh", { 0.5, 0.52, 0.56, 1 }); y = y + 16
+  labTexto(20, y, "grade (g) e hora do dia (n): sem", { 0.5, 0.52, 0.56, 1 }); y = y + 16
+  labTexto(20, y, "`game` aqui, ver console", { 0.5, 0.52, 0.56, 1 })
 
   -- character header
   local r = lab.row
@@ -711,7 +857,8 @@ function love.labdraw()
 
   labTexto(20, 760,
     "setas: <- -> personagem, cima/baixo opcao   a/d muda valor   f vira   " ..
-    "espaco anda   q/e gira   1-4 camera   r reseta   s foto   esc sai",
+    "espaco anda   q/e gira   1-4 camera   r reseta   b regioes   g/n info   " ..
+    "s foto   esc sai",
     { 0.45, 0.48, 0.53, 1 })
   labTexto(1150, 780, string.format("%d fps", love.timer.getFPS()),
     { 0.35, 0.38, 0.43, 1 })

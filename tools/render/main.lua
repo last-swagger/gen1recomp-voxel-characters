@@ -126,6 +126,10 @@ local opts = {
   -- requested, instead of rolling. See labParDoArquivo.
   labpares = "",
   labpick = "",
+  -- `labregions=1` forces the region-boundary overlay (key `b` in the
+  -- laboratory) on at startup, so the gate can screenshot it without a
+  -- keypress: labshot runs with love.labkeys disabled (roadmap item 11).
+  labregions = "",
   -- `features=<file>` reads one line per variant (sheet TAB key:value,...)
   -- and prints one TSV line of features per variant. It is the expensive half
   -- of the judge: it needs LOVE, a real sprite and the mod loaded. The cheap
@@ -557,6 +561,29 @@ local function project(verts, cam)
   return out
 end
 
+-- Same rotation as project(), stopping at screen pixels instead of clip
+-- space. project()'s output only means anything to the custom mesh shader,
+-- which bypasses LOVE's own transform; ordinary 2D calls (love.graphics.line,
+-- .polygon) read the normal pixel-space transform, so the laboratory's region
+-- overlay (roadmap item 11) needs this form to draw a cap's row as a plain
+-- line over the character.
+local function projectScreen(verts, cam)
+  local out = {}
+  local cy, cs = math.cos(cam.yaw), math.sin(cam.yaw)
+  local cp, sp = math.cos(cam.pitch), math.sin(cam.pitch)
+  for i, v in ipairs(verts) do
+    local x, y, z = v[1] - cam.cx, v[2] - cam.cy, v[3] - cam.cz
+    local rx = x * cy - z * cs
+    local rz = x * cs + z * cy
+    local ry2 = y * cp - rz * sp
+    out[i] = {
+      cam.screenX + rx * cam.scale,
+      cam.screenY - ry2 * cam.scale,
+    }
+  end
+  return out
+end
+
 --------------------------------------------------------------------------
 -- render
 --------------------------------------------------------------------------
@@ -595,11 +622,16 @@ vec4 effect(vec4 color, Image tex, vec2 tc, vec2 sc) {
   }
   if (provenance > 0.5) {
     int k = int(vShade + 0.5);
-    if (k == 1) return vec4(0.0, 1.0, 0.0, 1.0);  // front, original art
-    if (k == 2) return vec4(0.0, 0.5, 0.0, 1.0);  // back, original art
-    if (k == 3) return vec4(1.0, 0.0, 0.0, 1.0);  // side, invented
-    if (k == 4) return vec4(0.0, 0.0, 1.0, 1.0);  // top, invented
-    return vec4(1.0, 1.0, 0.0, 1.0);              // bottom, invented
+    // Alpha rides the draw colour instead of a hardcoded 1.0, so the same
+    // pass that backs computeMetrics can also be reused as a translucent
+    // overlay on top of the textured character (laboratory region overlay,
+    // roadmap item 11). computeMetrics always draws at alpha 1, so its
+    // readback is unaffected.
+    if (k == 1) return vec4(0.0, 1.0, 0.0, color.a);  // front, original art
+    if (k == 2) return vec4(0.0, 0.5, 0.0, color.a);  // back, original art
+    if (k == 3) return vec4(1.0, 0.0, 0.0, color.a);  // side, invented
+    if (k == 4) return vec4(0.0, 0.0, 1.0, color.a);  // top, invented
+    return vec4(1.0, 1.0, 0.0, color.a);              // bottom, invented
   }
   float g = t.r;
   vec3 c = pal3;
@@ -842,7 +874,36 @@ function love.load(argv)
     #rows * #yaws, quads, width, height))
 end
 
-local function drawCell(row, yaw, x, y, size, asProvenance, asCellId)
+-- Pivot on the sprite CELL, and on z = 0, the plane the flat card occupies.
+--
+-- This used to pivot on each mesh's own bounding box, because until v1.3.0
+-- the mod dropped the cell's empty padding and rebased geometry on the
+-- opaque bounds. That made a cell pivot wrong and a bbox pivot merely
+-- approximate: a sheet whose art is off centre inside its cell, like
+-- snorlax, still read as misaligned against the card. Now that the mod
+-- emits in cell coordinates on both axes, the cell is the shared frame of
+-- reference and the comparison against FLAT is exact rather than indicative.
+--
+-- Extracted out of drawCell so the laboratory's region overlay (roadmap item
+-- 11) can project its own points (the cap rows) through the EXACT camera
+-- drawCell used for the character, instead of a second copy that could drift.
+local function cellCamera(row, yaw, x, y, size, asProvenance)
+  local b = bounds(row.mesh.verts)
+  return {
+    yaw = yaw, pitch = row.pitch,
+    cx = (row.cellW or (b.minX + b.maxX)) / 2,
+    cy = (row.cellH or (b.minY + b.maxY)) / 2,
+    cz = 0,
+    scale = size / VIEW_UNITS,
+    screenX = x + size / 2,
+    screenY = y + size / 2,
+    width = state.width, height = state.height, flipY = asProvenance,
+    -- generous so nothing clips; the depth test only needs ordering
+    depthRange = math.max(64, (b.maxY - b.minY) * 2),
+  }
+end
+
+local function drawCell(row, yaw, x, y, size, asProvenance, asCellId, asOverlay)
   if not row.mesh then return end
   -- TRAP 12, found by an agent that prototyped and checked, and that I
   -- reproduced: a DEEP shape overflows its own cell and invades the
@@ -859,28 +920,7 @@ local function drawCell(row, yaw, x, y, size, asProvenance, asCellId)
   -- Every cell can only paint inside itself.
   local prevScissor = { love.graphics.getScissor() }
   love.graphics.setScissor(x, y, size, size)
-  local b = bounds(row.mesh.verts)
-  -- Pivot on the sprite CELL, and on z = 0, the plane the flat card occupies.
-  --
-  -- This used to pivot on each mesh's own bounding box, because until v1.3.0
-  -- the mod dropped the cell's empty padding and rebased geometry on the
-  -- opaque bounds. That made a cell pivot wrong and a bbox pivot merely
-  -- approximate: a sheet whose art is off centre inside its cell, like
-  -- snorlax, still read as misaligned against the card. Now that the mod
-  -- emits in cell coordinates on both axes, the cell is the shared frame of
-  -- reference and the comparison against FLAT is exact rather than indicative.
-  local cam = {
-    yaw = yaw, pitch = row.pitch,
-    cx = (row.cellW or (b.minX + b.maxX)) / 2,
-    cy = (row.cellH or (b.minY + b.maxY)) / 2,
-    cz = 0,
-    scale = size / VIEW_UNITS,
-    screenX = x + size / 2,
-    screenY = y + size / 2,
-    width = state.width, height = state.height, flipY = asProvenance,
-    -- generous so nothing clips; the depth test only needs ordering
-    depthRange = math.max(64, (b.maxY - b.minY) * 2),
-  }
+  local cam = cellCamera(row, yaw, x, y, size, asProvenance)
   local verts = project(row.mesh.verts, cam)
   if SHADE_OVERRIDE and not asProvenance then
     for i = 1, #row.mesh.verts, 4 do
@@ -935,7 +975,12 @@ local function drawCell(row, yaw, x, y, size, asProvenance, asCellId)
       for j = 0, 3 do verts[i + j][6] = val end
     end
   end
-  if asProvenance then
+  -- asOverlay reuses the provenance colour mapping (front/back/side/top/
+  -- bottom) WITHOUT asProvenance's Y-flip, which only exists for the
+  -- offscreen metrics canvas read back bottom-up. This is what lets the
+  -- laboratory's region overlay (roadmap item 11) draw the same kind colours
+  -- straight to the screen, translucent, on top of the textured character.
+  if asProvenance or asOverlay then
     for i, v in ipairs(verts) do
       local k = row.kinds[math.floor((i - 1) / 4) + 1]
       v[6] = KIND_INDEX[PROV_KIND[k] or k]
@@ -967,6 +1012,8 @@ local ctx = {
   buildGeometry = buildGeometry,
   classifyMesh = classifyMesh,
   drawCell = drawCell,
+  cellCamera = cellCamera,
+  projectScreen = projectScreen,
   fail = fail,
   getLabSchema = function() return LAB_SCHEMA end,
 }
@@ -986,6 +1033,10 @@ local function computeMetrics(screen)
   love.graphics.setDepthMode("less", true)
   love.graphics.setShader(state.shader)
   state.shader:send("provenance", 1)
+  -- Explicit and not inherited: the shader's provenance branch now scales
+  -- alpha by the draw colour (so the laboratory overlay can be translucent),
+  -- and this readback depends on every provenance pixel being fully opaque.
+  love.graphics.setColor(1, 1, 1, 1)
   local cell, labelH = state.cell, state.labelH
   for r, row in ipairs(state.rows) do
     local y = (r - 1) * (cell + labelH) + labelH
