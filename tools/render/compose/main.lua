@@ -178,6 +178,29 @@ local function prepareHalves(c, pad)
   print(string.format("halves differ in %s pixels",
     n < 0 and "size, so in all" or tostring(n)))
 
+  -- DIFFERENT CANVAS SIZES ARE REFUSED, not cropped around.
+  --
+  -- The crop box was the union of both content boxes but clamped to the
+  -- BEFORE image's dimensions, so when the after image was larger, anything
+  -- past the before image's edge vanished from the published card. No error,
+  -- no refusal, exit 0, and an AFTER panel that could be entirely empty with
+  -- the callouts pointing at nothing. Found by review, reproduced.
+  --
+  -- Clamping each half to its own size instead would keep the pixels and lose
+  -- the alignment, which is worse: a before and after is a claim that THIS
+  -- became THAT, and that claim needs one framing. Two canvas sizes mean the
+  -- two halves were not filmed the same way, and the honest answer is to say
+  -- so. This is reachable in normal use: `before_tag=` renders the old half
+  -- with a different version's code, and cell size is a harness argument.
+  if ab:getWidth() ~= aa:getWidth() or ab:getHeight() ~= aa:getHeight() then
+    refuse(string.format(
+      "ERROR: the two halves are different sizes (%dx%d and %dx%d).",
+      ab:getWidth(), ab:getHeight(), aa:getWidth(), aa:getHeight()),
+      "  A before and after claims one thing became another, and that needs",
+      "  one framing. Render both halves with the same cell= and the same",
+      "  camera, or pass crop=0 and accept that they will not line up.")
+  end
+
   if not c.crop then
     for _, part in ipairs({ c.before, c.after }) do
       part.w, part.h = part.image:getWidth(), part.image:getHeight()
@@ -185,8 +208,43 @@ local function prepareHalves(c, pad)
     return
   end
 
-  local br, bg_, bb = ab:getPixel(0, 0)
-  local bg = { br, bg_, bb }
+  -- THE BACKGROUND COLOUR COMES FROM THE CORNERS, PLURAL.
+  --
+  -- Reading pixel (0,0) alone inverts the whole thing when the character
+  -- touches that corner: the character becomes "background" and is excluded,
+  -- the canvas becomes "content" and is kept, and every callout fraction then
+  -- addresses the wrong box. Found by review, reproduced with a block in the
+  -- corner. Four corners with a majority is cheap and cannot be fooled by one
+  -- of them being covered.
+  local function corDeFundo(id)
+    local w, h = id:getWidth(), id:getHeight()
+    local cantos = {}
+    for _, p in ipairs({ {0,0}, {w-1,0}, {0,h-1}, {w-1,h-1} }) do
+      local r, g, b = id:getPixel(p[1], p[2])
+      cantos[#cantos + 1] = { r, g, b }
+    end
+    for i = 1, #cantos do
+      local iguais = 0
+      for j = 1, #cantos do
+        local a, b = cantos[i], cantos[j]
+        if math.abs(a[1]-b[1]) < 0.01 and math.abs(a[2]-b[2]) < 0.01
+           and math.abs(a[3]-b[3]) < 0.01 then iguais = iguais + 1 end
+      end
+      if iguais >= 3 then return cantos[i] end
+    end
+    return nil
+  end
+
+  local bg = corDeFundo(ab)
+  if not bg then
+    -- No corner agrees with the others, so there is no background to find and
+    -- cropping would be a guess. Draw the images whole and say why.
+    print("aviso: nao achei cor de fundo nos cantos, entao nao vou recortar")
+    for _, part in ipairs({ c.before, c.after }) do
+      part.w, part.h = part.image:getWidth(), part.image:getHeight()
+    end
+    return
+  end
   local x1, y1, w1, h1 = contentBox(ab, bg, 0.02)
   local x2, y2, w2, h2 = contentBox(aa, bg, 0.02)
   local x0, y0 = math.min(x1, x2), math.min(y1, y2)

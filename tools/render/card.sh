@@ -86,7 +86,13 @@ render card_depois.png "$after_opt" "" || exit 1
 ARGS=(mode=card "out=$SAIDA" "title=$title"
       "before=$before_label|$before_sub|$SAVE_RENDER/card_antes.png"
       "after=$after_label|$after_sub|$SAVE_RENDER/card_depois.png")
-ARGS+=("${PONTOS[@]}")
+# `"${PONTOS[@]}"` on an EMPTY array is an unbound variable under `set -u` in
+# bash 3.2, which is what /bin/bash is on macOS. A recipe with no `point=`
+# lines is a legitimate use of the format (a plain before and after), and it
+# died here with "unbound variable" AFTER both halves had already rendered.
+# Found by review, reproduced. The guard is one line and the alternative is a
+# tool that breaks on its own documented input.
+[ ${#PONTOS[@]} -gt 0 ] && ARGS+=("${PONTOS[@]}")
 
 bash "$AQUI/../love.sh" mods/voxel_characters/tools/render/compose "${ARGS[@]}" || exit 1
 
