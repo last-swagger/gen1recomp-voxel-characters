@@ -45,11 +45,7 @@ echo "== features"
 # Outra ferramenta nossa rodando derruba esta: run.sh, clip.sh e trailer.sh
 # comecam com `pkill -x love`, porque um LOVE anterior vivo faz o proximo
 # nascer sem conseguir nada. Avisar antes e melhor que medir pela metade.
-if pgrep -x love >/dev/null 2>&1; then
-  echo "  JA TEM UM LOVE RODANDO. Espere ele acabar: as ferramentas deste"
-  echo "  repo se matam entre si e a medicao sairia truncada."
-  exit 1
-fi
+vc_trava_pega "juiz.sh" || exit 1
 cd "$REPO" || exit 1
 "$LOVE" mods/voxel_characters/tools/render features="$TMP/estados.tsv" \
   > "$TMP/features.tsv" 2>"$TMP/features.err"

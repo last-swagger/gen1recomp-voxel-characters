@@ -39,3 +39,47 @@ export LOVE
 
 FFMPEG=$(acha ffmpeg "${FFMPEG_BIN:-}" "/opt/homebrew/bin/ffmpeg" "/usr/local/bin/ffmpeg") || FFMPEG=""
 export FFMPEG
+
+# TRAVA DO LOVE. Uma ferramenta de cada vez.
+#
+# run.sh, clip.sh e trailer.sh comecam com `pkill -x love`, porque um LOVE
+# anterior vivo faz o proximo nascer sem conseguir nada. O efeito colateral e
+# que iniciar uma ferramenta MATA qualquer medicao em andamento, e a saida
+# truncada le como medicao curta em vez de medicao interrompida. Aconteceu: o
+# trailer matou uma extracao de features no meio e o arquivo parcial parecia
+# resultado.
+#
+# A trava e um diretorio, porque mkdir e atomico em qualquer sistema de
+# arquivos. Guarda o PID para poder detectar dono morto: sem isso, uma
+# ferramenta que caiu deixa a trava para sempre e o proximo tem que apagar na
+# mao, o que ensina a pessoa a apagar a trava por reflexo.
+VC_TRAVA="${VC_TRAVA:-/tmp/vc-love.lock}"
+
+vc_trava_pega() {
+  local quem="${1:-ferramenta}"
+  if mkdir "$VC_TRAVA" 2>/dev/null; then
+    echo "$$ $quem" > "$VC_TRAVA/dono"
+    trap 'vc_trava_solta' EXIT INT TERM
+    return 0
+  fi
+  local dono pid
+  dono=$(cat "$VC_TRAVA/dono" 2>/dev/null || echo "?")
+  pid=${dono%% *}
+  if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+    echo "trava orfa de $dono, recuperando"
+    rm -rf "$VC_TRAVA"
+    vc_trava_pega "$quem"
+    return $?
+  fi
+  echo "OUTRA FERRAMENTA ESTA USANDO O LOVE: $dono"
+  echo "  Espere ela acabar. Iniciar agora mataria a medicao dela e a saida"
+  echo "  truncada pareceria um resultado curto."
+  return 1
+}
+
+vc_trava_solta() {
+  [ -d "$VC_TRAVA" ] || return 0
+  local dono
+  dono=$(cat "$VC_TRAVA/dono" 2>/dev/null || echo "")
+  case "$dono" in "$$ "*) rm -rf "$VC_TRAVA" ;; esac
+}

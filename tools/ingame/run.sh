@@ -28,6 +28,7 @@ OPCAO="${2:-}"
 
 # ARMADILHA 1: um processo anterior ainda vivo faz o proximo nascer sem
 # conseguir nada. Matar NAO e instantaneo; esperar morrer de verdade.
+vc_trava_pega "run.sh" || exit 1
 pkill -x love 2>/dev/null
 for _ in $(seq 1 20); do
   pgrep -x love >/dev/null 2>&1 || break

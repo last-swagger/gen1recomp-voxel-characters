@@ -62,6 +62,7 @@ if [ -z "$VERSAO" ]; then
 fi
 [ -n "$VERSAO" ] || { echo "nenhuma versao pronta"; exit 1; }
 
+vc_trava_pega "clip.sh" || exit 1
 pkill -x love 2>/dev/null
 for _ in $(seq 1 20); do pgrep -x love >/dev/null 2>&1 || break; sleep 0.5; done
 
