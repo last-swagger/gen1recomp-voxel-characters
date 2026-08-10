@@ -3594,25 +3594,60 @@ do
   check(frontOpen ~= frontClosed, "lorelei pisca de frente andando (frame 3)")
   check(sideOpen ~= sideClosed, "lorelei pisca de perfil andando (frame 5)")
 
-  -- FALTA LOCALIZAR, e a tentativa de hoje virou um achado em vez de um teste.
+  -- ONDE a UV mudou, e nao so QUE ela mudou.
   --
-  -- As duas checagens acima comparam a assinatura da malha INTEIRA, entao elas
-  -- passariam com a UV do olho fechado apontando para qualquer texel errado.
-  -- E esta e a unica folha de ARTE REAL no teste do piscar, e a que guarda a
-  -- regressao da v1.4.1: fechar o olho em cima de pele.
+  -- As duas checagens acima comparam a assinatura da malha INTEIRA, entao
+  -- passariam com o olho fechado apontando para qualquer texel errado. E esta e
+  -- a unica folha de ARTE REAL do teste do piscar, e a que guarda a regressao
+  -- da v1.4.1: fechar o olho em cima de pele.
   --
-  -- Tentei localizar o quad do olho pela UV que ele amostra aberto, usando a
-  -- mesma formula que os testes sinteticos usam e que passa neles:
-  --   u = (frame * cellW + lx + 0.5) / sheetW,  v = (ly + 0.5) / cellH
-  -- Com EYE_MARKS de lorelei (5,7) (6,7) (9,7) (10,7) e frame 3, nenhum quad
-  -- casou. Fui ver as UVs que a malha REALMENTE tem e todas caem em u de 0.026
-  -- a 0.05, ou seja coluna 2 a 5 do frame ZERO, quando o pedido foi o frame 3.
+  -- DUAS TENTATIVAS ERRADAS ANTES DESTA, as duas anotadas porque a segunda
+  -- quase virou um relatorio de defeito:
   --
-  -- Isso e maior que este teste e nao vou fechar no chute: ou a malha do frame
-  -- 3 esta sendo servida com a UV do frame 0 (defeito), ou a folha sintetica
-  -- desta secao e montada de um jeito que eu nao entendi ainda (teste). As
-  -- duas possibilidades pedem medicao, e reprovar a suite com um teste que eu
-  -- nao sei explicar seria trocar um buraco por um alarme falso.
+  --   Procurar o quad do olho pela GEOMETRIA falhou porque a conversao entre a
+  --   linha da folha e o y da malha depende do builder.
+  --
+  --   Procurar pela UV pontual tambem falhou, e ai eu despejei as UVs da malha,
+  --   olhei as 40 primeiras EM ORDEM ALFABETICA e vi todas em u de 0.026 a
+  --   0.05, que e o frame ZERO, com a malha pedida para o frame 3. Escrevi no
+  --   roadmap que ou o mod servia UV errada ou a folha estava mal montada.
+  --   Estava errado: aquelas eram as faces LATERAIS e de TOPO, que amostram
+  --   texel de corpo de onde acharem, e ordenar por u poe as menores primeiro.
+  --   Medindo so as faces de FRENTE: 22 quads, u de 0.5214 a 0.6151, dentro da
+  --   faixa do frame 3 (0.5000 a 0.6667). Nenhum defeito.
+  --
+  --   E a busca pontual falha por um motivo legitimo: o SLAB emite RUN, um quad
+  --   por corrida horizontal de texels, entao o quad do olho aberto nao tem uma
+  --   UV unica.
+  --
+  -- Entao localiza sem nomear o quad: conta quantas faces de FRENTE mudam de
+  -- UV ao fechar. Tem que ser POUCAS, do tamanho do olho, e nao a malha toda.
+  local frenteMudou, frenteTotal = 0, 0
+  withLoveTime(openTime, function()
+    local aberta = modules.SpriteBillboards.mesh(def, 3)
+    local uvAberta = {}
+    for i = 1, #aberta.verts, 4 do
+      if close(aberta.verts[i][6], 0.90) then
+        frenteTotal = frenteTotal + 1
+        uvAberta[i] = string.format("%.5f,%.5f", aberta.verts[i][4],
+                                    aberta.verts[i][5])
+      end
+    end
+    withLoveTime(closedTime, function()
+      local fechada = modules.SpriteBillboards.mesh(def, 3)
+      for i, uv in pairs(uvAberta) do
+        local v = fechada.verts[i]
+        if v and string.format("%.5f,%.5f", v[4], v[5]) ~= uv then
+          frenteMudou = frenteMudou + 1
+        end
+      end
+    end)
+  end)
+  check(frenteTotal > 10, string.format(
+    "a lorelei tem faces de frente para medir (%d)", frenteTotal))
+  check(frenteMudou >= 1 and frenteMudou <= 6, string.format(
+    "a piscada da lorelei mexe em POUCAS faces de frente, do tamanho do olho: "
+    .. "%d de %d", frenteMudou, frenteTotal))
 end
 
 do

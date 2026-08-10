@@ -456,21 +456,26 @@ exists for, so the control belongs there rather than at full blend where the
 host hides it. A gate that fails half the time for reasons unrelated to the code
 trains people to rerun it until it is green, which is worse than no gate.
 
-### 25. The blink test on real art does not localise, and the attempt found something
+### 25. RETRACTED: the blink test now localises, and there was no defect
 
-Every blink check on real art compares whole-mesh UV signatures: it asks whether
-any UV moved, not whether the EYE's UV moved. It would pass with the closed eye
-sampling any wrong texel, and `lorelei` is the sheet that guards the v1.4.1
-regression, which was closing the eye over skin.
+An earlier version of this item reported that the frame-3 mesh might be served
+with frame-0 UVs, and called it a possible defect in something shipped. **That
+was wrong, and the way it was wrong is worth keeping.**
 
-Trying to localise it turned up something bigger. Locating the eye quad by the
-UV it samples when open, with the same formula the synthetic tests use and pass
-with, matched nothing. Reading the mesh's actual UVs, every one falls in
-u = 0.026 to 0.05, which is columns 2 to 5 of frame ZERO, while the mesh was
-requested for frame 3.
+I dumped every UV in the mesh, sorted them, looked at the first 40 and saw them
+all between u = 0.026 and 0.05, which is frame zero. Those were the SIDE and TOP
+faces, which sample a body texel from wherever they find one, and sorting puts
+the smallest u first. Measuring only the FRONT faces: 22 quads, u from 0.5214 to
+0.6151, inside frame 3's range of 0.5000 to 0.6667. Nothing wrong.
 
-**What changes:** either the frame-3 mesh is being served with frame-0 UVs,
-which is a defect in something shipped, or that section's synthetic sheet is
-built in a way I have not understood, which is a defect in the test. Both need
-measurement. The test was left as it was rather than shipped red, because
-failing the suite with a check I cannot explain trades a hole for a false alarm.
+I looked at a subset and concluded about the whole, which is the failure this
+project has a rule against, and I published it as a finding.
+
+The real reason a point-UV lookup could not find the eye is legitimate and
+smaller: SLAB emits RUNS, one quad per horizontal run of texels, so an open
+eye quad has no single UV.
+
+**Done instead:** the test counts how many FRONT faces change UV when the eye
+closes and requires it to be a handful rather than all of them. Making the blink
+touch every vertex makes it fail with "22 of 22", which is the mutation it
+exists to catch.
