@@ -1,17 +1,17 @@
 #!/bin/bash
-# UMA RODADA DO LOOP: ajusta o juiz com o que ja foi escolhido, pede a ele os
-# pares mais informativos, e abre o laboratorio com eles.
+# ONE ROUND OF THE LOOP: fits the judge with what has already been chosen,
+# asks it for the most informative pairs, and opens the laboratory with them.
 #
-#   tools/juiz/rodada.sh [quantos-pares]
+#   tools/juiz/rodada.sh [how-many-pairs]
 #
-# POR QUE NAO SORTEAR. Trinta escolhas do Kim sao o insumo caro deste projeto.
-# Sorteadas, boa parte cai em par que o modelo ja acerta de olhos fechados, e
-# uma escolha dessas nao move peso nenhum. Perguntar justamente onde o modelo
-# esta em cima do muro faz cada escolha valer varias.
+# WHY NOT ROLL. Thirty of Kim's choices are this project's expensive input.
+# Rolled, a good share land on a pair the model already gets right with its
+# eyes closed, and a choice like that moves no weight at all. Asking
+# specifically where the model is on the fence makes each choice worth several.
 #
-# Na PRIMEIRA rodada nao ha modelo, e ai o criterio e maior distancia de
-# feature: pares obviamente diferentes primeiro, que e o que separa as colunas
-# para o primeiro ajuste ter o que morder.
+# On the FIRST round there is no model, and then the criterion is greatest
+# feature distance: obviously different pairs first, which is what separates
+# the columns so the first fit has something to bite into.
 set -u
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$AQUI/../../../.." && pwd)"
@@ -21,7 +21,7 @@ ESCOLHAS="${VC_ESCOLHAS:-$SAVE/escolhas.txt}"
 QUANTOS="${1:-30}"
 
 cd "$REPO" || exit 1
-command -v luajit >/dev/null || { echo "luajit nao encontrado"; exit 1; }
+command -v luajit >/dev/null || { echo "luajit not found"; exit 1; }
 vc_trava_pega "rodada.sh" || exit 1
 
 TMP="$(mktemp -d -t vcrodada)" || exit 1
@@ -29,7 +29,7 @@ trap 'rm -rf "$TMP"; vc_trava_solta' EXIT
 
 MODELO=""
 if [ -f "$ESCOLHAS" ]; then
-  echo "== ajustando com o que ja existe"
+  echo "== fitting with what already exists"
   luajit "$AQUI/ajusta.lua" --estados "$ESCOLHAS" > "$TMP/est.tsv" 2>/dev/null
   "$LOVE" mods/voxel_characters/tools/render features="$TMP/est.tsv" \
     > "$TMP/feat_antigo.tsv" 2>/dev/null
@@ -37,16 +37,16 @@ if [ -f "$ESCOLHAS" ]; then
        "$TMP/modelo.txt" 2>/dev/null; then
     MODELO="$TMP/modelo.txt"
   else
-    echo "  ainda nao da para ajustar; os pares vao sair por distancia"
+    echo "  cannot fit yet; pairs will come out by distance"
   fi
 else
-  echo "== primeira rodada: nao ha escolhas ainda"
+  echo "== first round: no choices yet"
 fi
 
-# O ESPACO DE CANDIDATOS. Uma folha por linha, com cada nivel de cada opcao que
-# mexe na malha. Sai grande de proposito: quem escolhe o que perguntar e o
-# criterio, nao o tamanho da lista.
-echo "== montando o espaco de candidatos"
+# THE CANDIDATE SPACE. One sheet per line, with every level of every option
+# that touches the mesh. Deliberately large: what decides what to ask is the
+# criterion, not the size of the list.
+echo "== building the candidate space"
 luajit - "$TMP/cand.tsv" <<'LUA'
 local saida = assert(io.open(arg[1], "w"))
 local folhas = {}
@@ -59,8 +59,8 @@ if p then
   p:close()
 end
 table.sort(folhas)
--- Amostra de folhas: todas seria caro e nao mais informativo, porque o
--- criterio ja ordena. Uma a cada seis cobre os tres tamanhos de sheet.
+-- Sample of sheets: all of them would be expensive and no more informative,
+-- because the criterion already ranks. One every six covers the three sheet sizes.
 local OPCOES = {
   { "depth", { 1, 3, 5, 10 } },
   { "shape", { "slab", "carved", "carved_plus" } },
@@ -90,21 +90,21 @@ saida:close()
 io.stderr:write(n .. " candidatos\n")
 LUA
 
-echo "== medindo os candidatos"
+echo "== measuring the candidates"
 "$LOVE" mods/voxel_characters/tools/render features="$TMP/cand.tsv" \
   > "$TMP/feat.tsv" 2>"$TMP/feat.err"
 MEDIDOS=$(grep -cv '^#' "$TMP/feat.tsv" 2>/dev/null || echo 0)
-echo "  $MEDIDOS variantes medidas"
-[ "$MEDIDOS" -gt 10 ] || { echo "medicao falhou"; tail -3 "$TMP/feat.err"; exit 1; }
+echo "  $MEDIDOS variants measured"
+[ "$MEDIDOS" -gt 10 ] || { echo "measurement failed"; tail -3 "$TMP/feat.err"; exit 1; }
 
-echo "== escolhendo os pares"
+echo "== choosing the pairs"
 luajit "$AQUI/ajusta.lua" --pares "$TMP/feat.tsv" "$MODELO" "$QUANTOS" \
   > "$SAVE/pares.txt" 2>&1 | tail -1
 CRIT=$(luajit "$AQUI/ajusta.lua" --pares "$TMP/feat.tsv" "$MODELO" "$QUANTOS" 2>&1 >/dev/null | tail -1)
 echo "  $CRIT"
-echo "  pares em $SAVE/pares.txt"
+echo "  pairs in $SAVE/pares.txt"
 
 vc_trava_solta
 echo ""
-echo "Abra o laboratorio e aperte t:"
+echo "Open the laboratory and press t:"
 echo "  bash $REPO/mods/voxel_characters/Laboratorio.command labpares=$SAVE/pares.txt"

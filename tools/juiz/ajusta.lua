@@ -1,26 +1,26 @@
--- O JUIZ: transforma as escolhas do Kim num modelo que ordena variantes.
+-- THE JUDGE: turns Kim's choices into a model that ranks variants.
 --
--- POR QUE ELE PRECISA EXISTIR. Este projeto mediu, e nao supos, que um
--- redesenho por IA satisfaz TODA restricao numerica que a gente tem e ainda
--- entrega arte pior. Entao nenhum gerador pode ser treinado contra as reguas
--- que a gente ja possui: falta uma regua nova, e a unica fonte dela e alguem
--- escolhendo entre dois.
+-- WHY IT HAS TO EXIST. This project measured, and did not assume, that an AI
+-- redraw satisfies EVERY numeric constraint we have and still delivers worse
+-- art. So no generator can be trained against the rulers we already have:
+-- what is missing is a new ruler, and its only source is someone choosing
+-- between two.
 --
--- O QUE ELE E. Regressao logistica sobre a DIFERENCA de features entre os dois
--- lados de cada par, que e a forma Bradley-Terry escrita do jeito mais simples
--- possivel. Com dezenas de escolhas, um modelo linear sobre uma duzia de
--- colunas e a capacidade certa; rede neural com cem exemplos decora.
+-- WHAT IT IS. Logistic regression over the feature DIFFERENCE between the two
+-- sides of each pair, which is the Bradley-Terry form written the simplest
+-- way possible. With dozens of choices, a linear model over a dozen columns
+-- is the right capacity; a neural network with a hundred examples memorises.
 --
--- O GATE QUE DECIDE SE ELE E JUIZ OU ENFEITE. Vinte por cento das escolhas
--- ficam de fora do ajuste, e o modelo tem que acertar essas melhor do que a
--- MELHOR COLUNA SOZINHA. Se nao ganha de uma coluna, ele nao aprendeu nada,
--- so decorou as features que eu escolhi. Este numero e a coisa mais importante
--- que este arquivo imprime.
+-- THE GATE THAT DECIDES WHETHER IT IS A JUDGE OR DECORATION. Twenty percent
+-- of the choices are held out of the fit, and the model has to get those
+-- right better than the BEST SINGLE COLUMN. If it does not beat one column,
+-- it learned nothing, it just memorised the features I chose. This number is
+-- the most important thing this file prints.
 --
--- Uso:
---   luajit ajusta.lua --estados <escolhas.txt>            lista as variantes
+-- Usage:
+--   luajit ajusta.lua --estados <escolhas.txt>            lists the variants
 --   luajit ajusta.lua --ajusta <escolhas.txt> <features.tsv>
---   luajit ajusta.lua --autoteste                         prova a maquinaria
+--   luajit ajusta.lua --autoteste                         proves the machinery
 
 local M = {}
 
@@ -32,9 +32,9 @@ local function dividir(s, sep)
   return out
 end
 
--- "depth=3 side_color=body" vira "depth:3,side_color:body", que e o formato
--- que o extrator de features aceita. Chave ordenada, para o mesmo estado
--- produzir sempre a mesma string e a deduplicacao funcionar.
+-- "depth=3 side_color=body" becomes "depth:3,side_color:body", which is the
+-- format the feature extractor accepts. Sorted by key, so the same state
+-- always produces the same string and deduplication works.
 local function estadoCanonico(texto)
   local pares = {}
   for k, v in tostring(texto):gmatch("([%w_]+)=([^%s]+)") do
@@ -77,10 +77,11 @@ local function lerFeatures(caminho)
   for linha in f:lines() do
     local campos = {}
     for c in (linha .. "\t"):gmatch("(.-)\t") do campos[#campos + 1] = c end
-    -- Quatro colunas de identidade (folha, quadro, relogio, estado) e o resto
-    -- e feature. O relogio e o quadro entram na CHAVE porque a mesma variante
-    -- medida noutro instante e outra medicao, e foi confundir as duas que fez
-    -- pares de BLINK sairem com diferenca zero.
+    -- Four identity columns (sheet, frame, clock, state) and the rest is
+    -- feature. The clock and the frame enter the KEY because the same
+    -- variant measured at a different instant is a different measurement,
+    -- and it was confusing the two that made BLINK pairs come out with zero
+    -- difference.
     local ID = 4
     if linha:sub(1, 1) == "#" then
       nomes = {}
@@ -97,9 +98,9 @@ end
 
 ------------------------------------------------------------------ modelo
 
--- z-score por coluna, calculado SO no treino. Padronizar usando o conjunto
--- inteiro vazaria informacao do teste para dentro do ajuste, e a acuracia
--- fora da amostra deixaria de significar o que ela promete.
+-- z-score per column, calculated ONLY on the training set. Standardising
+-- using the whole set would leak test information into the fit, and the
+-- out-of-sample accuracy would stop meaning what it promises.
 local function padroniza(X, indices)
   local d = #X[1]
   local media, desvio = {}, {}
@@ -161,9 +162,9 @@ local function acerta(X, y, indices, w)
   return #indices > 0 and ok / #indices or 0
 end
 
--- O ADVERSARIO: cada coluna sozinha, com o sinal escolhido NO TREINO. Bater
--- isso e o minimo para o modelo ter aprendido alguma combinacao em vez de so
--- reproduzir a coluna mais forte.
+-- THE OPPONENT: each column alone, with the sign chosen ON THE TRAINING SET.
+-- Beating this is the minimum for the model to have learned some combination
+-- instead of just reproducing the strongest column.
 local function melhorColuna(X, y, treinoIdx, testeIdx, nomes)
   local melhor = { nome = "nenhuma", treino = 0, teste = 0 }
   for j = 1, #X[1] do
@@ -182,9 +183,10 @@ local function melhorColuna(X, y, treinoIdx, testeIdx, nomes)
   return melhor
 end
 
--- Divisao deterministica: um em cada cinco vai para o teste, pela ORDEM em
--- que a escolha foi feita. Sem sorteio de proposito, para o numero impresso
--- ser o mesmo em duas execucoes e uma piora nao poder ser confundida com azar.
+-- Deterministic split: one in every five goes to the test set, by the ORDER
+-- in which the choice was made. No randomness on purpose, so the printed
+-- number is the same across two runs and a regression cannot be mistaken for
+-- bad luck.
 local function divide(n)
   local treino, teste = {}, {}
   for i = 1, n do
@@ -244,18 +246,19 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
         dif[j] = fa[j] - fb[j]
         if math.abs(dif[j]) > 1e-9 then zero = false end
       end
-      -- DIFERENCA ZERO NAO E UMA ESCOLHA, E UM BURACO NA LISTA DE FEATURES.
+      -- ZERO DIFFERENCE IS NOT A CHOICE, IT IS A HOLE IN THE FEATURE LIST.
       --
-      -- Os dois lados existem e sao visivelmente diferentes na tela, senao o
-      -- laboratorio nao teria oferecido o par. Se as features nao distinguem,
-      -- e porque nenhuma delas enxerga o que mudou. Deixar a linha entrar no
-      -- ajuste seria pior que descartar: com dif = 0 o modelo pontua z = 0,
-      -- preve sempre "A", acerta toda escolha A e erra toda B, e isso vai para
-      -- o denominador da acuracia como se fosse informacao.
+      -- The two sides exist and are visibly different on screen, otherwise
+      -- the laboratory would not have offered the pair. If the features do
+      -- not distinguish them, it is because none of them sees what changed.
+      -- Letting the line into the fit would be worse than discarding it: with
+      -- dif = 0 the model scores z = 0, always predicts "A", gets every A
+      -- choice right and every B choice wrong, and that goes into the
+      -- accuracy's denominator as if it were information.
       --
-      -- Entao a linha sai do ajuste E e reportada por opcao, porque a lista
-      -- delas e a resposta mais util que este arquivo produz: e a lista do que
-      -- falta medir.
+      -- So the line drops out of the fit AND gets reported by option, because
+      -- the list of them is the most useful answer this file produces: it is
+      -- the list of what is left to measure.
       if zero then
         cegas[e.opcao or "?"] = (cegas[e.opcao or "?"] or 0) + 1
       else
@@ -320,16 +323,16 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
   end
 end
 
--- A MAQUINARIA PROVADA ANTES DE GASTAR O TEMPO DO KIM.
+-- THE MACHINERY PROVEN BEFORE SPENDING KIM'S TIME.
 --
--- Trinta escolhas humanas sao caras. Se o ajuste tiver um defeito, o custo
--- aparece depois delas. Entao o autoteste gera escolhas SINTETICAS a partir de
--- uma regra conhecida e confere que o modelo a recupera. Se ele nao recupera
--- uma regra que existe de verdade, nao adianta alimenta-lo com dado real.
+-- Thirty human choices are expensive. If the fit has a defect, the cost
+-- shows up after them. So the selftest generates SYNTHETIC choices from a
+-- known rule and checks that the model recovers it. If it cannot recover a
+-- rule that is really there, there is no point feeding it real data.
 local function comandoAutoteste()
   math.randomseed(20260809)
   local nomes = { "topo", "arte", "quads", "ruido1", "ruido2" }
-  -- A regra: quem tem MENOS topo e MAIS arte ganha. Os outros tres nao contam.
+  -- The rule: whoever has LESS top and MORE art wins. The other three do not count.
   local verdade = { -2.0, 1.5, 0, 0, 0 }
   local X, y = {}, {}
   for _ = 1, 200 do
@@ -365,8 +368,8 @@ end
 
 ------------------------------------------------------------------ o gerador
 
--- O MODELO SAI EM ARQUIVO, e nao so na tela. Sem isso o ajuste morre a cada
--- execucao e nada consegue PONTUAR uma variante nova.
+-- THE MODEL GOES OUT TO A FILE, not just to the screen. Without this the fit
+-- dies with every run and nothing can SCORE a new variant.
 local function comandoPesos(caminhoEscolhas, caminhoFeatures, saida)
   local escolhas = lerEscolhas(caminhoEscolhas)
   local nomes, mapa = lerFeatures(caminhoFeatures)
@@ -422,17 +425,17 @@ local function lerModelo(caminho)
                             desvio = desvio } or nil
 end
 
--- OS PARES QUE MAIS ENSINAM, e nao os que o sorteio entregar.
+-- THE PAIRS THAT TEACH THE MOST, and not the ones the roll delivers.
 --
--- Trinta escolhas do Kim sao o insumo caro deste projeto. Sorteadas, boa parte
--- cai em pares que o modelo ja acerta de olhos fechados e que portanto nao
--- movem nenhum peso. Pedir justamente os pares em que o modelo esta EM CIMA DO
--- MURO faz cada escolha valer varias, e e o unico jeito de trinta escolhas
--- virarem um modelo em vez de ruido.
+-- Thirty of Kim's choices are this project's expensive input. Rolled, a good
+-- share land on pairs the model already gets right with its eyes closed and
+-- that therefore move no weight. Asking specifically for the pairs where the
+-- model is ON THE FENCE makes each choice worth several, and it is the only
+-- way for thirty choices to turn into a model instead of noise.
 --
--- Sem modelo ainda (a primeira rodada), a ordem e por MAIOR distancia de
--- feature: pares obviamente diferentes primeiro, que e o que se quer para
--- comecar a separar as colunas.
+-- With no model yet (the first round), the order is by GREATEST feature
+-- distance: obviously different pairs first, which is what you want to start
+-- separating the columns.
 local function comandoPares(caminhoFeatures, caminhoModelo, quantos)
   local nomes, mapa = lerFeatures(caminhoFeatures)
   if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
@@ -465,11 +468,11 @@ local function comandoPares(caminhoFeatures, caminhoModelo, quantos)
               z = z + modelo.w[k] * (dif[k] / (modelo.desvio[k] ~= 0
                 and modelo.desvio[k] or 1))
             end
-            score = math.abs(z)          -- menor = mais em cima do muro
+            score = math.abs(z)          -- smaller = more on the fence
           else
             local d = 0
             for k = 1, #dif do d = d + dif[k] * dif[k] end
-            score = -math.sqrt(d)        -- maior distancia primeiro
+            score = -math.sqrt(d)        -- greatest distance first
           end
           cand[#cand + 1] = { g = g, a = lista[i].estado, b = lista[j].estado,
                               score = score }
