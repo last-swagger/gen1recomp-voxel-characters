@@ -151,7 +151,41 @@ local CASOS = {
     b = "local t = {\n      x = 1,\n}\n",
     esperado = "diferente",
   },
+
+  -- The two below were found by an independent review after the nineteen
+  -- above were already green, and the first of them was a real false PASS.
+  -- They are kept as the record of what hand-written cases missed.
+  {
+    -- LuaJIT treats a bare CR as a line break, so `local y` here is real
+    -- code. The short-comment branch used to run to the next \n, found none,
+    -- and swallowed it. Two files with different code compared EQUAL.
+    nome = "CR sozinho termina comentario curto (era falso PASSE)",
+    a = "local x = 1 -- pt\rlocal y = 2\r",
+    b = "local x = 1 -- en\rlocal y = 999\r",
+    esperado = "diferente",
+  },
+  {
+    -- Same shape, without the code change, to prove the fix did not simply
+    -- make everything report as different.
+    nome = "CR sozinho, so o comentario muda",
+    a = "local x = 1 -- pt\rlocal y = 2\r",
+    b = "local x = 1 -- en\rlocal y = 2\r",
+    esperado = "igual",
+  },
 }
+
+-- An unterminated long bracket is refused with its own exit code, so it is
+-- checked separately: it is neither "igual" nor "diferente", it is "I cannot
+-- answer". Before the fix it answered "igual" for any two such files.
+local function recusaAberto()
+  local a = escreve("aberto_a.lua", "local x = 1\n--[[ aberto\nlocal y = 2\n")
+  local b = escreve("aberto_b.lua", "local x = 1\n--[[ aberto\nlocal y = 999\n")
+  local p = assert(io.popen(string.format(
+    "luajit %q %q %q > /dev/null 2>&1; echo $?", MOTOR, a, b)))
+  local code = tonumber((p:read("*a"):gsub("%s", "")))
+  p:close()
+  return code
+end
 
 local ok, falhou = 0, 0
 for _, c in ipairs(CASOS) do
@@ -167,6 +201,19 @@ for _, c in ipairs(CASOS) do
     if c.esperado == "diferente" then
       print("        ESTE E O PERIGOSO: codigo mudou e o portao aprovou.")
     end
+  end
+end
+
+local codigoAberto = recusaAberto()
+if codigoAberto == 3 then
+  ok = ok + 1
+else
+  falhou = falhou + 1
+  print("FALHOU  colchete longo aberto tem que ser RECUSADO (saida 3)")
+  print(string.format("        obtido %s", tostring(codigoAberto)))
+  if codigoAberto == 0 then
+    print("        ESTE E O PERIGOSO: dois arquivos com codigo diferente")
+    print("        sairam iguais porque tudo depois do --[[ foi engolido.")
   end
 end
 

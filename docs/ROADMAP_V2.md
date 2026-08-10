@@ -281,12 +281,59 @@ side view is the one view a battle never shows. **The cheap first step is a
 capability probe of the battle path**, the same step 1 the overworld got: find
 out whether there is a seam to patch before designing what goes through it.
 
-### 13. Weather and wind
+### 13. RESOLVED BY INVESTIGATION: there is no weather to read
 
-Roadmapped rather than built because it depends on mods we do not control. The
-mechanism already ships: wind is one more shear term in `lifeApply`, exactly
-like `SWAY`. What is missing is a source, and the first question is whether the
-host or another mod exposes a wind or weather state we can read.
+The item said the mechanism already ships (wind is one more shear term in
+`lifeApply`, exactly like `SWAY`) and that the open question was whether
+anything exposes a wind or weather state. **It was never looked at. It has
+been now, and the answer is no.**
+
+**Nothing publishes weather.** Not the host, not another installed mod, not the
+core. The host says so in its own changelog: its day/night module "carries the
+hour **and not the weather**" (`DramaticShapeVoxelMod/CHANGELOG.md:1653`).
+There is no `Weather.lua` in its 60 `lib/` modules. `Sky.lua:16` says "No
+clouds, nothing moving", so there is not even a cloud layer to steal a
+direction from. The core's `BattleState.field.weather` is battle scoped and
+vanilla Gen 1 never writes it; a test asserts it stays nil. The one file named
+for weather is `mods/examples/example_weather`, a battle ruleset example.
+
+**What does exist is `DayNight`**, reachable by the same
+`V.require("DayNight")` path this mod already uses for `VoxelState` and
+`FirstPerson`, so consuming it is not a new class of coupling. And it has a
+function whose signature is startling in context:
+
+```lua
+DayNight.shearAt(t)  -->  kx, kz, moon      lib/DayNight.lua:139
+```
+
+Two shear components, in **drift per pixel of height**, which is exactly the
+unit `lifeApply(m, s, kx, kz, sx, corr)` consumes.
+
+**That is a coincidence of units, not a wind source, and the distinction is the
+whole finding.** The comment above it says what it is: "the shadow shear that
+body throws, drift per pixel of height, opposite the bearing, cot(elevation)
+long". Feeding it into the life channel would lean every character away from
+the sun, in proportion to how low the sun sits. That is a real effect and it
+might even look good, but calling it wind would be naming it after something it
+is not, and this project has a rule about that.
+
+**And it would mostly not move.** `DayNight.time()` returns a CONSTANT under
+the four pinned settings (DAY, NIGHT, DUSK, DAWN), advances per frame only
+under CYCLE, and under the default SYNC follows the machine's wall clock, which
+means it drifts over real hours. So for most players the value is either frozen
+or moving too slowly to perceive. A source that does not vary is not a source.
+
+**What this unblocks instead, and it is item 4.** Time of day is both readable
+and **settable**: `DayNight.setting` is a `ModSetting`
+(`lib/DayNight.lua:69`) with values `{sync, day, night, dusk, dawn, cycle}`,
+and `setting:setIndex(n, game)` is already called programmatically by the
+host's own `forceSync`. Pinning DUSK for one trailer shot is a single call.
+"Variety in time of day", which item 4 lists as missing, stops being a wish and
+becomes a line in the shot list.
+
+**Cost of this item: one investigation, and it closed.** If wind is ever wanted
+it has to be invented here, with its own state and its own reason to vary,
+rather than read from somewhere.
 
 ---
 

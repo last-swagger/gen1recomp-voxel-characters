@@ -35,7 +35,24 @@ end
 -- Strings are code and stay. A comment marker inside a string is not a comment,
 -- which is the case a regex-based version gets wrong, and this file exists
 -- precisely because "looks right" is not good enough here.
-local function tiraComentarios(src)
+local function tiraComentarios(src, nome)
+  -- LINE ENDINGS ARE NORMALISED FIRST, and this is a correctness fix, not
+  -- tidiness. LuaJIT accepts a bare CR as a line break. The short-comment
+  -- branch below ended a comment at the next `\n`, so given
+  --
+  --     local x = 1 -- comment<CR>local y = 2<CR>
+  --
+  -- the comment swallowed `local y = 2` as well, and the gate reported the
+  -- code as identical while it differed. That is a false PASS, which is the
+  -- one direction this tool must never fail in. Found by an independent
+  -- review after nineteen hand-written adversarial cases missed it.
+  --
+  -- The cost, stated so nobody rediscovers it as a bug: a change of line
+  -- ending INSIDE a long string is now invisible to this gate. That is a
+  -- deliberate trade. Being blind to `\r\n` versus `\n` inside one string is
+  -- survivable; being blind to every line after a comment is not.
+  src = src:gsub("\r\n", "\n"):gsub("\r", "\n")
+
   local out, i, n = {}, 1, #src
   local linha = {}
 
@@ -58,10 +75,24 @@ local function tiraComentarios(src)
     return nil
   end
 
+  -- An UNTERMINATED long bracket is refused, not swallowed.
+  --
+  -- The previous version returned "end of file" when it could not find the
+  -- closer, so a file with a stray `--[[` had everything after it stripped.
+  -- Two such files then compared equal no matter what code they contained,
+  -- which is a false PASS on input that is not even valid Lua. Refusing is
+  -- correct and cheap: the file cannot compile anyway, and the person needs
+  -- to know which line opened the bracket.
+  local naoFechou = nil
   local function fimDoColchete(pos, eq)
     local fecha = "]" .. string.rep("=", eq) .. "]"
     local a = src:find(fecha, pos, true)
-    if not a then return n + 1, n + 1 end
+    if not a then
+      local ateAqui = src:sub(1, pos)
+      local _, linhas = ateAqui:gsub("\n", "")
+      naoFechou = { eq = eq, linha = linhas + 1 }
+      return n + 1, n + 1
+    end
     return a, a + #fecha
   end
 
@@ -113,6 +144,15 @@ local function tiraComentarios(src)
     end
   end
   if #linha > 0 then out[#out + 1] = table.concat(linha) end
+  if naoFechou then
+    io.stderr:write(string.format(
+      "%s: colchete longo aberto na linha %d e nunca fechado (nivel %d).\n"
+      .. "  Isso nem compila, e o comparador nao pode responder nada sobre o\n"
+      .. "  que vem depois: tudo dali para baixo seria engolido como se fosse\n"
+      .. "  comentario, e dois arquivos diferentes sairiam iguais.\n",
+      tostring(nome), naoFechou.linha, naoFechou.eq))
+    os.exit(3)
+  end
   return out
 end
 
@@ -123,8 +163,8 @@ local function normaliza(l)
   return (l:gsub("%s+$", ""))
 end
 
-local antes = tiraComentarios(lerArquivo(arg[1] or ""))
-local depois = tiraComentarios(lerArquivo(arg[2] or ""))
+local antes = tiraComentarios(lerArquivo(arg[1] or ""), arg[1])
+local depois = tiraComentarios(lerArquivo(arg[2] or ""), arg[2])
 
 local problemas = {}
 local maior = math.max(#antes, #depois)
