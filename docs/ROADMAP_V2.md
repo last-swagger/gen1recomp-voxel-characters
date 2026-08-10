@@ -564,6 +564,37 @@ exists for, so the control belongs there rather than at full blend where the
 host hides it. A gate that fails half the time for reasons unrelated to the code
 trains people to rerun it until it is green, which is worse than no gate.
 
+**A SECOND INSTANCE, found 2026-08-10 by running the whole battery as one
+command for the first time.** The menu gate's M8 failed. Run on its own it
+passed. Measured five times:
+
+```
+OFF 13, STRONG 59   passed        threshold is STRONG > OFF + 40
+OFF 12, STRONG 48   failed
+OFF 13, STRONG 45   failed
+OFF 13, STRONG 56   passed
+OFF 13, STRONG 48   failed
+```
+
+**Three failures out of five, with nothing wrong.** The floor is rock steady
+(12 or 13 every time); it is the measurement of the effect that swings by 30%.
+
+The cause is the one this project has already written down once, in a different
+gate: it photographed the screen twice, 46 frames apart, and reported the
+difference. That number depends on where in the BREATHING CYCLE the two
+photographs land, not on how large the breathing is. A fixed interval measures
+phase.
+
+Fixed by sweeping a whole period and keeping the largest difference, which is
+what amplitude controls. **The threshold was deliberately not lowered**, and
+that is the point worth keeping: +40 would have gone green instantly at +30 and
+the gate would have kept measuring the wrong thing, more quietly.
+
+The lesson generalises past this gate: **the first full run of the battery as a
+single command immediately found a flaky gate that months of running pieces by
+hand had not.** Running things separately hides intermittency, because a human
+who sees a red re-runs it, and a green rerun ends the investigation.
+
 ### 25. RETRACTED: the blink test now localises, and there was no defect
 
 An earlier version of this item reported that the frame-3 mesh might be served

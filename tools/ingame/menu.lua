@@ -317,13 +317,34 @@ return function(game)
     return topo() == game.overworld
   end
 
-  -- Measures how much the screen changes with the menu CLOSED, at the current setting.
+  -- Measures how much the screen changes with the menu CLOSED, at the current
+  -- setting.
+  --
+  -- ENVELOPE, NOT A PAIR, and this is the second time this project has had to
+  -- learn it. The first version took two photographs 46 frames apart and
+  -- reported the difference. That number depends on WHERE IN THE BREATHING
+  -- CYCLE the two photographs happen to land, not on how big the breathing is,
+  -- so the same build measured 45, 48, 48, 56 and 59 across five runs against
+  -- a threshold of 53. The gate failed three times out of five with nothing
+  -- wrong: a gate that fails half the time for reasons unrelated to the code
+  -- teaches people to rerun it until it is green, which is worse than no gate.
+  --
+  -- Sweeping a whole period and keeping the largest difference measures the
+  -- AMPLITUDE, which is what the option controls, and the phase drops out.
+  -- The threshold was deliberately NOT lowered to make this pass: the number
+  -- was never the problem, the instrument was.
+  local ENVELOPE_QUADROS = 120   -- about two seconds at 60fps, over a full cycle
+  local ENVELOPE_PASSO = 12
   local function medeNoMundo()
     if not sairParaOMundo() then return -1 end
     local a = foto()
-    U.wait(46)
-    local b = foto()
-    return difere(a, b)
+    local maior = 0
+    for _ = 1, math.floor(ENVELOPE_QUADROS / ENVELOPE_PASSO) do
+      U.wait(ENVELOPE_PASSO)
+      local d = difere(a, foto())
+      if d > maior then maior = d end
+    end
+    return maior
   end
 
   local m8ok, detalheM8 = false, "nao consegui montar a comparacao"
