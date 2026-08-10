@@ -216,26 +216,28 @@ return function(game)
   -- (OverworldController.ghosts), e a primeira versao deste teste reprovou por
   -- isso, nao por defeito do host. A pergunta honesta e: TODA entidade deste
   -- mapa aparece desenhada na posicao de mundo dela?
-  local desenhado, desenhadoX = {}, {}
+  -- A chave tem que ser o PAR (px,py), nao dois conjuntos independentes: um
+  -- desenho em py=10 e outro (de OUTRA entidade) em px=5 nao provam que
+  -- existe um desenho em (5,10). Conjuntos separados deixam passar qualquer
+  -- combinacao cruzada de px de uma entidade com py de outra.
+  local desenhado = {}
   for _, d in ipairs(principal) do
-    desenhado[string.format("%.2f", d.m12 - 8)] = true
+    local py = d.m12 - 8
     -- m[4] carrega px direto, ou px+16 quando espelhado (e ai m[1] = -1).
-    desenhadoX[string.format("%.2f", d.m1 < 0 and (d.m4 - 16) or d.m4)] = true
+    local px = d.m1 < 0 and (d.m4 - 16) or d.m4
+    desenhado[string.format("%.2f/%.2f", px, py)] = true
   end
-  local faltandoY, faltandoX = {}, {}
+  local faltando = {}
   for _, e in ipairs(ow.entities) do
-    if not desenhado[string.format("%.2f", e.py)] then
-      faltandoY[#faltandoY + 1] = string.format("%.0f", e.py)
-    end
-    if not desenhadoX[string.format("%.2f", e.px)] then
-      faltandoX[#faltandoX + 1] = string.format("%.0f", e.px)
+    if not desenhado[string.format("%.2f/%.2f", e.px, e.py)] then
+      faltando[#faltando + 1] = string.format("(%.0f,%.0f)", e.px, e.py)
     end
   end
   nota("entidades deste mapa: %d | desenhos na passada principal: %d " ..
     "(o excedente sao NPCs de mapa vizinho)", #ow.entities, #principal)
-  veredito("P2", #faltandoY == 0 and #faltandoX == 0, string.format(
-    "py sem desenho correspondente: [%s] | px sem desenho: [%s]",
-    table.concat(faltandoY, " "), table.concat(faltandoX, " ")))
+  veredito("P2", #faltando == 0, string.format(
+    "entidades (px,py) sem desenho correspondente: [%s]",
+    table.concat(faltando, " ")))
 
   -- ---------------------------------------------------------------- P3
   -- Duas instancias DIFERENTES tem que dar pares (px,py) diferentes; se
@@ -357,12 +359,14 @@ return function(game)
   -- (P7) e o valor do NPC PARADO nao anda junto com a camera (P8).
   local antes, saltoMax, nan = nil, 0, 0
   local npcMudou, camAntes, camAndou = 0, nil, 0
+  local achouJogador = 0
   for passo = 1, 24 do
     table.insert(game.input.pressQueue, "down")
     game.input.state["down"] = true
     local q = observa()
     local dj = achaJogador(q)
     if dj then
+      achouJogador = achouJogador + 1
       if dj.m12 ~= dj.m12 then nan = nan + 1 end
       if antes then
         local salto = math.abs(dj.m12 - antes)
@@ -388,8 +392,13 @@ return function(game)
   U.wait(20)
   nota("a camera se moveu em %d dos 24 quadros de caminhada", camAndou)
 
-  veredito("P7", nan == 0 and saltoMax <= 4.01, string.format(
-    "maior salto entre quadros: %.2f px; NaN em %d quadros", saltoMax, nan))
+  -- P7 so vale se o jogador foi localizado em algum quadro. Sem isto, se
+  -- achaJogador nunca casar em nenhum dos 24 quadros, saltoMax fica em 0 e nan
+  -- em 0, e o teste passaria sem ter medido nada: a mesma armadilha que o P8
+  -- guarda com camAndou > 0, so que do lado do jogador.
+  veredito("P7", achouJogador > 0 and nan == 0 and saltoMax <= 4.01, string.format(
+    "maior salto entre quadros: %.2f px; NaN em %d quadros; jogador localizado " ..
+    "em %d de 24 quadros (se for 0, o teste nao valeu)", saltoMax, nan, achouJogador))
   -- P8 so vale se a camera realmente andou. Sem isso o teste passaria pelo
   -- motivo trivial de nada ter se mexido, que e a armadilha desta casa.
   veredito("P8", npcMudou == 0 and camAndou > 0, string.format(
