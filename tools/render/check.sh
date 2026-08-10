@@ -12,6 +12,22 @@ set -u
 H=mods/voxel_characters/tools/render
 FAIL=0
 
+# THE RULER TAKES THE LOCK TOO, and it did not, which is how it produced a
+# false RED.
+#
+# Every other tool here takes it before touching LOVE. This one did not,
+# because it was written before the lock existed and nothing had run beside it
+# since. With three workstreams on one machine, another tool held LOVE while
+# these checks ran, and check 7 reported "the pick does not become a line in
+# the file" because the file was never written: the laboratory it started
+# never got the machine. Run alone, the same check passes.
+#
+# A ruler that reports a defect in the mod when the real cause is a second tool
+# is worse than a ruler that refuses to run, because the first sends somebody
+# looking at the wrong code. So it refuses.
+vc_trava_pega "check.sh" || exit 1
+trap 'vc_trava_solta' EXIT
+
 say() { printf "%-52s %s\n" "$1" "$2"; }
 
 # A check that compares TWO measurements passes by comparing empty with empty
@@ -301,6 +317,24 @@ RC=$?
 say "card recusa metades identicas" \
     "$([ "$RC" -ne 0 ] && echo "ok, saiu $RC" || echo "FALHOU, saiu 0")"
 [ "$RC" -ne 0 ] || FAIL=1
+
+# 10. THE REGION OVERLAY (roadmap item 11, laboratory key `b`) actually draws
+#     something. `labregions=` forces it on or off without a keypress, which
+#     labshot cannot deliver (love.labkeys returns early under labshot). If
+#     the two screenshots come out byte-identical, the key is a control that
+#     changes nothing, which is worse than no control at all (see lab.lua's
+#     own reasoning above LAB_CLOCK_PASSO): this check must fail on that,
+#     not pass on it.
+rm -f "$SAVE_R/chk_lab_regoff.png" "$SAVE_R/chk_lab_regon.png"
+$LOVE $H lab=1 sprite=red labregions=0 labshot=chk_lab_regoff.png > /dev/null 2>&1
+$LOVE $H lab=1 sprite=red labregions=1 labshot=chk_lab_regon.png > /dev/null 2>&1
+if [ -f "$SAVE_R/chk_lab_regoff.png" ] && [ -f "$SAVE_R/chk_lab_regon.png" ]; then
+  cmp -s "$SAVE_R/chk_lab_regoff.png" "$SAVE_R/chk_lab_regon.png" && REGIOES=FALHOU || REGIOES=ok
+else
+  REGIOES=FALHOU
+fi
+say "overlay de regioes muda o desenho" "$REGIOES"
+[ "$REGIOES" = "ok" ] || FAIL=1
 
 echo
 [ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: do not trust measurement until it's fixed"
