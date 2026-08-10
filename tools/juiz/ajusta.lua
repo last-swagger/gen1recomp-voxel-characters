@@ -60,6 +60,8 @@ local function lerEscolhas(caminho)
       elseif escolha == "A" or escolha == "B" then
         escolhas[#escolhas + 1] = {
           folha = folha, opcao = opcao, escolha = escolha,
+          frame = linha:match("frame=(%d+)") or "0",
+          clock = linha:match("clock=([%d%.]+)") or "0",
           a = estadoCanonico(a), b = estadoCanonico(b),
         }
       end
@@ -75,13 +77,18 @@ local function lerFeatures(caminho)
   for linha in f:lines() do
     local campos = {}
     for c in (linha .. "\t"):gmatch("(.-)\t") do campos[#campos + 1] = c end
+    -- Quatro colunas de identidade (folha, quadro, relogio, estado) e o resto
+    -- e feature. O relogio e o quadro entram na CHAVE porque a mesma variante
+    -- medida noutro instante e outra medicao, e foi confundir as duas que fez
+    -- pares de BLINK sairem com diferenca zero.
+    local ID = 4
     if linha:sub(1, 1) == "#" then
       nomes = {}
-      for i = 3, #campos do nomes[#nomes + 1] = campos[i] end
-    elseif nomes and #campos >= 2 then
+      for i = ID + 1, #campos do nomes[#nomes + 1] = campos[i] end
+    elseif nomes and #campos > ID then
       local v = {}
-      for i = 3, #campos do v[#v + 1] = tonumber(campos[i]) or 0 end
-      mapa[campos[1] .. "\t" .. campos[2]] = v
+      for i = ID + 1, #campos do v[#v + 1] = tonumber(campos[i]) or 0 end
+      mapa[table.concat({ campos[1], campos[2], campos[3], campos[4] }, "\t")] = v
     end
   end
   f:close()
@@ -209,7 +216,8 @@ local function comandoEstados(caminho)
   local escolhas = lerEscolhas(caminho)
   local vistos, saida = {}, {}
   for _, e in ipairs(escolhas) do
-    for _, chave in ipairs({ e.folha .. "\t" .. e.a, e.folha .. "\t" .. e.b }) do
+    local pre = e.folha .. "\t" .. e.frame .. "\t" .. e.clock .. "\t"
+    for _, chave in ipairs({ pre .. e.a, pre .. e.b }) do
       if not vistos[chave] then
         vistos[chave] = true
         saida[#saida + 1] = chave
@@ -226,21 +234,52 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
   local nomes, mapa = lerFeatures(caminhoFeatures)
   if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
 
-  local X, y, faltando = {}, {}, 0
+  local X, y, faltando, cegas = {}, {}, 0, {}
   for _, e in ipairs(escolhas) do
-    local fa = mapa[e.folha .. "\t" .. e.a]
-    local fb = mapa[e.folha .. "\t" .. e.b]
+    local pre = e.folha .. "\t" .. e.frame .. "\t" .. e.clock .. "\t"
+    local fa, fb = mapa[pre .. e.a], mapa[pre .. e.b]
     if fa and fb then
-      local dif = {}
-      for j = 1, #fa do dif[j] = fa[j] - fb[j] end
-      X[#X + 1] = dif
-      y[#y + 1] = (e.escolha == "A") and 1 or 0
+      local dif, zero = {}, true
+      for j = 1, #fa do
+        dif[j] = fa[j] - fb[j]
+        if math.abs(dif[j]) > 1e-9 then zero = false end
+      end
+      -- DIFERENCA ZERO NAO E UMA ESCOLHA, E UM BURACO NA LISTA DE FEATURES.
+      --
+      -- Os dois lados existem e sao visivelmente diferentes na tela, senao o
+      -- laboratorio nao teria oferecido o par. Se as features nao distinguem,
+      -- e porque nenhuma delas enxerga o que mudou. Deixar a linha entrar no
+      -- ajuste seria pior que descartar: com dif = 0 o modelo pontua z = 0,
+      -- preve sempre "A", acerta toda escolha A e erra toda B, e isso vai para
+      -- o denominador da acuracia como se fosse informacao.
+      --
+      -- Entao a linha sai do ajuste E e reportada por opcao, porque a lista
+      -- delas e a resposta mais util que este arquivo produz: e a lista do que
+      -- falta medir.
+      if zero then
+        cegas[e.opcao or "?"] = (cegas[e.opcao or "?"] or 0) + 1
+      else
+        X[#X + 1] = dif
+        y[#y + 1] = (e.escolha == "A") and 1 or 0
+      end
     else
       faltando = faltando + 1
     end
   end
 
   print(string.format("escolhas usadas   %d", #X))
+  local nCegas, listaCegas = 0, {}
+  for k, v in pairs(cegas) do
+    nCegas = nCegas + v
+    listaCegas[#listaCegas + 1] = string.format("%s x%d", k, v)
+  end
+  if nCegas > 0 then
+    table.sort(listaCegas)
+    print(string.format("features cegas    %d  (%s)", nCegas,
+      table.concat(listaCegas, ", ")))
+    print("                  os dois lados diferem na tela e NENHUMA feature")
+    print("                  distingue. Esta e a lista do que falta medir.")
+  end
   print(string.format("pulos             %d  (\"nao vejo diferenca\")", pulos))
   if faltando > 0 then
     print(string.format("sem features      %d  (rode o extrator de novo)", faltando))

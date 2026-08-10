@@ -1684,12 +1684,20 @@ function love.features()
   io.stdout:setvbuf("line")
   local entrada = assert(io.open(opts.features, "r"),
     "nao consegui abrir " .. opts.features)
-  local cab = { "folha", "estado" }
+  local cab = { "folha", "frame", "clock", "estado" }
   for _, n in ipairs(FEATURE_NOMES) do cab[#cab + 1] = n end
   print("#" .. table.concat(cab, "\t"))
   local linhas = 0
   for linha in entrada:lines() do
-    local folha, estado = linha:match("^(%S+)\t(.*)$")
+    -- Quatro colunas: folha, quadro, relogio, estado. As duas do meio existem
+    -- porque medir a feature numa condicao diferente daquela em que a pessoa
+    -- julgou produz diferenca zero justamente nas opcoes que so aparecem em
+    -- certos instantes ou certas poses.
+    local folha, qf, qt, estado = linha:match("^(%S+)\t(%S+)\t(%S+)\t(.*)$")
+    if not folha then
+      folha, estado = linha:match("^(%S+)\t(.*)$")
+      qf, qt = "0", "0"
+    end
     if folha then
       local path = SPRITE_DIR .. folha .. ".png"
       local ok, data = pcall(loadImageData, path)
@@ -1710,8 +1718,11 @@ function love.features()
         -- conforme a hora em que este comando rodou. Feature tem que ser
         -- funcao do estado, nao do momento.
         local relogio = love.timer.getTime
-        love.timer.getTime = function() return 0 end
-        local mesh = buildGeometry(data, def, 0, shape, depth,
+        local instante = tonumber(qt) or 0
+        love.timer.getTime = function() return instante end
+        local quadro = math.floor(tonumber(qf) or 0)
+        if quadro >= def.frames then quadro = quadro % def.frames end
+        local mesh = buildGeometry(data, def, quadro, shape, depth,
                                    valores.side_color or "body")
         love.timer.getTime = relogio
         local kinds
@@ -1720,7 +1731,12 @@ function love.features()
           kinds = classifyMesh(mesh, role)
         end
         local f = featuresDaMalha(mesh, kinds)
-        local saida = { folha, estado }
+        -- O QUADRO PEDIDO, nao o quadro usado. A folha pode ter menos frames
+        -- do que o pedido e ai ele e reduzido por modulo; imprimir o reduzido
+        -- muda a chave e a linha deixa de casar com a escolha que a gerou. O
+        -- sintoma e "sem features", que parece medicao faltando e na verdade e
+        -- medicao feita e arquivada com outro nome.
+        local saida = { folha, qf, qt, estado }
         for _, n in ipairs(FEATURE_NOMES) do
           saida[#saida + 1] = string.format("%.6f", f[n])
         end
@@ -2141,10 +2157,20 @@ end
 local function labEscolhe(lado)
   local p = lab.par
   if not p then return end
+  -- A CONDICAO EM QUE A ESCOLHA FOI FEITA VAI JUNTO, e sem ela o registro
+  -- mente. O par e encenado num (quadro, instante) onde os dois lados de fato
+  -- diferem, senao BLINK e STEP WEIGHT seriam duas imagens iguais. Mas o
+  -- extrator de features media todo mundo no quadro 0 com o relogio em 0, que
+  -- e exatamente onde eles NAO diferem: o vetor de diferenca saia todo zero, o
+  -- modelo pontuava z=0, previa sempre "A", e a escolha entrava no denominador
+  -- como cara ou coroa sem ninguem contar. Medido: 2 de 8 escolhas de teste.
+  local cf = p.congela and p.congela.frame
+    or ((lab.andando and FACINGS[lab.facing].anda) or FACINGS[lab.facing].pose)
+  local ct = p.congela and p.congela.t or 0
   labGrava(string.format(
-    "t=%s folha=%s pose=%s rung=%d yaw=%d opcao=%s a=%s b=%s escolha=%s | A: %s | B: %s",
+    "t=%s folha=%s pose=%s frame=%d clock=%.2f rung=%d yaw=%d opcao=%s a=%s b=%s escolha=%s | A: %s | B: %s",
     os.date("%Y-%m-%dT%H:%M:%S"), p.folha, FACINGS[lab.facing].nome,
-    lab.rung, lab.yaw, p.opcao.key, tostring(p.valoresA[p.opcao.key]),
+    cf, ct, lab.rung, lab.yaw, p.opcao.key, tostring(p.valoresA[p.opcao.key]),
     tostring(p.valoresB[p.opcao.key]), lado,
     labEstadoTexto(p.valoresA), labEstadoTexto(p.valoresB)))
   if lado == "pulo" then lab.pulos = lab.pulos + 1
