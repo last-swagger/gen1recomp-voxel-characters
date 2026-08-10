@@ -8,6 +8,18 @@ Ordering rule: an item comes earlier when finishing it makes later items
 cheaper or safer, not when it is more exciting. Three of the first four are
 unglamorous on purpose.
 
+**Updated 2026-08-10.** Items 5 and 6 were answered by measurement rather than
+built, item 8 is done, and item 0 was added after an external review named a
+risk this document had missed. Where an item's plan turned out to be wrong, the
+wrong version is kept next to the correction: this file is read to decide what
+to build, and a plan that quietly changes teaches nothing.
+
+**Done since this file was written:** the judge's whole loop (items 1 and 8's
+machinery, waiting only on picks), the axis defect in the life channel, an
+assertion linter, a local-headroom gate, a lock so the tools stop killing each
+other, a LOVE error handler so a failure reaches stdout instead of a window, and
+roughly forty checks that passed for reasons unrelated to what they claimed.
+
 ---
 
 ## Tier 0 — nothing else is worth much until these land
