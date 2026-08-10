@@ -172,6 +172,40 @@ local CASOS = {
     b = "local x = 1 -- en\rlocal y = 2\r",
     esperado = "igual",
   },
+
+  -- The case a real translation produced on its first pass, which the first
+  -- version of this gate got wrong in the OTHER direction: it reported 2697
+  -- changed lines, every one of them the same code one row lower.
+  {
+    nome = "traducao cresce de 1 para 3 linhas e desloca o codigo",
+    a = "-- uma linha\nlocal x = 1\nlocal y = 2\n",
+    b = "-- one line\n-- that became\n-- three lines\nlocal x = 1\nlocal y = 2\n",
+    esperado = "igual",
+  },
+  {
+    nome = "traducao desloca E muda uma linha de codigo",
+    a = "-- uma linha\nlocal x = 1\nlocal y = 2\n",
+    b = "-- one line\n-- that became\n-- three\nlocal x = 1\nlocal y = 999\n",
+    esperado = "diferente",
+  },
+  {
+    nome = "traducao desloca E apaga uma linha de codigo",
+    a = "-- uma\nlocal x = 1\nlocal y = 2\n",
+    b = "-- one\n-- two\nlocal x = 1\n",
+    esperado = "diferente",
+  },
+  {
+    nome = "traducao desloca E acrescenta uma linha de codigo",
+    a = "-- uma\nlocal x = 1\n",
+    b = "-- one\n-- two\nlocal x = 1\nlocal y = 2\n",
+    esperado = "diferente",
+  },
+  {
+    nome = "linha em branco a mais nao e mudanca de codigo",
+    a = "local x = 1\nlocal y = 2\n",
+    b = "local x = 1\n\n\nlocal y = 2\n",
+    esperado = "igual",
+  },
 }
 
 -- An unterminated long bracket is refused with its own exit code, so it is

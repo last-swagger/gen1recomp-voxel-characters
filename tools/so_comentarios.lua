@@ -163,27 +163,62 @@ local function normaliza(l)
   return (l:gsub("%s+$", ""))
 end
 
-local antes = tiraComentarios(lerArquivo(arg[1] or ""), arg[1])
-local depois = tiraComentarios(lerArquivo(arg[2] or ""), arg[2])
+-- COMPARE THE SEQUENCE OF CODE LINES, NOT LINE NUMBER AGAINST LINE NUMBER.
+--
+-- The first version of this compared line k to line k, which quietly assumed a
+-- translation preserves line COUNT. It does not, and there was never a reason
+-- to think it would: a three-line Portuguese comment becomes four lines in
+-- English and every line of code below it shifts. Run against a real
+-- translation in progress, that version reported 2697 changed lines, all of
+-- them the same code one row lower. A gate that cries wolf on the correct
+-- input is worse than no gate: it gets waived, and then it is not there on the
+-- day it would have caught something.
+--
+-- What actually has to hold is that the file's code, read in order and
+-- ignoring the blank space comments left behind, is the same sequence. Blank
+-- lines carry no meaning in Lua. Everything else is compared verbatim,
+-- indentation included.
+local function codigoEmOrdem(linhas)
+  local seq = {}
+  for k, l in ipairs(linhas) do
+    local t = normaliza(l)
+    if t:match("%S") then
+      seq[#seq + 1] = { texto = t, linha = k }
+    end
+  end
+  return seq
+end
+
+local antes = codigoEmOrdem(tiraComentarios(lerArquivo(arg[1] or ""), arg[1]))
+local depois = codigoEmOrdem(tiraComentarios(lerArquivo(arg[2] or ""), arg[2]))
 
 local problemas = {}
 local maior = math.max(#antes, #depois)
 for k = 1, maior do
-  local a, b = normaliza(antes[k] or ""), normaliza(depois[k] or "")
-  if a ~= b then
-    problemas[#problemas + 1] = { linha = k, antes = a, depois = b }
+  local a, b = antes[k], depois[k]
+  local ta, tb = a and a.texto or nil, b and b.texto or nil
+  if ta ~= tb then
+    problemas[#problemas + 1] = {
+      ordem = k,
+      linhaAntes = a and a.linha or nil,
+      linhaDepois = b and b.linha or nil,
+      antes = ta or "(nao existe mais)",
+      depois = tb or "(nao existe)",
+    }
   end
 end
 
 if #problemas == 0 then
-  print(string.format("SO COMENTARIOS: o codigo e identico (%d linhas)", maior))
+  print(string.format("SO COMENTARIOS: o codigo e identico (%d linhas de codigo)",
+                      #antes))
   os.exit(0)
 end
 
-print(string.format("CODIGO MUDOU em %d linha(s):", #problemas))
+print(string.format("CODIGO MUDOU em %d linha(s) de codigo:", #problemas))
 for k = 1, math.min(#problemas, 25) do
   local p = problemas[k]
-  print(string.format("  linha %d", p.linha))
+  print(string.format("  %da linha de codigo (era linha %s, agora linha %s)",
+    p.ordem, tostring(p.linhaAntes or "-"), tostring(p.linhaDepois or "-")))
   print("    antes : " .. p.antes)
   print("    depois: " .. p.depois)
 end
