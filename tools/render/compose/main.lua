@@ -353,6 +353,11 @@ local function cardMeasure(c)
   local titleH = (c.title ~= "") and (c.fTitle:getHeight() + 18) or 0
   c.titleH = titleH
   c.w = CARD_MARGIN * 2 + c.leftW + CARD_GAP + CARD_W_TEXT
+  -- The TITLE has to fit too. Everything else in the layout was measured and
+  -- the heading was not, so a long one ran off the right edge and was cut mid
+  -- word, on the one line of the card a reader looks at first.
+  local precisa = CARD_MARGIN * 2 + c.fTitle:getWidth(c.title)
+  if c.title ~= "" and precisa > c.w then c.w = precisa end
   c.h = CARD_MARGIN * 2 + titleH + math.max(c.leftH, c.rightH)
   return c
 end

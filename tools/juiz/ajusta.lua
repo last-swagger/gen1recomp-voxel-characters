@@ -490,8 +490,63 @@ local function comandoPares(caminhoFeatures, caminhoModelo, quantos)
     n, #cand, modelo and "incerteza do modelo" or "maior distancia (sem modelo)"))
 end
 
+-- RANKING: what the model would choose, given a space of candidates.
+--
+-- This is the point of the whole thing. Everything before it collects and
+-- fits; this is where the model finally does something a person would
+-- otherwise have to do by hand, which is to look at hundreds of variants and
+-- say which ones are worth looking at.
+--
+-- The score is the same linear form the fit produced, applied to one variant
+-- instead of to a difference between two: sum of weight times the
+-- standardised feature. Higher means the model expects Kim to prefer it.
+--
+-- IT PRINTS BOTH ENDS ON PURPOSE. The top alone is not evidence of anything:
+-- if the model learned nothing, its top ten and its bottom ten look equally
+-- arbitrary and equally plausible. Seeing them side by side is what makes the
+-- question answerable by eye, and a model whose worst ten look fine is a
+-- model that is not working, whatever its holdout number says.
+local function comandoRanking(caminhoFeatures, caminhoModelo, quantos)
+  local nomes, mapa = lerFeatures(caminhoFeatures)
+  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
+  local modelo = lerModelo(assert(caminhoModelo, "falta o modelo.txt"))
+  if not modelo then print("nao consegui ler o modelo"); os.exit(1) end
+
+  local linhas = {}
+  for chave, v in pairs(mapa) do
+    local folha, qf, qt, estado = chave:match("^(.-)\t(.-)\t(.-)\t(.*)$")
+    local z = 0
+    for k = 1, math.min(#v, #modelo.w) do
+      local d = modelo.desvio[k] ~= 0 and modelo.desvio[k] or 1
+      z = z + modelo.w[k] * ((v[k] - modelo.media[k]) / d)
+    end
+    linhas[#linhas + 1] = { folha = folha, frame = qf, clock = qt,
+                            estado = estado, z = z }
+  end
+  if #linhas == 0 then print("nenhum candidato"); os.exit(1) end
+  table.sort(linhas, function(a, b) return a.z > b.z end)
+
+  local n = math.min(tonumber(quantos) or 10, math.floor(#linhas / 2))
+  local function bloco(rotulo, de, ate, passo)
+    io.stderr:write("\n== " .. rotulo .. "\n")
+    for i = de, ate, passo do
+      local l = linhas[i]
+      io.stderr:write(string.format("  %+7.3f  %-16s %s\n", l.z, l.folha,
+        l.estado:gsub("blink:on,breath:0.01,first_person:card,footfall:off,lag:off,sway:off,", "")))
+      print(l.folha .. "\t" .. l.frame .. "\t" .. l.clock .. "\t" .. l.estado
+            .. "\t" .. string.format("%.6f", l.z))
+    end
+  end
+  bloco("O QUE O MODELO ACHA QUE VOCE PREFERE", 1, n, 1)
+  bloco("O QUE ELE ACHA QUE VOCE REJEITA", #linhas, #linhas - n + 1, -1)
+  io.stderr:write(string.format("\n%d candidatos, faixa de score %.3f a %.3f\n",
+    #linhas, linhas[#linhas].z, linhas[1].z))
+end
+
 local cmd = arg and arg[1]
-if cmd == "--estados" then comandoEstados(assert(arg[2], "falta o escolhas.txt"))
+if cmd == "--ranking" then
+  comandoRanking(assert(arg[2], "falta o features.tsv"), arg[3], arg[4])
+elseif cmd == "--estados" then comandoEstados(assert(arg[2], "falta o escolhas.txt"))
 elseif cmd == "--ajusta" then
   comandoAjusta(assert(arg[2], "falta o escolhas.txt"),
                 assert(arg[3], "falta o features.tsv"))

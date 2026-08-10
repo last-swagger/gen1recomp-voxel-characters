@@ -105,6 +105,53 @@ echo "  $CRIT"
 echo "  pairs in $SAVE/pares.txt"
 
 vc_trava_solta
+
+# IT OPENS THE LABORATORY ITSELF. The header of this file has always said it
+# does, and it did not: it printed a command and stopped, so the round ended
+# with a few LOVE windows flashing past during the measurement and nothing
+# visibly happening. That reads exactly like a tool that ran and failed.
+#
+# The printed command was also missing `labab=1`, so following it opened the
+# laboratory in browse mode and the person had to know to press `t` first.
+#
+# `--so-preparar` keeps the old behaviour for anything automated.
+if [ "${2:-}" = "--so-preparar" ] || [ "${VC_SO_PREPARAR:-0}" = "1" ]; then
+  echo ""
+  echo "pairs ready. To choose:"
+  echo "  bash $AQUI/rodada.sh --abrir"
+  exit 0
+fi
+
+ANTES=0
+[ -f "$ESCOLHAS" ] && ANTES=$(grep -c . "$ESCOLHAS" 2>/dev/null || echo 0)
+
+cat <<'AJUDA'
+
+== THE LABORATORY IS OPENING. Keys:
+
+     left arrow    pick the LEFT one
+     right arrow   pick the RIGHT one
+     space         skip this pair, when neither is better
+     f             turn the character (front, back, side)
+     1 2 3 4       camera rung
+     q  e          rotate 15 degrees
+     esc           stop, keeping everything chosen so far
+
+   There is no wrong answer and no need to explain one. Pick the one you would
+   rather see in the game. Nothing here is committed and nothing is published.
+
+AJUDA
+
+"$LOVE" mods/voxel_characters/tools/render lab=1 labab=1 \
+  labpares="$SAVE/pares.txt" 2>/dev/null
+
+DEPOIS=0
+[ -f "$ESCOLHAS" ] && DEPOIS=$(grep -c . "$ESCOLHAS" 2>/dev/null || echo 0)
+FEITAS=$((DEPOIS - ANTES))
 echo ""
-echo "Open the laboratory and press t:"
-echo "  bash $REPO/mods/voxel_characters/Laboratorio.command labpares=$SAVE/pares.txt"
+echo "== $FEITAS choices this round, $DEPOIS in total, in $ESCOLHAS"
+if [ "$DEPOIS" -ge 30 ]; then
+  echo "   Enough to fit the judge. Next: luajit $AQUI/ajusta.lua --ajusta"
+else
+  echo "   The judge wants about 30. Run this again to continue where it left off."
+fi
