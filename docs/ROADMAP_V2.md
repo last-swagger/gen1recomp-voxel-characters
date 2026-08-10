@@ -108,19 +108,47 @@ art at all, so seams over them emphasise exactly the invented surface.
 If the wireframe ever starts appearing on characters, somebody changed something
 and we find out the same day. Cost of the whole item: one measurement.
 
-### 6. First-person depth
+### 6. First-person depth: measured, and it asks a harder question than it answered
 
-**State:** the mode works and is measured. The depth it uses is the overworld's.
+The plan was to measure art share per depth at the first-person camera and pick
+the value that holds the bar the overworld table uses (73.4%). Both halves of
+that plan turned out to be wrong, and the measurements say why.
 
-**What changes:** first person stops inheriting a number that was tuned for a
-camera looking down. The law that governs the overworld inverts here: top faces
-go nearly invisible, and the side silhouette, which carries no art at all, is
-exposed at arm's length. The number belongs in `CAMERA FIT`'s table alongside
-the four rungs already measured.
+**Head on, depth is invisible.** At pitch 0 the SLAB's silhouette is exactly the
+flat card at every depth, which is the conformity property the ruler already
+asserts as IoU 1.000. Art share does not move, so there is no bar to hold:
 
-**Cost:** one measurement pass with the harness, same method as the existing
-table.
+```
+pitch 0, facing the camera        art 100% front, identical at depth 1, 3, 5, 10
+```
 
+**The cost only appears at an angle**, and there it is steep:
+
+```
+pitch 0, yaw 30    depth 1   art 94.7%   side  5.3%
+                   depth 3   art 85.7%   side 14.3%
+                   depth 5   art 78.5%   side 21.5%
+                   depth 10  art 65.2%   side 34.8%
+```
+
+By the overworld bar, depth 5 is the largest that holds it here.
+
+**But the host makes first-person cards face the eye.** `billboardMatrix` yaws
+the card about its feet toward the camera as the blend rises, easing the lean
+out as the yaw eases in. A settled first-person view is therefore head-on, which
+is exactly where depth shows nothing.
+
+**So the open question is now sharper than the one I started with: what does
+FIRST PERSON: SOLID actually buy at full blend?** The in-game probe measures at
+blend 0.58, mid-transition, where the lean has not finished easing out and depth
+is still visible; it found 1664 differing samples there. Nobody has measured the
+settled case with a character guaranteed in frame.
+
+**What changes:** if the answer is "nothing at blend 1.0", the feature's value is
+entirely in the transition, which is honest and worth saying out loud in the
+release notes rather than implying a solid you can walk around. If the answer is
+"something", the number to tune is the depth at grazing angles, and the table
+above is it. Either way this is one measurement, not a design.
 ### 7. Stop the tools killing each other
 
 **State:** a hazard we hit today. `run.sh`, `clip.sh` and `trailer.sh` all begin
