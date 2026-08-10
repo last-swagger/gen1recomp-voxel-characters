@@ -4,7 +4,26 @@ Durable state for autonomous execution of `ROADMAP_V2.md`. Written so that a
 session that starts cold, or a second orchestrator, can pick up without asking
 anyone. Updated as work lands, not as work is planned.
 
-**Started 2026-08-10.** Branch `vida-v2`, nothing pushed.
+**Started 2026-08-10. CLOSED the same day: 24 of 27 roadmap items.** Branch
+`vida-v2`, 100 commits since v1.6.0, nothing pushed.
+
+## Final state
+
+```
+620/620 offline · REGUA OK (20 checks) · BATERIA OK on every in-game gate
+MUTANTES 5/5 · chunk-local headroom 74 of 200 · working tree clean
+```
+
+**Open, and none of it is unfinished work:**
+
+| Item | Why it is open |
+|---|---|
+| 3. Release identity | Needs a PAT only Kim can create. `release.sh` is built and rehearsed. |
+| 12. Battle probe | Kim paused it. |
+| 20. Generator loop | BUILT. Its critic does not pass its own calibration gate, which is the gate working. |
+
+**Two new player-facing options, both OFF by default:** `PART LAG` and
+`ATTENTION`. Neither changes anything for a player who does not opt in.
 
 ## The two constraints that shape all scheduling
 
