@@ -92,6 +92,49 @@ TMP="$SAIDA/.quadros"
 mkdir -p "$TMP"
 find "$SAVE" -maxdepth 1 -name 'vc_clip_*.png' -exec mv {} "$TMP"/ \;
 
+# OS DOIS LADOS PRECISAM DIFERIR, e este check existe porque a mesma falha ja
+# aconteceu: um A/B saiu com os dois lados BYTE A BYTE IDENTICOS e eu quase
+# apresentei como comparacao. A causa foi escrever a opcao no save sem emitir o
+# evento, entao a malha cacheada nunca reconstruia.
+#
+# O driver.lua aborta nesse caso; o clip.lua so avisava no log e ninguem lia. E
+# "evento emitido" nao fecha o buraco: `pcall(emit)` devolve verdadeiro quando o
+# barramento aceitou a mensagem, inclusive quando nao ha ouvinte nenhum. A unica
+# prova que nao depende de introspeccao do mod e a TELA.
+#
+# O QUE ESTA GUARDA PEGA E O QUE ELA NAO PEGA, medido e nao suposto. Filmei um
+# A/B com o MESMO valor dos dois lados (breath=0.010:0.010) e ela NAO disparou:
+# com animacao ligada os dois lados sao gravados em sequencia, a fase do
+# movimento avanca, e os quadros diferem por conta propria. Entao:
+#
+#   PEGA: opcao de MALHA que nao chegou. Sem reconstrucao e sem animacao os
+#         dois lados saem byte a byte iguais, que e exatamente o defeito
+#         historico que motivou esta guarda.
+#   NAO PEGA: opcao que chegou e nao teve efeito, com animacao ligada.
+#
+# Fechar o segundo caso exige comparar a diferenca ENTRE os lados contra a
+# variacao DENTRO de um lado, que e medida e nao comparacao de bytes. Esta na
+# lista, e ate la esta guarda promete so o que cumpre.
+IGUAIS=0; COMPARADOS=0
+for i in 0010 0030 0050 0070; do
+  A="$TMP/vc_clip_off_$i.png"; B="$TMP/vc_clip_on_$i.png"
+  if [ -f "$A" ] && [ -f "$B" ]; then
+    COMPARADOS=$((COMPARADOS + 1))
+    cmp -s "$A" "$B" && IGUAIS=$((IGUAIS + 1))
+  fi
+done
+if [ "$COMPARADOS" -eq 0 ]; then
+  echo "FALHOU: nao consegui comparar quadro nenhum entre os dois lados"
+  exit 1
+fi
+if [ "$IGUAIS" -eq "$COMPARADOS" ]; then
+  echo "FALHOU: os dois lados sao IDENTICOS nos $COMPARADOS quadros amostrados."
+  echo "  A opcao nao chegou na tela, e um clipe assim parece uma comparacao"
+  echo "  sem ser uma. Ver o AVISO em $LOG."
+  exit 1
+fi
+echo "lados diferem em $((COMPARADOS - IGUAIS)) de $COMPARADOS quadros amostrados"
+
 FPS="${VC_CLIP_FPS:-30}"
 ESCALA="${VC_CLIP_ESCALA:-640}"
 # RECORTE em vez de zoom da camera do jogo. Forcar zoom no jogo puxa a camera

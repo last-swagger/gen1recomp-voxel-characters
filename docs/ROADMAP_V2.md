@@ -421,3 +421,19 @@ Not a feature, but it decides how fast everything above goes.
   measurement".** It should be a hook, not a habit.
 - **Mutation testing needs to be a command**, not something I remember to do.
   Both times it ran this session it found something.
+
+### 23. A clip guard that can tell "no effect" from "no option"
+
+`clip.sh` now refuses to publish an A/B whose two sides are byte identical,
+which is the historical defect: an option written to the save without emitting
+the event, so the cached mesh never rebuilt and the two halves were the same
+image. Measured limit: with animation on, the two sides are filmed in sequence
+and the motion phase advances between them, so they always differ and the guard
+cannot see an option that arrived and did nothing.
+
+**What changes:** the difference BETWEEN the sides gets compared against the
+variation WITHIN one side. If they are the same size, the option changed
+nothing, whatever the option says. That is the same shape as the floor the life
+probe measures with its own procedure, and the same shape as the judge's
+"features cegas" report: a comparison is only evidence when something else
+establishes the scale.
