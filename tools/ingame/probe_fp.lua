@@ -126,15 +126,26 @@ return function(game)
   end
 
   -- O host, pela mesma porta que o mod usa.
-  local lib
-  for _, f in ipairs({
-    function() return game.mods.exports.DRAMATIC_SHAPE.lib end,
-    function() return game.mods:find("DRAMATIC_SHAPE").exports.lib end,
-    function() return game.mods.find("DRAMATIC_SHAPE").exports.lib end,
-  }) do
-    local ok, v = pcall(f)
-    if ok and type(v) == "table" and v.require then lib = v break end
+  -- OS TRES HOSTS, e nao so o original. O mod aceita DRAMATIC_SHAPE, o fork de
+  -- arte de batalha do absol89 e o Dramaless do artyrambles (main.lua:37-47), e
+  -- probe_life.lua ja varre os tres. Este arquivo pedia so o primeiro, entao no
+  -- fork que boa parte da comunidade roda ele falhava no P0 e o gate inteiro
+  -- era pulado, sem que ninguem visse diferenca entre "nao mediu" e "mediu e
+  -- passou".
+  local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE" }
+  local lib, hostId
+  for _, id in ipairs(HOSTS) do
+    for _, f in ipairs({
+      function() return game.mods.exports[id].lib end,
+      function() return game.mods:find(id).exports.lib end,
+      function() return game.mods.find(id).exports.lib end,
+    }) do
+      local ok, v = pcall(f)
+      if ok and type(v) == "table" and v.require then lib, hostId = v, id break end
+    end
+    if lib then break end
   end
+  if lib then nota("host: %s", hostId) end
   if not lib then
     veredito("P0", false, "nao alcancei a lib do DRAMATIC_SHAPE")
     return fim()
@@ -329,9 +340,14 @@ return function(game)
   -- corpo e varre o quadro. Metade do quadro separa os dois com folga dos dois
   -- lados, e o piso medido no mesmo procedimento diz quanto disso e a cena.
   local TETO = total() * 0.5
-  veredito("P4", usadas >= 5 and piorSinal <= TETO,
+  -- TETO E PISO. So com teto, P4 nao distingue "nao explodiu" de "nao
+  -- desenhou": um SOLID que caisse no card durante a transicao daria sinal
+  -- zero, que e <= teto, e passaria. P3 nao cobre isso porque mede no blend
+  -- alvo, nao na varredura.
+  veredito("P4", usadas >= 5 and piorSinal <= TETO
+      and piorSinal > piorPiso * 2 + 100,
     string.format("pior CARD-SOLID na transicao %d (%.1f%%) no blend %.2f, "
-      .. "com piso %d ali; teto %d (50%%); %d amostras usadas, %d descartadas",
+      .. "entre o piso %d e o teto %d (50%%); %d usadas, %d descartadas",
       piorSinal, piorSinal / total() * 100, piorBlend, piorPiso,
       math.floor(TETO), usadas, descartadas))
 
