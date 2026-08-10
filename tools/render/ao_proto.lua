@@ -23,9 +23,9 @@ local M = {}
 -- counting it again is what turns an ordinary inside corner black.
 --------------------------------------------------------------------------
 
--- Varrido por `aostrength=`. O valor 2.4 e o do host para o MUNDO, onde as
--- superficies sao grandes e as quinas raras. Um personagem de 16 pixels tem
--- outra escala de detalhe, e nao ha razao para a mesma forca servir aos dois.
+-- Swept by `aostrength=`. The value 2.4 is the host's for the WORLD, where
+-- surfaces are large and corners are rare. A 16-pixel character has
+-- a different scale of detail, and there is no reason the same strength should serve both.
 local AO_STRENGTH = 2.4
 local AO_STEP = 0.09 * AO_STRENGTH
 local AO_GROUND = 0.12 * AO_STRENGTH
@@ -117,37 +117,37 @@ function M.quadAO(verts, i, solid)
   return out
 end
 
--- PROTOTIPO: laje esculpida, fora do mod.
+-- PROTOTYPE: sculpted slab, outside the mod.
 --
--- Testa uma hipotese medida: AO nao rende quase nada numa laje porque uma
--- extrusao nao tem concavidade em profundidade, e um casco visual nao pode ter
--- nenhuma, porque interseccao de silhuetas e convexa naquele eixo. Se a
--- hipotese estiver certa, dar RELEVO A SUPERFICIE FRONTAL deve fazer o mesmo
--- AO, com as mesmas constantes, saltar aos olhos.
+-- Tests a measured hypothesis: AO renders almost nothing on a slab because an
+-- extrusion has no concavity in depth, and a visual hull can have none,
+-- because intersection of silhouettes is convex on that axis. If the
+-- hypothesis is right, giving RELIEF TO THE FRONT SURFACE should make the same
+-- AO, with the same constants, jump out.
 --
--- Duas fontes de profundidade, nenhuma confiavel sozinha:
+-- Two sources of depth, neither trustworthy alone:
 --
---   VISTA LATERAL  informacao ortografica real, mas usada como escala metrica
---                  da um cubo de 13 voxels num sprite de 16 de largura. Aqui
---                  ela entra como TETO por linha, nao como medida.
---   TOM            cobre cada pixel, mas em arte Gen 1 marca contorno E
---                  volume, e o proprio README deste mod ja avisa disso. Aqui
---                  ele so DISTRIBUI o teto que a vista lateral concedeu.
+--   SIDE VIEW      real orthographic information, but used as the metric scale
+--                  gives a 13-voxel cube in a 16-wide sprite. Here
+--                  it enters as a CEILING per row, not as a measurement.
+--   TONE           covers every pixel, but in Gen 1 art it marks outline AND
+--                  volume, and this mod's own README already warns about it. Here
+--                  it only DISTRIBUTES the ceiling the side view granted.
 --
--- `mode` escolhe como o contorno e tratado: "naive" deixa o tom mandar, e o
--- contorno, por ser o tom mais escuro, recua ao maximo. "contour" reconhece
--- que o contorno e borda de silhueta, nao fundo de vale, e da a ele o recuo
--- do vizinho interno. A diferenca entre os dois e a ambiguidade do tom,
--- isolada e desenhavel.
+-- `mode` chooses how the outline is treated: "naive" lets the tone rule, and
+-- the outline, being the darkest tone, recesses to the max. "contour"
+-- recognises that the outline is a silhouette edge, not the bottom of a
+-- valley, and gives it the recess of its inner neighbour. The difference
+-- between the two is the ambiguity of the tone, isolated and drawable.
 local RECESS_MAX = 3
 local BUDGET_MIN, BUDGET_MAX = 2, 6
--- Varridos por argumento para a amplitude do relevo poder ser procurada em vez
--- de escolhida: `recess=N` e `outline=front|back`.
+-- Swept by argument so the amplitude of the relief can be searched instead of
+-- chosen: `recess=N` and `outline=front|back`.
 local RECESS_OVERRIDE, OUTLINE_FRONT = nil, false
--- Mapa de profundidade externo: uma tabela 16x16 de inteiros, -1 para
--- transparente, produzida por um agente que olhou o sprite. Substitui o tom
--- como fonte de recuo. O tom cobre cada pixel mas confunde contorno com
--- volume; a pergunta que isto testa e se um agente separa os dois melhor.
+-- External depth map: a 16x16 table of integers, -1 for transparent,
+-- produced by an agent that looked at the sprite. Replaces the tone as the
+-- source of recess. The tone covers every pixel but confuses outline with
+-- volume; the question this tests is whether an agent separates the two better.
 local DEPTH_MAP = nil
 
 -- Setters for the three knobs above: main.lua reads them from `opts` at
@@ -167,8 +167,8 @@ function M.sculptMesh(data, frames, frame, mode)
     return 0.299 * r + 0.587 * g + 0.114 * b
   end
 
-  -- Teto de profundidade por linha, da vista lateral. Frame 2 e o personagem
-  -- de perfil; a largura dele naquela linha e a espessura real do corpo ali.
+  -- Depth ceiling per row, from the side view. Frame 2 is the character
+  -- in profile; its width on that row is the real thickness of the body there.
   local sideFrame = frames >= 3 and 2 or nil
   local budget = {}
   for ly = 0, cellH - 1 do
@@ -185,7 +185,7 @@ function M.sculptMesh(data, frames, frame, mode)
     budget[ly] = math.max(BUDGET_MIN, math.min(BUDGET_MAX, b))
   end
 
-  -- Faixa de tons do corpo, medida na folha inteira, com o contorno de fora.
+  -- Range of body tones, measured across the whole sheet, with the outline excluded.
   local outline, bodyMin, bodyMax = nil, 1, 0
   for f = 0, frames - 1 do
     for ly = 0, cellH - 1 do
@@ -220,13 +220,14 @@ function M.sculptMesh(data, frames, frame, mode)
     local maxR = RECESS_OVERRIDE or RECESS_MAX
     local isOutline = math.abs(L - outline) <= 1e-5
     if isOutline then
-      -- O contorno cerca o personagem inteiro. Recua-lo levanta uma parede de
-      -- cratera em volta de tudo, e a figura vira mascara: medido, nao suposto.
+      -- The outline surrounds the whole character. Recessing it raises a
+      -- crater wall around everything, and the figure turns into a mask:
+      -- measured, not assumed.
       if OUTLINE_FRONT then return 0 end
       if mode == "contour" then return nil end
       return maxR
     end
-    -- Claro fica na frente, escuro recua.
+    -- Light stays in front, dark recesses.
     return math.floor((1 - (L - bodyMin) / span) * maxR + 0.5)
   end
 
@@ -237,8 +238,8 @@ function M.sculptMesh(data, frames, frame, mode)
     end
   end
   if mode == "contour" then
-    -- O contorno herda o recuo do vizinho de corpo mais proximo, em vez de
-    -- virar o fundo de um vale que o artista nunca desenhou.
+    -- The outline inherits the recess of its closest body neighbour, instead
+    -- of becoming the bottom of a valley the artist never drew.
     for ly = 0, cellH - 1 do
       for lx = 0, cellW - 1 do
         if texel(frame, lx, ly) and not recess[ly * cellW + lx] then
@@ -261,7 +262,7 @@ function M.sculptMesh(data, frames, frame, mode)
     local b = budget[ly]
     r = math.min(r, b - 1)
     if r < 0 then r = 0 end
-    return r, b            -- ocupa k de r ate b-1
+    return r, b            -- occupies k from r to b-1
   end
   local function solid(cx, cy, cz)
     local lx, ly = math.floor(cx), cellBottom - math.floor(cy)
@@ -271,11 +272,11 @@ function M.sculptMesh(data, frames, frame, mode)
     return k >= r and k < b
   end
 
-  -- As faces inventadas (lateral, topo, base) nao podem usar o texel do
-  -- proprio pixel: o contorno cerca a figura, e pintar as paredes com ele
-  -- reproduz exatamente as faces pretas que a comunidade reportou na v1.0.0 e
-  -- que a v1.1.0 consertou com busca por texel de corpo. Sem isto o prototipo
-  -- julgaria a ideia com um bug de tres versoes atras embutido.
+  -- The invented faces (side, top, bottom) cannot use the texel of their
+  -- own pixel: the outline surrounds the figure, and painting the walls with
+  -- it reproduces exactly the black faces the community reported in v1.0.0 and
+  -- that v1.1.0 fixed with a search for a body texel. Without this the
+  -- prototype would judge the idea with a bug from three versions ago baked in.
   local function bodyTexelNear(lx, ly)
     local L = texel(frame, lx, ly)
     if not L or math.abs(L - outline) > 1e-5 then return lx, ly end

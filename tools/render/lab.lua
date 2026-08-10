@@ -13,21 +13,21 @@ local ctx
 function Lab.init(c) ctx = c end
 
 --------------------------------------------------------------------------
--- LABORATORIO  (lab=1)
+-- LABORATORY  (lab=1)
 --------------------------------------------------------------------------
--- Um editor de personagem: uma folha grande no meio, todas as opcoes do mod
--- na lateral, e navegacao pelas 67 folhas do jogo. Serve a tres coisas ao
--- mesmo tempo:
+-- A character editor: one large sheet in the middle, all the mod's options
+-- on the side, and navigation through the game's 67 sheets. It serves three
+-- things at the same time:
 --
---   1. ver uma opcao mudar na hora, em vez de esperar um contact sheet;
---   2. ver a opcao em QUEM NAO E O RED, que e onde as regressoes moram
---      (nurse tem tres frames, boulder tem um, snorlax e mais largo);
---   3. registrar ESCOLHA, que e a unica coisa que nenhum numero aqui produz.
+--   1. seeing an option change instantly, instead of waiting for a contact sheet;
+--   2. seeing the option on SOMEONE WHO IS NOT RED, which is where regressions
+--      live (nurse has three frames, boulder has one, snorlax is wider);
+--   3. recording a CHOICE, which is the one thing no number here produces.
 --
--- O terceiro e o motivo real. Este projeto ja mediu que um redesenho por IA
--- satisfaz toda restricao numerica e entrega arte pior, entao o gerador nao
--- pode ser treinado contra as reguas que a gente tem. Falta juiz, e juiz
--- comeca com alguem escolhendo entre dois.
+-- The third is the real reason. This project has already measured that an
+-- AI redraw satisfies every numeric constraint and delivers worse art, so
+-- the generator cannot be trained against the rulers we have. What is
+-- missing is a judge, and a judge starts with someone choosing between two.
 
 local FACINGS = {
   { nome = "FRENTE", pose = 0, anda = 3 },
@@ -39,19 +39,19 @@ local lab = {
   folhas = {}, i = 1, facing = 1, andando = false, tocando = true,
   rung = 35, yaw = 0, sel = 1, valores = {}, opcoes = {},
   row = nil, erro = nil, sujo = true, t = 0, construcoes = 0,
-  -- modo escolha
+  -- choice mode
   ab = false, par = nil, rowA = nil, rowB = nil, escolhas = 0, pulos = 0,
 }
 
--- Onde as escolhas ficam. Uma linha por escolha, chave=valor, para o ajuste
--- do juiz poder ser refeito do zero e auditado depois.
+-- Where choices are stored. One line per choice, key=value, so the judge's
+-- fit can be redone from scratch and audited later.
 --
--- Deliberadamente NAO grava feature nenhuma aqui: as features se recalculam
--- a partir do estado gravado, pela propria regua, quando for a hora. Gravar
--- numero medido junto congelaria a lista de features na primeira versao, e a
--- lista de features e exatamente o que vai mudar quando o juiz empacar.
--- Declarado aqui porque love.labsetup, mais abaixo, precisa chamar isto e o
--- modo escolha e definido depois dele.
+-- Deliberately does NOT record any feature here: features are recalculated
+-- from the recorded state, by the ruler itself, when it is time. Recording a
+-- measured number alongside would freeze the feature list at the first
+-- version, and the feature list is exactly what will change when the judge
+-- stalls. Declared here because love.labsetup, further below, needs to call
+-- this and choice mode is defined after it.
 local labMontaPar
 
 local function labGrava(linha)
@@ -85,8 +85,9 @@ local function labFolhas()
   return out
 end
 
--- Constroi a malha do estado atual. Passa TODA opcao pela passagem generica
--- `opt=`, entao uma opcao nova aparece aqui sem nenhuma linha nova.
+-- Builds the mesh for the current state. Passes EVERY option through the
+-- generic `opt=` pass-through, so a new option shows up here without a
+-- single new line.
 local function labMalha(nomeFolha, frame, valores)
   local path = ctx.SPRITE_DIR .. nomeFolha .. ".png"
   local ok, data = pcall(ctx.loadImageData, path)
@@ -113,7 +114,7 @@ local function labMalha(nomeFolha, frame, valores)
   }
 end
 
--- Assinatura de uma malha, para responder "esta opcao muda a GEOMETRIA?".
+-- Signature of a mesh, to answer "does this option change the GEOMETRY?".
 local function labAssinatura(m)
   if not m or not m.verts then return "sem malha" end
   local s = #m.verts
@@ -124,32 +125,34 @@ local function labAssinatura(m)
   return string.format("%d:%.4f", #m.verts, s)
 end
 
--- Quais opcoes este laboratorio consegue mostrar, MEDIDO e nao suposto.
+-- Which options this laboratory can show, MEASURED and not assumed.
 --
--- BREATH, SWAY, MOTION LAG e FOOTFALL nao mexem em vertice: eles
--- pos-multiplicam a matriz que o host passa para Voxel3D.draw, e aqui nao
--- existe host de verdade nem matriz. Um controle que nao faz nada e pior que
--- controle ausente, porque a pessoa mexe, nao ve efeito e conclui que a
--- feature esta quebrada. Entao em vez de manter uma lista escrita na mao
--- (que apodrece com a proxima opcao nova), a gente CONSTROI cada nivel e
--- compara: se nenhum nivel muda a malha, a opcao e de jogo, nao daqui.
+-- BREATH, SWAY, MOTION LAG and FOOTFALL touch no vertex: they post-multiply
+-- the matrix the host passes to Voxel3D.draw, and here there is no real host
+-- and no matrix. A control that does nothing is worse than an absent
+-- control, because the person moves it, sees no effect, and concludes the
+-- feature is broken. So instead of keeping a hand-written list (which rots
+-- with the next new option), we BUILD each level and compare: if no level
+-- changes the mesh, the option belongs to the game, not to here.
 --
--- A primeira versao disto errou DUAS opcoes de uma vez, e as duas por comparar
--- num ponto so em vez de nos eixos onde o efeito vive. Os eixos, agora
--- explicitos, cada um por um mecanismo lido no mod:
+-- The first version of this got TWO options wrong at once, both by comparing
+-- at a single point instead of on the axes where the effect lives. The axes,
+-- now explicit, each one by a mechanism read from the mod:
 --
---   FRAME. STEP WEIGHT so desloca z quando `andando` (main.lua:1407). Medido
---   so na pose parada, ele nao muda nada e parecia opcao de jogo. Entao a
---   varredura inclui uma pose de caminhada.
+--   FRAME. STEP WEIGHT only shifts z when `andando` (main.lua:1407). Measured
+--   only in the standing pose, it changes nothing and looked like a game
+--   option. So the sweep includes a walking pose.
 --
---   RELOGIO. A piscada fecha por 0,12 s num periodo entre 3 e 6 s, com fase
---   por folha (main.lua:408, 1085-1096). Tres instantes escolhidos a esmo caem
---   fora quase sempre. Passo de 0,1 s cobre qualquer janela de 0,12 s, entao a
---   varredura ACHA a piscada em vez de torcer para acerta-la. Este projeto ja
---   concluiu que a piscada nao funcionava quando funcionava, exatamente assim.
+--   CLOCK. The blink closes for 0.12 s in a period between 3 and 6 s, with a
+--   phase per sheet (main.lua:408, 1085-1096). Three arbitrarily chosen
+--   instants miss it almost every time. A step of 0.1 s covers any 0.12 s
+--   window, so the sweep FINDS the blink instead of hoping to catch it. This
+--   project already concluded the blink was not working when it was, exactly
+--   this way.
 --
--- Sai cedo na primeira diferenca, entao o custo real e alto so para a opcao
--- que de fato nao mexe na malha, que e o que se quer provar com cuidado.
+-- Exits early on the first difference, so the real cost is high only for the
+-- option that in fact does not touch the mesh, which is what one wants to
+-- prove carefully.
 local LAB_CLOCK_PASSO = 0.1
 local LAB_CLOCK_ATE = 6.0
 
@@ -190,8 +193,8 @@ local function labRebuild()
   lab.erro = erro
   if row then
     row.pitch = math.rad(90 - lab.rung)
-    -- Textura por FOLHA, nao por quadro. Enquanto toca, isto era um upload de
-    -- imagem por quadro para reenviar bytes identicos.
+    -- Texture per SHEET, not per frame. While playing, this used to be an
+    -- image upload per frame just to resend identical bytes.
     lab.texturas = lab.texturas or {}
     local tex = lab.texturas[row.sprite]
     if not tex then
@@ -207,14 +210,14 @@ local function labRebuild()
   lab.sujo = false
 end
 
--- Global de proposito: love.load e definido ACIMA desta secao, entao um local
--- daqui nao existiria como upvalue la. Mesmo motivo de love.labdraw/labkeys.
+-- Global on purpose: love.load is defined ABOVE this section, so a local
+-- here would not exist as an upvalue there. Same reason as love.labdraw/labkeys.
 function love.labsetup()
   lab.folhas = labFolhas()
   if #lab.folhas == 0 then return ctx.fail("nenhuma folha em " .. ctx.SPRITE_DIR) end
   for i, n in ipairs(lab.folhas) do if n == ctx.opts.sprite then lab.i = i end end
 
-  -- Uma construcao so para o mod se registrar e o schema existir.
+  -- A single build just for the mod to register and the schema to exist.
   labMalha(lab.folhas[lab.i], 0, {})
   if not ctx.getLabSchema() then return ctx.fail("o mod nao registrou schema de opcoes") end
   for _, o in ipairs(ctx.getLabSchema()) do lab.valores[o.key] = o.default end
@@ -262,40 +265,42 @@ function love.labsetup()
 end
 
 --------------------------------------------------------------------------
--- MODO ESCOLHA (tecla t)
+-- CHOICE MODE (t key)
 --------------------------------------------------------------------------
--- Duas variantes lado a lado, uma tecla escolhe, e a escolha vira linha de
--- arquivo. E a unica coisa que este projeto nao consegue computar.
+-- Two variants side by side, one key chooses, and the choice becomes a line
+-- in a file. It is the one thing this project cannot compute.
 --
--- Tres decisoes que nao sao obvias:
+-- Three decisions that are not obvious:
 --
---   PAR DIFERE EM UMA OPCAO SO. Se os dois lados diferem em varias, a
---   escolha nao atribui credito a nenhuma delas, e o registro nao serve para
---   ajustar nada. Comparacao de estados inteiros vem depois, quando houver
---   juiz para propor os estados.
+--   A PAIR DIFFERS IN ONE OPTION ONLY. If the two sides differ in several,
+--   the choice does not attribute credit to any of them, and the record is
+--   useless for fitting anything. Comparison of whole states comes later,
+--   once there is a judge to propose the states.
 --
---   A FOLHA SORTEIA JUNTO. Toda opcao deste mod foi julgada no red, e o que
---   agrada no red pode nao agradar na nurse ou no snorlax. Se a folha nao
---   variar, o juiz aprende o gosto do Kim PARA O RED.
+--   THE SHEET IS ALSO RANDOMISED. Every option in this mod was judged on
+--   red, and what pleases on red may not please on nurse or on snorlax. If
+--   the sheet does not vary, the judge learns Kim's taste FOR RED.
 --
---   PULAR E RESPOSTA. Forcar escolha entre duas coisas indistinguiveis
---   injeta ruido com cara de sinal. "Nao vejo diferenca" e informacao: diz
---   que a distancia entre os dois niveis esta abaixo do limiar de quem olha.
--- Nem toda diferenca esta sempre na tela, e um par montado num instante em
--- que os dois lados sao IDENTICOS nao coleta preferencia, coleta moeda.
+--   SKIPPING IS AN ANSWER. Forcing a choice between two indistinguishable
+--   things injects noise disguised as signal. "I see no difference" is
+--   information: it says the distance between the two levels is below the
+--   threshold of whoever is looking.
+-- Not every difference is always on screen, and a pair assembled at an
+-- instant where the two sides are IDENTICAL does not collect preference, it
+-- collects a coin flip.
 --
--- Dois casos, os dois medidos e nao supostos:
---   BLINK so difere durante 0,12 s de cada periodo de 3 a 6 s.
---   STEP WEIGHT so difere na pose de caminhada (main.lua:1407).
+-- Two cases, both measured and not assumed:
+--   BLINK only differs during 0.12 s of every period of 3 to 6 s.
+--   STEP WEIGHT only differs in the walking pose (main.lua:1407).
 --
--- Entao antes de mostrar um par, procura uma condicao (pose, instante) em que
--- os dois lados de fato diferem, e CONGELA ali. Congelar e melhor que animar
--- aqui: a pergunta e qual dos dois, e a resposta nao pode depender do quadro
--- em que a pessoa apertou a tecla.
+-- So before showing a pair, it looks for a condition (pose, instant) where
+-- the two sides actually differ, and FREEZES there. Freezing is better than
+-- animating here: the question is which of the two, and the answer cannot
+-- depend on the frame in which the person pressed the key.
 --
--- Achar em vez de calcular e deliberado. Replicar a formula de fase da
--- piscada seria testar a implementacao contra ela mesma, e este harness ja
--- resolve isso assim em outro lugar (blinkscan).
+-- Finding instead of computing is deliberate. Replicating the blink's phase
+-- formula would be testing the implementation against itself, and this
+-- harness already solves that the same way elsewhere (blinkscan).
 local function labCondicao(folha, o, va, vb)
   local relogio = love.timer.getTime
   local achou, sempre = nil, true
@@ -337,8 +342,9 @@ local function labSorteiaPar()
   vb[o.key] = o.choices[b][2]
   local cond, sempre = labCondicao(folha, o, va, vb)
   if not cond then
-    -- Os dois niveis produzem a mesma malha NESTA folha em toda condicao
-    -- varrida. Perguntar seria pedir para escolher entre duas imagens iguais.
+    -- The two levels produce the same mesh on THIS sheet across every
+    -- condition swept. Asking would mean choosing between two identical
+    -- images.
     return nil
   end
   return {
@@ -349,19 +355,19 @@ local function labSorteiaPar()
   }
 end
 
--- Sorteia ate cair um par que de fato mostra diferenca. Tenta um numero fixo
--- de vezes e desiste em voz alta: laco sem teto num sorteio que pode nunca
--- acertar e como uma ferramenta trava sem ninguem entender por que.
--- OS PARES QUE O JUIZ PEDIU, quando existem.
+-- Rolls until it lands a pair that actually shows a difference. Tries a
+-- fixed number of times and gives up out loud: an uncapped loop on a roll
+-- that may never land is a tool that hangs without anyone understanding why.
+-- THE PAIRS THE JUDGE REQUESTED, when they exist.
 --
--- Sortear e o certo na primeira rodada, quando nao ha modelo. Depois disso e
--- desperdicio: boa parte dos sorteios cai em par que o modelo ja acerta de
--- olhos fechados, e uma escolha dessas nao move peso nenhum. O tempo do Kim e
--- o insumo caro aqui, entao a partir do momento em que existe modelo, quem
--- escolhe o que perguntar e o proprio juiz, pelos pares em que ele esta em
--- cima do muro (tools/juiz/ajusta.lua --pares).
+-- Rolling is the right call on the first round, when there is no model.
+-- After that it is waste: a good share of the rolls land on a pair the model
+-- already gets right with its eyes closed, and a choice like that moves no
+-- weight at all. Kim's time is the expensive input here, so from the moment
+-- a model exists, what to ask is chosen by the judge itself, through the
+-- pairs where it is on the fence (tools/juiz/ajusta.lua --pares).
 --
--- Formato, uma linha por par: folha TAB quadro TAB relogio TAB estadoA TAB estadoB
+-- Format, one line per pair: sheet TAB frame TAB clock TAB stateA TAB stateB
 local labFilaPares = nil
 local function labParDoArquivo()
   if ctx.opts.labpares == "" then return nil end
@@ -396,7 +402,7 @@ local function labParDoArquivo()
   end
   local va, vb = paraValores(item.a), paraValores(item.b)
 
-  -- Qual opcao difere: e ela que da nome aos dois lados na tela.
+  -- Which option differs: it is the one that names the two sides on screen.
   local chave
   for _, o in ipairs(ctx.getLabSchema() or {}) do
     if tostring(va[o.key]) ~= tostring(vb[o.key]) then chave = o; break end
@@ -433,9 +439,9 @@ local function labSorteiaParValido()
   return nil
 end
 
--- Reconstroi as malhas do par ATUAL. Separado do sorteio de proposito: a
--- animacao reconstroi todo quadro e nao pode trocar o par debaixo de quem
--- esta decidindo.
+-- Rebuilds the meshes of the CURRENT pair. Separated from the roll on
+-- purpose: the animation rebuilds every frame and cannot swap the pair out
+-- from under whoever is deciding.
 local function labConstroiPar()
   if not lab.par then return end
   local f = FACINGS[lab.facing]
@@ -477,13 +483,14 @@ end
 local function labEscolhe(lado)
   local p = lab.par
   if not p then return end
-  -- A CONDICAO EM QUE A ESCOLHA FOI FEITA VAI JUNTO, e sem ela o registro
-  -- mente. O par e encenado num (quadro, instante) onde os dois lados de fato
-  -- diferem, senao BLINK e STEP WEIGHT seriam duas imagens iguais. Mas o
-  -- extrator de features media todo mundo no quadro 0 com o relogio em 0, que
-  -- e exatamente onde eles NAO diferem: o vetor de diferenca saia todo zero, o
-  -- modelo pontuava z=0, previa sempre "A", e a escolha entrava no denominador
-  -- como cara ou coroa sem ninguem contar. Medido: 2 de 8 escolhas de teste.
+  -- THE CONDITION UNDER WHICH THE CHOICE WAS MADE TRAVELS WITH IT, and
+  -- without it the record lies. The pair is staged at a (frame, instant)
+  -- where the two sides actually differ, otherwise BLINK and STEP WEIGHT
+  -- would be two identical images. But the feature extractor used to measure
+  -- everyone at frame 0 with the clock at 0, which is exactly where they do
+  -- NOT differ: the difference vector came out all zero, the model scored
+  -- z=0, always predicted "A", and the choice entered the denominator as a
+  -- coin flip without anyone counting it. Measured: 2 of 8 test choices.
   local cf = p.congela and p.congela.frame
     or ((lab.andando and FACINGS[lab.facing].anda) or FACINGS[lab.facing].pose)
   local ct = p.congela and p.congela.t or 0
@@ -520,10 +527,10 @@ end
 local LAB_RUNGS = { 15, 35, 50, 75 }
 
 function love.labkeys(key)
-  -- Sob labshot a corrida e automatica e tem que ser reprodutivel. Uma tecla
-  -- solta chegando na janela ja mudou o resultado uma vez: a corrida saiu com
-  -- duas construcoes em vez de duzentas porque alguma coisa entregou `space`,
-  -- e eu quase li isso como a reconstrucao estar lenta.
+  -- Under labshot the run is automatic and has to be reproducible. A stray
+  -- keystroke arriving in the window already changed the result once: the
+  -- run came out with two builds instead of two hundred because something
+  -- delivered `space`, and I almost read that as the rebuild being slow.
   if ctx.opts.labshot ~= "" then return end
   local n = #lab.folhas
   if key == "escape" then return love.event.quit() end
@@ -648,7 +655,7 @@ function love.labdraw()
     love.graphics.setDepthMode("always", false)
   end
 
-  -- coluna das opcoes
+  -- options column
   labTexto(20, 20, "OPCOES", { 0.55, 0.60, 0.70, 1 })
   local y = 46
   for i, o in ipairs(lab.opcoes) do
@@ -671,7 +678,7 @@ function love.labdraw()
   labTexto(20, y, "pisada mexem na MATRIZ, nao na", { 0.5, 0.52, 0.56, 1 }); y = y + 16
   labTexto(20, y, "malha. So no jogo: clip.sh", { 0.5, 0.52, 0.56, 1 })
 
-  -- cabecalho do personagem
+  -- character header
   local r = lab.row
   if r then
     labTexto(VX, 28, string.format("%s", r.sprite:upper()), { 1, 1, 1, 1 })
@@ -691,7 +698,7 @@ function love.labdraw()
   end
   if lab.erro then labTexto(VX, VY + VS + 8, lab.erro, { 1, 0.5, 0.4, 1 }) end
 
-  -- vizinhanca na lista de folhas, para nao navegar as cegas
+  -- neighbourhood in the sheet list, so as not to navigate blind
   labTexto(980, 20, "PERSONAGENS", { 0.55, 0.60, 0.70, 1 })
   y = 46
   for d = -8, 8 do
@@ -714,16 +721,16 @@ end
 -- main.lua dispatches here so a local defined in this file would not exist
 -- as an upvalue there.
 function love.labupdate(dt)
-  -- O passo alterna pose e caminhada. A piscada e uma janela curta com fase
-  -- por folha, e ela vive na UV da malha, entao so aparece se a malha for
-  -- reconstruida com o relogio andando: por isso reconstroi por quadro
-  -- enquanto toca, e so quando muda alguma coisa enquanto parado.
+  -- The step alternates pose and walking. The blink is a short window with a
+  -- phase per sheet, and it lives in the mesh's UV, so it only shows up if
+  -- the mesh is rebuilt with the clock running: that is why it rebuilds per
+  -- frame while playing, and only when something changes while stopped.
   lab.t = lab.t + (dt or 0)
   if lab.tocando then lab.andando = (lab.t % 0.5) < 0.25 end
   if lab.ab then
-    -- Os dois lados reconstroem no MESMO quadro, com o mesmo relogio: se um
-    -- piscasse e o outro nao, a escolha seria sobre a piscada e nao sobre a
-    -- opcao que o par diz estar comparando.
+    -- The two sides rebuild on the SAME frame, with the same clock: if one
+    -- blinked and the other did not, the choice would be about the blink and
+    -- not about the option the pair claims to be comparing.
     if lab.tocando or lab.sujo then labConstroiPar() end
     lab.sujo = false
   elseif lab.tocando or lab.sujo then
@@ -738,7 +745,7 @@ function love.labupdate(dt)
               ctx.opts.labshot)
       end)
     elseif lab.quadros == 202 and ctx.opts.labpick ~= "" then
-      -- Prova o caminho da gravacao inteiro, do par ate a linha no arquivo.
+      -- Proves the whole recording path, from the pair to the line in the file.
       labEscolhe(ctx.opts.labpick)
       print(string.format("escolha simulada gravada: %d escolhas, %d pulos",
         lab.escolhas, lab.pulos))

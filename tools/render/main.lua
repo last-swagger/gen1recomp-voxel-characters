@@ -24,17 +24,19 @@ local AO = require("ao_proto")
 local Lab = require("lab")
 local Features = require("features")
 
--- ERRO VAI PARA O STDOUT E MATA O PROCESSO, em vez de abrir janela e esperar.
+-- ERROR GOES TO STDOUT AND KILLS THE PROCESS, instead of opening a window and waiting.
 --
--- Por padrao o LOVE trata erro abrindo uma tela azul com a mensagem e ESPERANDO
--- TECLA. De dentro de um script isso e indistinguivel de trabalho pesado: a
--- ferramenta so morre no timeout, com log vazio, e a causa fica escrita numa
--- janela que ninguem esta olhando. Aconteceu tres vezes numa sessao.
+-- By default LOVE handles an error by opening a blue screen with the message
+-- and WAITING FOR A KEY. From inside a script this is indistinguishable from
+-- heavy work: the tool only dies on timeout, with an empty log, and the cause
+-- is written on a window nobody is looking at. Happened three times in one
+-- session.
 --
--- Tentei antes resolver FOTOGRAFANDO a tela para ler a mensagem. Foi pior: numa
--- maquina de trabalho a foto pega o que estiver na frente, e pegou conversa
--- pessoal duas vezes. As imagens foram apagadas e a ideia foi abandonada. A
--- mensagem tem que sair por onde o script ja le, que e o stdout.
+-- I first tried to solve this by PHOTOGRAPHING the screen to read the
+-- message. It was worse: on a work machine the photo captures whatever is in
+-- front, and it captured a personal conversation twice. The images were
+-- deleted and the idea was abandoned. The message has to come out through
+-- where the script already reads, which is stdout.
 function love.errorhandler(msg)
   msg = tostring(msg)
   io.stdout:write("ERRO DE LOVE: " .. msg .. "\n")
@@ -42,20 +44,21 @@ function love.errorhandler(msg)
   io.stdout:flush()
   os.exit(1)
 end
-love.errhand = love.errorhandler   -- LOVE 0.x/11.x usam nomes diferentes
+love.errhand = love.errorhandler   -- LOVE 0.x/11.x use different names
 
 local ROOT = "./"
--- Por padrao mede o mod da arvore de trabalho, mas aceita apontar para outro
--- arquivo por VOXEL_CHARS_MAIN. Isso existe para poder renderizar o ANTES de
--- verdade a partir de uma tag ja lancada (`git show v1.4.1:main.lua > /tmp/x`)
--- em vez de ilustrar de memoria o que uma correcao mudou: comparativo de
--- release e afirmacao publica, e afirmacao publica precisa de medicao.
+-- By default measures the mod from the working tree, but accepts pointing to
+-- another file via VOXEL_CHARS_MAIN. This exists so the real BEFORE can be
+-- rendered from an already-released tag (`git show v1.4.1:main.lua > /tmp/x`)
+-- instead of illustrating from memory what a fix changed: a release
+-- comparison is a public claim, and a public claim needs measurement.
 local MAIN_PATH = os.getenv("VOXEL_CHARS_MAIN")
   or (ROOT .. "mods/voxel_characters/main.lua")
--- Caminho errado nao pode virar processo pendurado. Sob o `love`, um assert
--- que falha abre a janela de erro padrao em vez de sair, e quem chamou por
--- pipe (o check.sh faz isso) nao recebe NADA: o processo trava e so morre com
--- kill. Medido numa revisao. Entao a checagem e explicita e antes de tudo.
+-- A wrong path cannot become a hung process. Under `love`, a failing assert
+-- opens the default error window instead of exiting, and whoever called
+-- through a pipe (check.sh does that) receives NOTHING: the process hangs and
+-- only dies with kill. Measured in a review. So the check is explicit and
+-- comes before everything.
 do
   local f = io.open(MAIN_PATH, "r")
   if f then f:close() else
@@ -65,8 +68,8 @@ do
   end
 end
 local SPRITE_DIR = "assets/generated/sprites/"
--- Sobrescrito por `spritedir=`, para uma folha candidata poder ser renderizada
--- lado a lado com a original sem escrever nada no cache do jogador.
+-- Overridden by `spritedir=`, so a candidate sheet can be rendered side by
+-- side with the original without writing anything to the player's cache.
 
 --------------------------------------------------------------------------
 -- arguments
@@ -109,31 +112,31 @@ local opts = {
   topedge = "",
   opt = "",
   lab = "",
-  -- `labshot=arquivo.png` abre o laboratorio, fotografa e sai. Existe para o
-  -- laboratorio poder ser CHECADO sem ninguem apertar tecla: uma ferramenta
-  -- interativa que ninguem testa quebra calada.
+  -- `labshot=file.png` opens the laboratory, takes a photo and exits. Exists
+  -- so the laboratory can be CHECKED without anyone pressing a key: an
+  -- interactive tool nobody tests breaks silently.
   labshot = "",
   labab = "",
-  -- Onde as escolhas caem, e uma escolha simulada para o gate. O arquivo e
-  -- parametrizavel porque o gate NAO pode escrever escolha inventada no
-  -- arquivo que vai treinar o juiz: seria envenenar o dado com a propria
-  -- ferramenta de teste.
+  -- Where choices land, and a simulated choice for the gate. The file is
+  -- parametrisable because the gate must NOT write a made-up choice into the
+  -- file that will train the judge: that would poison the data with the
+  -- test tool itself.
   labfile = "escolhas.txt",
-  -- `labpares=<arquivo>` faz o laboratorio oferecer os pares que o juiz pediu,
-  -- em vez de sortear. Ver labParDoArquivo.
+  -- `labpares=<file>` makes the laboratory offer the pairs the judge
+  -- requested, instead of rolling. See labParDoArquivo.
   labpares = "",
   labpick = "",
-  -- `features=<arquivo>` le uma linha por variante (folha TAB chave:valor,...)
-  -- e imprime uma linha TSV de features por variante. E a metade cara do
-  -- juiz: exige LOVE, sprite de verdade e o mod carregado. A metade barata,
-  -- que ajusta o modelo, roda em luajit puro em tools/juiz.
+  -- `features=<file>` reads one line per variant (sheet TAB key:value,...)
+  -- and prints one TSV line of features per variant. It is the expensive half
+  -- of the judge: it needs LOVE, a real sprite and the mod loaded. The cheap
+  -- half, which fits the model, runs in plain luajit in tools/juiz.
   features = "",
 }
 
--- O schema que o proprio mod registra, capturado na ultima construcao. O
--- laboratorio monta o menu dele a partir daqui em vez de manter uma copia:
--- tabela paralela apodrece, e ja apodreceu neste projeto (uma opcao nova ficou
--- sem medicao visual porque a ferramenta nao sabia que ela existia).
+-- The schema the mod itself registers, captured at the last build. The
+-- laboratory builds its menu from here instead of keeping a copy: a parallel
+-- table rots, and it has already rotted in this project (a new option went
+-- without visual measurement because the tool did not know it existed).
 local LAB_SCHEMA = nil
 local MOD_CHUNK = nil
 
@@ -217,14 +220,15 @@ local function makeVoxelHandle(imageData)
           return {
             verts = copy,
             map = mapCopy,
-            -- O mod aplica a piscada com pcall(mesh.setVertex, ...). Sem
-            -- este metodo no stub a chamada falha em silencio e o harness
-            -- nunca ve piscada nenhuma, o que parece o recurso nao funcionar.
-            -- Duas formas, como o Mesh do LOVE: uma tabela de atributos, ou
-            -- os atributos soltos. O mod tenta a forma de tabela primeiro e
-            -- so cai para a solta se ela falhar, entao um stub que aceita
-            -- qualquer coisa guarda a TABELA dentro do vertice e o erro
-            -- aparece longe daqui, em quem faz aritmetica com a posicao.
+            -- The mod applies the blink with pcall(mesh.setVertex, ...).
+            -- Without this method on the stub the call fails silently and the
+            -- harness never sees any blink, which looks like the feature not
+            -- working. Two forms, like LOVE's Mesh: a table of attributes, or
+            -- the loose attributes. The mod tries the table form first and
+            -- only falls back to the loose one if it fails, so a stub that
+            -- accepts anything stores the TABLE inside the vertex and the
+            -- error shows up far from here, in whoever does arithmetic with
+            -- the position.
             setVertex = function(self, i, a, b, c, d, e, f)
               if type(i) ~= "number" or i < 1 or i > #self.verts then
                 error("setVertex: indice fora da faixa", 0)
@@ -320,21 +324,21 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
     blink = opts.blink ~= "" and "on" or nil,
     top_edge = opts.topedge ~= "" and opts.topedge or nil,
   }
-  -- Passagem generica de opcao do mod: `opt=chave:valor,chave:valor`.
+  -- Generic mod option pass-through: `opt=key:value,key:value`.
   --
-  -- Antes disto, cada opcao nova do mod exigia editar este arquivo, e uma
-  -- rodada de implementacao ficou sem medicao visual justamente porque a
-  -- opcao nova nao tinha como chegar aqui e o implementador estava proibido
-  -- de mexer na regua. Ferramenta que precisa ser editada a cada feature nao
-  -- e ferramenta, e degrau.
+  -- Before this, every new mod option required editing this file, and one
+  -- implementation round went without visual measurement precisely because
+  -- the new option had no way to reach here and the implementer was
+  -- forbidden from touching the ruler. A tool that needs to be edited for
+  -- every feature is not a tool, it is a step.
   --
-  -- Valor numerico e convertido, porque o mod guarda algumas opcoes como
-  -- numero e outras como string (FRONT_SHAPE_VALUES = { "off", 0.12, ... }) e
-  -- passar "0.12" onde ele espera 0.12 cai no default sem avisar.
-  -- Chave desconhecida NAO pode passar em silencio: um erro de digitacao
-  -- vira "medi com a opcao desligada e nao percebi", que e exatamente o erro
-  -- que eu cometi ao passar `low` onde o mod guarda 0.12. A validacao roda
-  -- depois que o mod se registra, porque so entao existe schema.
+  -- A numeric value is converted, because the mod stores some options as
+  -- number and others as string (FRONT_SHAPE_VALUES = { "off", 0.12, ... })
+  -- and passing "0.12" where it expects 0.12 falls back to the default
+  -- without warning. An unknown key must NOT pass silently: a typo turns into
+  -- "I measured with the option off and did not notice", which is exactly the
+  -- mistake I made passing `low` where the mod stores 0.12. Validation runs
+  -- after the mod registers, because only then does the schema exist.
   local pedidas = {}
   for par in tostring(opts.opt):gmatch("[^,]+") do
     local chave, valor = par:match("^%s*([%w_]+)%s*:%s*(.-)%s*$")
@@ -347,11 +351,11 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
     end
   end
   local mod = makeMod(handle, stored)
-  -- O chunk e compilado UMA vez e reexecutado por construcao. Antes isto
-  -- reparseava 2800 linhas a cada malha, o que ninguem notava com vinte
-  -- celulas e domina o custo quando o laboratorio constroi centenas para
-  -- descobrir quais opcoes mexem na geometria. Reexecutar e o que importa:
-  -- cada execucao devolve um mod novo, com estado proprio.
+  -- The chunk is compiled ONCE and re-executed per build. Before this it
+  -- reparsed 2800 lines for every mesh, which nobody noticed with twenty
+  -- cells and which dominates the cost when the laboratory builds hundreds
+  -- to find out which options touch the geometry. Re-executing is what
+  -- matters: every execution returns a fresh mod, with its own state.
   MOD_CHUNK = MOD_CHUNK or assert(loadfile(MAIN_PATH))
   MOD_CHUNK(mod)
   LAB_SCHEMA = mod._schema or LAB_SCHEMA
@@ -373,9 +377,10 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
   local mesh
   local mesh = SpriteBillboards.mesh(def, frame)
 
-  -- Procura o instante em que a piscada fecha, sem replicar a formula de fase
-  -- do mod, o que seria testar a implementacao contra ela mesma. A malha e
-  -- cacheada e mutada no lugar, entao rechamar com outro relogio e barato.
+  -- Searches for the instant the blink closes, without replicating the mod's
+  -- phase formula, which would be testing the implementation against itself.
+  -- The mesh is cached and mutated in place, so calling again with a
+  -- different clock is cheap.
   if opts.blinkscan == "1" and mesh and mesh.verts then
     local realTime = love.timer.getTime
     local function uvSig(mm)
@@ -435,10 +440,10 @@ end
 --------------------------------------------------------------------------
 
 local KINDS = { "front", "back", "side", "top", "bottom", "side_e", "side_w" }
--- Proveniencia so distingue arte de superficie inventada, entao os dois lados
--- contam como um. A separacao existe para o sombreamento, nao para a metrica.
+-- Provenance only distinguishes art from invented surface, so the two sides
+-- count as one. The separation exists for shading, not for the metric.
 local PROV_KIND = { side_e = "side", side_w = "side" }
--- Voxel3D.FACE_SHADE do host, o valor que cada face do MUNDO recebe.
+-- Host's Voxel3D.FACE_SHADE, the value each face of the WORLD receives.
 local HOST_SHADE = {
   front = 0.90, back = 0.68, top = 1.00, bottom = 0.55,
   side_e = 0.84, side_w = 0.72,
@@ -471,9 +476,10 @@ local function classifyQuad(v1, v2, v3, turn)
   elseif az >= ax then
     return nz > 0 and "front" or "back"
   end
-  -- Leste e oeste separados. O mod hoje pinta os dois com um valor so, e o
-  -- mundo em volta usa 0.84 contra 0.72: a luz do host vem do sudeste e as
-  -- duas faces de um bloco nao recebem igual.
+  -- East and west kept separate. The mod today paints both with a single
+  -- value, and the world around it uses 0.84 against 0.72: the host's light
+  -- comes from the southeast and the two faces of a block do not receive it
+  -- equally.
   return nx > 0 and "side_e" or "side_w"
 end
 
@@ -619,19 +625,20 @@ local function fail(msg)
   love.event.quit(1)
 end
 
--- ------------------------------------------------------------- autoteste
+-- ------------------------------------------------------------- selftest
 --
--- O harness e a regua desta base, e por muito tempo ninguem conferiu a regua.
--- Dez defeitos numa unica sessao foram DELE se passando por defeito do mod:
--- sinal de profundidade invertido, que fazia a arte aparecer no shade de tras
--- e lia como bug de cor; pitch medido da ponta errada do ladder; Y-down contra
--- um mod Y-up; canvas que renderiza de baixo para cima, fazendo cada linha ser
--- pontuada contra os pixels de outra; pivo por bbox escondendo desalinhamento;
--- contagem de frames fixa em 6; stub sem setVertex; stub aceitando a forma
--- errada de setVertex; e amostragem grossa demais para uma janela de 0,12 s.
+-- The harness is this base's ruler, and for a long time nobody checked the
+-- ruler. Ten defects in a single session were ITS OWN, passing themselves off
+-- as mod defects: inverted depth sign, which made the art appear at the back
+-- shade and read as a colour bug; pitch measured from the wrong end of the
+-- ladder; Y-down against a Y-up mod; a canvas that renders bottom to top,
+-- making every row get scored against another row's pixels; a bbox pivot
+-- hiding misalignment; frame count fixed at 6; a stub without setVertex; a
+-- stub accepting the wrong form of setVertex; and sampling too coarse for a
+-- 0.12 s window.
 --
--- Cada um custou um ciclo inteiro de diagnostico apontado para o lugar errado.
--- Estas assercoes rodam em segundos e falham no lugar certo.
+-- Each one cost a full diagnostic cycle pointed at the wrong place. These
+-- assertions run in seconds and fail in the right place.
 local function selftest()
   local fails, checks = 0, 0
   local function check(ok, name, detail)
@@ -645,13 +652,14 @@ local function selftest()
   local data = loadImageData(SPRITE_DIR .. "red.png")
   local sheetW, sheetH = data:getDimensions()
 
-  -- 1. Contagem de frames vem da altura, como o engine faz, nunca de constante.
+  -- 1. Frame count comes from height, the way the engine does it, never from a constant.
   check(math.floor(sheetH / 16) == 6, "frames vem da altura da folha",
         "red.png deu " .. tostring(sheetH / 16))
 
-  -- 2. setVertex do stub aceita as DUAS formas do Mesh do LOVE. O mod tenta a
-  --    de tabela primeiro; um stub permissivo guarda a tabela dentro do
-  --    vertice e o erro aparece longe, em quem faz aritmetica com posicao.
+  -- 2. The stub's setVertex accepts BOTH forms of LOVE's Mesh. The mod tries
+  --    the table form first; a permissive stub stores the table inside the
+  --    vertex and the error shows up far away, in whoever does arithmetic
+  --    with the position.
   local probe = makeVoxelHandle(data).exports.lib.require("Voxel3D")
     .newMesh({ { 1, 2, 3, 4, 5, 6 } }, { 1, 2, 3, 1, 3, 4 })
   probe:setVertex(1, { 9, 8, 7, 6, 5, 4 })
@@ -661,8 +669,8 @@ local function selftest()
   check(probe.verts[1][1] == 1 and probe.verts[1][4] == 4,
         "setVertex aceita a forma de escalares")
 
-  -- 3. Convencao de eixos: o mod emite Y para cima e a frente em z = 0. Se
-  --    qualquer um dos dois inverter, isto pega antes de virar diagnostico.
+  -- 3. Axis convention: the mod emits Y up and the front at z = 0. If
+  --    either one inverts, this catches it before it turns into a diagnostic.
   local def = { image = SPRITE_DIR .. "red.png", frames = 6 }
   local mesh = buildGeometry(data, def, 0, "slab", 3, "body")
   check(mesh ~= nil, "malha SLAB constroi")
@@ -673,7 +681,7 @@ local function selftest()
           "minZ=" .. tostring(b.minZ))
     check(b.minY == 0, "pe do sprite esta em y = 0",
           "minY=" .. tostring(b.minY))
-    -- classificacao de face por winding, base de toda metrica de proveniencia
+    -- face classification by winding, the basis of every provenance metric
     local kinds = classifyMesh(mesh, 0)
     local seen = {}
     for _, k in ipairs(kinds) do seen[k] = true end
@@ -693,13 +701,13 @@ function love.load(argv)
   end
   if opts.lab == "1" then return love.labsetup() end
   if opts.features ~= "" then return love.features() end
-  -- Antes de qualquer malha ser construida: estes parametros mudam geometria.
+  -- Before any mesh is built: these parameters change geometry.
   if opts.shade == "host" then SHADE_OVERRIDE = HOST_SHADE end
   if tonumber(opts.aostrength) then AO.setAoStrength(tonumber(opts.aostrength)) end
-  -- Congela o relogio antes de qualquer malha ser construida. O piscar e uma
-  -- janela de 0,12 s num periodo com fase por folha; em vez de replicar a
-  -- formula, que seria testar a implementacao contra ela mesma, o gate
-  -- renderiza uma tira de instantes e olha qual fecha o olho.
+  -- Freezes the clock before any mesh is built. The blink is a 0.12 s window
+  -- in a period with a phase per sheet; instead of replicating the formula,
+  -- which would be testing the implementation against itself, the gate
+  -- renders a strip of instants and looks at which one closes the eye.
   if tonumber(opts.blinktime) then
     local t = tonumber(opts.blinktime)
     love.timer.getTime = function() return t end
@@ -836,18 +844,19 @@ end
 
 local function drawCell(row, yaw, x, y, size, asProvenance, asCellId)
   if not row.mesh then return end
-  -- ARMADILHA 12, achada por um agente que prototipou e conferiu, e que eu
-  -- reproduzi: uma forma FUNDA transborda a propria celula e invade a
-  -- vizinha, contaminando a medicao dela. `red.png` no CARVED vai a z = -13
-  -- num sprite de 16 de largura, e no `cell` grande a projecao disso passa da
-  -- borda. Medido: com `cell=220`, que e o DEFAULT, o SLAB media 73.4%
-  -- sozinho e 70.7% num contact sheet ao lado do CARVED. Em 140, 100, 80 e
-  -- 60 nao vazava, o que e pior do que vazar sempre: o defeito so aparecia no
-  -- default, e sumia assim que alguem tentava reproduzir com celula menor.
+  -- TRAP 12, found by an agent that prototyped and checked, and that I
+  -- reproduced: a DEEP shape overflows its own cell and invades the
+  -- neighbouring one, contaminating its measurement. `red.png` on CARVED goes
+  -- to z = -13 on a sprite 16 wide, and at a large `cell` the projection of
+  -- that crosses the border. Measured: with `cell=220`, which is the
+  -- DEFAULT, SLAB measures 73.4% alone and 70.7% in a contact sheet next to
+  -- CARVED. At 140, 100, 80 and 60 it did not leak, which is worse than
+  -- leaking always: the defect only showed up at the default, and disappeared
+  -- as soon as someone tried to reproduce it with a smaller cell.
   --
-  -- O recorte fecha isso por construcao, para toda medicao e todo desenho,
-  -- em vez de virar mais uma regra de uso que alguem precisa lembrar. Cada
-  -- celula so pode pintar dentro dela mesma.
+  -- The scissor closes this by construction, for every measurement and every
+  -- draw, instead of becoming one more rule of use someone has to remember.
+  -- Every cell can only paint inside itself.
   local prevScissor = { love.graphics.getScissor() }
   love.graphics.setScissor(x, y, size, size)
   local b = bounds(row.mesh.verts)
@@ -1092,10 +1101,10 @@ local function computeMetrics(screen)
     end
   end
 
-  -- Cruza proveniencia com a imagem visivel: para cada tipo de face, quanto
-  -- dela chega ao olho como o tom mais escuro. O contorno Gen 1 e preto e
-  -- cerca a figura inteira; se ele domina as faces inventadas, o personagem le
-  -- como bloco escuro por mais volume que tenha.
+  -- Crosses provenance with the visible image: for each face kind, how much
+  -- of it reaches the eye as the darkest tone. The Gen 1 outline is black and
+  -- surrounds the whole figure; if it dominates the invented faces, the
+  -- character reads as a dark block no matter how much volume it has.
   if screen then
     print("")
     print("share of each face kind that reaches the eye as the darkest tone")
@@ -1136,8 +1145,8 @@ local function computeMetrics(screen)
     end
   end
 
-  -- Identidade da celula que gerou cada pixel de topo. Separa "a cor mudou"
-  -- de "a superficie mudou de dono", que sao defeitos diferentes.
+  -- Identity of the cell that generated each top pixel. Separates "the
+  -- colour changed" from "the surface changed owner", which are different defects.
   if screen and #state.rows > 1 then
     local cbuf = love.graphics.newCanvas(w, h)
     local cdep = love.graphics.newCanvas(w, h, { format = "depth24", readable = false })
@@ -1189,9 +1198,10 @@ local function computeMetrics(screen)
     cbuf:release(); cdep:release()
   end
 
-  -- Estabilidade de cor da face de topo entre poses. O report do Angelus e
-  -- "o topo da cabeca pisca enquanto anda": se a MESMA posicao de tela for
-  -- face de topo em duas poses e a cor mudar, isso e o piscar, medido.
+  -- Colour stability of the top face between poses. Angelus's report is
+  -- "the top of the head flickers while walking": if the SAME screen
+  -- position is a top face in two poses and the colour changes, that is the
+  -- flicker, measured.
   if screen and #state.rows > 1 then
     print("")
     print("cor da face de topo na mesma posicao, linha 1 contra as outras")
@@ -1252,35 +1262,37 @@ local function computeMetrics(screen)
     end
   end
 
-  -- ESTRUTURA TONAL, por classe de face.
+  -- TONAL STRUCTURE, per face class.
   --
-  -- O art% acima e provenance PURA: ele conta de onde a superficie veio, e o
-  -- passe que o mede reaproveita o canal de shade para carregar a classe da
-  -- face, entao ele e cego a iluminacao POR CONSTRUCAO. Nenhuma opcao de
-  -- sombreamento pode move-lo, nem em principio. Isso deixou duas features
-  -- desta branch sem regua nenhuma, julgadas so no olho.
+  -- The art% above is PURE provenance: it counts where the surface came
+  -- from, and the pass that measures it reuses the shade channel to carry the
+  -- face's class, so it is blind to lighting BY CONSTRUCTION. No shading
+  -- option can move it, not even in principle. That left two features of
+  -- this branch with no ruler at all, judged only by eye.
   --
-  -- Isto mede outra coisa: quanta ESTRUTURA existe na superficie desenhada.
-  -- Uma tampa chapada tem um nivel de tom so e amplitude zero. Um domo em
-  -- degraus tem tres. Nao decide se ficou bonito, e nao tenta: essa licao ja
-  -- foi paga quando um redesenho por IA satisfez toda restricao numerica e
-  -- entregou arte pior. Serve para dizer O QUE MUDOU e para pegar regressao.
+  -- This measures something else: how much STRUCTURE exists in the drawn
+  -- surface. A flat cap has a single tone level and zero amplitude. A
+  -- stepped dome has three. It does not decide whether it looks good, and
+  -- does not try to: that lesson was already paid for when an AI redraw
+  -- satisfied every numeric constraint and delivered worse art. It serves to
+  -- say WHAT CHANGED and to catch regressions.
   print("")
   print("estrutura tonal na superficie desenhada, por classe de face")
   print("  niveis  quantos tons distintos aparecem (chapado = 1)")
   print("  ampl    diferenca entre o tom mais claro e o mais escuro")
   print("  desvio  desvio medio em torno do tom medio da classe")
-  -- `desvio` existe porque `niveis` e `ampl` NAO distinguem forcas.
-  -- Medido por uma revisao adversarial: FRONT SHAPE em 0.12, 0.17 e 0.22
-  -- reportava `niveis 7 ampl 0.596` nos TRES, enquanto 2382 de 43600 pixels
-  -- do quadro realmente diferiam entre a primeira e a ultima. Ou seja, a
-  -- regua dizia "igual" com 5% da tela mudada.
+  -- `desvio` exists because `niveis` and `ampl` do NOT distinguish strengths.
+  -- Measured by an adversarial review: FRONT SHAPE at 0.12, 0.17 and 0.22
+  -- reported `niveis 7 ampl 0.596` on all THREE, while 2382 of 43600 pixels
+  -- of the frame actually differed between the first and the last. In other
+  -- words, the ruler said "same" with 5% of the screen changed.
   --
-  -- A causa e que contar baldes e um teste de PRESENCA: assim que a terceira
-  -- faixa de tom aparece, a contagem satura, e subir a forca so afasta os
-  -- tons uns dos outros sem criar balde novo. `ampl` tambem satura, porque o
-  -- pixel mais claro e o mais escuro costumam ser os mesmos texels em toda
-  -- forca. O desvio medio nao satura: ele cresce junto com a separacao.
+  -- The cause is that counting buckets is a PRESENCE test: as soon as the
+  -- third tone band appears, the count saturates, and raising the strength
+  -- only pushes the tones further apart without creating a new bucket. `ampl`
+  -- also saturates, because the lightest and darkest pixels tend to be the
+  -- same texels at every strength. The mean deviation does not saturate: it
+  -- grows together with the separation.
   for r, row in ipairs(state.rows) do
     local y0 = (r - 1) * (cell + labelH) + labelH
     for c, yawDeg in ipairs(state.yaws) do
@@ -1297,9 +1309,9 @@ local function computeMetrics(screen)
           if kind then
             local sr, sg, sb = screen:getPixel(x0 + x, y0 + y)
             local lum = sr * 0.3 + sg * 0.6 + sb * 0.1
-            -- quantiza em 64 baldes: o adversario mostrou que contar valores
-            -- unicos de ponto flutuante sempre devolve "muitos", tanto para um
-            -- degrade bonito quanto para ruido, entao nao discrimina nada.
+            -- quantise into 64 buckets: the adversarial review showed that
+            -- counting unique floating point values always returns "many",
+            -- for a nice gradient just as much as for noise, so it discriminates nothing.
             tons[kind][math.floor(lum * 64 + 0.5)] = true
             if lum < lo[kind] then lo[kind] = lum end
             if lum > hi[kind] then hi[kind] = lum end

@@ -13,50 +13,51 @@ local ctx
 function Features.init(c) ctx = c end
 
 --------------------------------------------------------------------------
--- FEATURES  (features=<arquivo>)
+-- FEATURES  (features=<file>)
 --------------------------------------------------------------------------
--- As grandezas que o juiz enxerga. Elas saem da MALHA e nao de um quadro
--- renderizado, o que e uma escolha e nao uma economia: medir na malha e
--- deterministico, nao depende de camera nem de relogio, e roda em milissegundos
--- por variante, entao trinta escolhas viram sessenta variantes em segundos e
--- da para reajustar o modelo sempre que a lista de features mudar.
+-- The quantities the judge sees. They come from the MESH and not from a
+-- rendered frame, which is a choice and not an economy: measuring on the mesh
+-- is deterministic, does not depend on camera or clock, and runs in
+-- milliseconds per variant, so thirty choices become sixty variants in seconds
+-- and the model can be refit whenever the feature list changes.
 --
--- A lista comeca pelas grandezas que este projeto ja mediu e que ja
--- explicaram alguma coisa:
+-- The list starts with the quantities this project has already measured and
+-- that have already explained something:
 --
---   fracao de topo   a lei que matou quatro tentativas de profundidade
---                    variavel: topo nao carrega arte e esta camera olha para
---                    ele. Se a preferencia do Kim ignorar isto, a lei vale
---                    menos do que a gente pensa, e isso e resultado
---   fracao de arte   frente e verso sao as unicas faces que o artista
---                    desenhou (IS_ART); o resto e superficie inventada
---   quads            custo e complexidade da forma
---   profundidade     o quanto o corpo sai do plano do sprite
---   tons             FRONT SHAPE e TOP DOME nao mexem em vertice, so em
---                    shade, entao sem estatistica de shade eles seriam
---                    invisiveis para o modelo
+--   top fraction    the law that killed four attempts at variable depth: top
+--                    carries no art and this camera looks at it. If Kim's
+--                    preference ignores this, the law is worth less than we
+--                    think, and that is a result
+--   art fraction     front and back are the only faces the artist drew
+--                    (IS_ART); the rest is invented surface
+--   quads            cost and complexity of the shape
+--   depth            how much the body comes off the sprite's plane
+--   tones            FRONT SHAPE and TOP DOME touch no vertex, only
+--                    shade, so without shade statistics they would be
+--                    invisible to the model
 --
--- Nao ha art% de PIXEL aqui, que e a metrica com que este projeto sempre
--- julgou. Ela precisa do render de proveniencia, que precisa de grade e de
--- leitura de tela. Fica para a segunda passada, e ate la o baseline do juiz e
--- "a melhor feature sozinha", que e um adversario mais honesto do que parece:
--- se o modelo ajustado nao ganha de UMA coluna, ele nao aprendeu nada.
+-- There is no PIXEL art% here, which is the metric this project has always
+-- judged by. It needs the provenance render, which needs a grid and screen
+-- reading. That is left for the second pass, and until then the judge's
+-- baseline is "the best single feature", which is a more honest opponent than
+-- it looks: if the fitted model does not beat ONE column, it learned nothing.
 local FEATURE_NOMES = {
   "quads", "frente", "verso", "lado", "topo", "baixo",
   "arte", "profundidade", "shade_media", "shade_desvio", "shade_niveis",
-  -- Estas duas vem de RENDER, nao da malha, e sao o motivo de este modo ter
-  -- deixado de ser so aritmetica de vertice. `art_px` e a metrica com que este
-  -- projeto sempre julgou: a fracao do que o jogador VE que e trabalho do
-  -- artista, e nao a fracao de quads. Enquanto ela nao estava aqui, o
-  -- adversario do juiz era "a melhor coluna sozinha" entre colunas em que
-  -- nenhuma era a regua da casa.
+  -- These two come from RENDER, not from the mesh, and are the reason this
+  -- mode stopped being just vertex arithmetic. `art_px` is the metric this
+  -- project has always judged by: the fraction of what the player SEES that
+  -- is the artist's work, not the fraction of quads. While it was not here,
+  -- the judge's opponent was "the best single column" among columns where
+  -- none was the house's ruler.
   "art_px", "cobertura", "luz_media", "tons",
 }
 
--- Fracao de PIXEL que veio de face de arte (frente e verso), medida do mesmo
--- jeito que o contact sheet mede: desenha com cor de PROVENIENCIA num canvas e
--- le de volta. Canvas e nao screenshot de proposito: screenshot so fica pronto
--- no fim do quadro, e este modo roda inteiro dentro do love.load.
+-- Fraction of PIXEL that came from an art face (front and back), measured the
+-- same way the contact sheet measures: draws with PROVENANCE colour on a
+-- canvas and reads it back. Canvas and not screenshot on purpose: a
+-- screenshot is only ready at the end of the frame, and this mode runs
+-- entirely inside love.load.
 local function artePorPixel(row, cell, yawDeg)
   local colour = love.graphics.newCanvas(cell, cell)
   local depth = love.graphics.newCanvas(cell, cell,
@@ -79,8 +80,8 @@ local function artePorPixel(row, cell, yawDeg)
       local r, g, b, a = img:getPixel(x, y)
       if a >= 0.5 then
         total = total + 1
-        -- Mesma classificacao de kindAt no computeMetrics: frente e verso sao
-        -- as unicas faces que o artista desenhou.
+        -- Same classification as kindAt in computeMetrics: front and back are
+        -- the only faces the artist drew.
         if (g > 0.75 and r < 0.25) or (g > 0.25 and r < 0.25 and b < 0.25) then
           arte = arte + 1
         end
@@ -88,12 +89,12 @@ local function artePorPixel(row, cell, yawDeg)
     end
   end
 
-  -- SEGUNDA PASSADA, COM COR DE VERDADE, e ela existe por causa de um buraco
-  -- que o proprio juiz apontou: `SIDE COLOR` aparecia na lista de "features
-  -- cegas" mesmo depois de art_px entrar. Faz sentido: ela troca QUAL texel a
-  -- face lateral amostra (corpo ou contorno), o que muda a cor na tela e nao
-  -- muda a proveniencia, que continua sendo "lado". Nenhuma coluna de
-  -- geometria e nenhuma de proveniencia enxerga cor.
+  -- SECOND PASS, WITH REAL COLOUR, and it exists because of a hole
+  -- the judge itself pointed out: `SIDE COLOR` kept appearing in the list of
+  -- "blind features" even after art_px was added. Makes sense: it swaps WHICH
+  -- texel the side face samples (body or outline), which changes the colour
+  -- on screen and does not change the provenance, which stays "side". No
+  -- geometry column and no provenance column sees colour.
   love.graphics.setCanvas({ colour, depthstencil = depth })
   love.graphics.clear(0, 0, 0, 0, true, true)
   love.graphics.setDepthMode("less", true)
@@ -159,18 +160,18 @@ local function featuresDaMalha(mesh, kinds)
   return f
 end
 
--- Uma celula so, no degrau padrao do jogo. O degrau importa porque a fracao de
--- arte depende da camera: e a lei que este projeto mediu, topo nao carrega arte
--- e esta camera olha para ele.
+-- A single cell, at the game's default pitch. The pitch matters because the
+-- art fraction depends on the camera: it is the law this project measured,
+-- top carries no art and this camera looks at it.
 local FEATURE_CELL, FEATURE_RUNG = 140, 35
 
 function love.features()
-  -- Saida em linha e nao em bloco. Sem isto, um run interrompido no meio
-  -- entrega um arquivo truncado NO MEIO DE UMA LINHA, e um leitor cuidadoso
-  -- ainda pode ler as linhas inteiras que sobraram como se fossem o resultado.
-  -- Aconteceu: o trailer.sh faz `pkill -x love` e matou uma extracao que
-  -- rodava em paralelo, e o que ficou no arquivo parecia uma medicao curta em
-  -- vez de uma medicao interrompida.
+  -- Line-buffered output, not block-buffered. Without this, a run interrupted
+  -- halfway through delivers a file truncated IN THE MIDDLE OF A LINE, and a
+  -- careful reader can still read the whole lines that survived as if they
+  -- were the result. It happened: trailer.sh does `pkill -x love` and killed
+  -- an extraction that was running in parallel, and what was left in the file
+  -- looked like a short measurement instead of an interrupted one.
   io.stdout:setvbuf("line")
   love.window.setMode(FEATURE_CELL, FEATURE_CELL, { depth = 24, vsync = 0 })
   ctx.state.width, ctx.state.height = FEATURE_CELL, FEATURE_CELL
@@ -184,10 +185,10 @@ function love.features()
   print("#" .. table.concat(cab, "\t"))
   local linhas, falhas = 0, 0
   for linha in entrada:lines() do
-    -- Quatro colunas: folha, quadro, relogio, estado. As duas do meio existem
-    -- porque medir a feature numa condicao diferente daquela em que a pessoa
-    -- julgou produz diferenca zero justamente nas opcoes que so aparecem em
-    -- certos instantes ou certas poses.
+    -- Four columns: sheet, frame, clock, state. The middle two exist
+    -- because measuring the feature under a condition different from the one
+    -- the person judged produces zero difference precisely in the options that
+    -- only appear at certain instants or certain poses.
     local folha, qf, qt, estado = linha:match("^(%S+)\t(%S+)\t(%S+)\t(.*)$")
     if not folha then
       folha, estado = linha:match("^(%S+)\t(.*)$")
@@ -209,9 +210,9 @@ function love.features()
         ctx.opts.opt = estado
         local shape = valores.shape or "slab"
         local depth = tonumber(valores.depth) or 3
-        -- Relogio congelado: a piscada mexe UV e mudaria a assinatura de shade
-        -- conforme a hora em que este comando rodou. Feature tem que ser
-        -- funcao do estado, nao do momento.
+        -- Frozen clock: the blink moves UVs and would change the shade
+        -- signature depending on the moment this command ran. A feature has
+        -- to be a function of state, not of the moment.
         local relogio = love.timer.getTime
         local instante = tonumber(qt) or 0
         love.timer.getTime = function() return instante end
@@ -225,13 +226,13 @@ function love.features()
           local role = (shape == "carved" or shape == "carved_plus") and 0 or 0
           kinds = ctx.classifyMesh(mesh, role)
         end
-        -- MALHA QUE NAO CONSTRUIU NAO VIRA LINHA DE ZEROS.
+        -- A MESH THAT FAILED TO BUILD DOES NOT BECOME A LINE OF ZEROS.
         --
-        -- featuresDaMalha devolve tudo zero quando a malha e nil, e a linha
-        -- saia igual as outras. Do lado do juiz isso e indistinguivel de uma
-        -- variante medida em zero, e entra no ajuste como se fosse dado. E a
-        -- unica conferencia de completude do juiz.sh e contagem de linhas, que
-        -- uma linha de zeros satisfaz.
+        -- featuresDaMalha returns everything zero when the mesh is nil, and
+        -- the line came out the same as the others. On the judge's side that
+        -- is indistinguishable from a variant measured at zero, and it enters
+        -- the fit as if it were data. And juiz.sh's only completeness check
+        -- is a line count, which a line of zeros satisfies.
         if not mesh then
           io.stderr:write("SEM MALHA: " .. folha .. "\t" .. estado .. "\n")
           falhas = falhas + 1
@@ -252,11 +253,12 @@ function love.features()
           io.stderr:write("SEM RENDER: " .. folha .. "  " .. tostring(px) .. "\n")
         end
         texture:release()
-        -- O QUADRO PEDIDO, nao o quadro usado. A folha pode ter menos frames
-        -- do que o pedido e ai ele e reduzido por modulo; imprimir o reduzido
-        -- muda a chave e a linha deixa de casar com a escolha que a gerou. O
-        -- sintoma e "sem features", que parece medicao faltando e na verdade e
-        -- medicao feita e arquivada com outro nome.
+        -- THE REQUESTED FRAME, not the frame used. The sheet can have fewer
+        -- frames than requested and then it gets reduced by modulo; printing
+        -- the reduced value changes the key and the line stops matching the
+        -- choice that generated it. The symptom is "no features", which looks
+        -- like a missing measurement and is actually a measurement made and
+        -- filed under a different name.
         local saida = { folha, qf, qt, estado }
         for _, n in ipairs(FEATURE_NOMES) do
           saida[#saida + 1] = string.format("%.6f", f[n])
@@ -269,18 +271,19 @@ function love.features()
   end
   entrada:close()
   io.stderr:write(string.format("features de %d variantes, %d sem malha\n", linhas, falhas))
-  -- SAIR DE VERDADE, e este e o motivo de tres linhas em vez de uma.
+  -- ACTUALLY EXIT, and this is the reason for three lines instead of one.
   --
-  -- love.event.quit() sozinho nao basta: ele so agenda a saida, e o quadro
-  -- seguinte ainda chama love.draw, que aqui explode em state.bg (nil, porque
-  -- o modo features nunca monta a cena). Erro em love.draw abre a tela de erro
-  -- do LOVE, que espera uma tecla PARA SEMPRE.
+  -- love.event.quit() alone is not enough: it only schedules the exit, and the
+  -- next frame still calls love.draw, which here blows up on state.bg (nil,
+  -- because features mode never assembles the scene). An error in love.draw
+  -- opens LOVE's error screen, which waits for a key FOREVER.
   --
-  -- E o pior: isso passou despercebido porque o primeiro teste deste modo
-  -- terminava em `| head`, e o head fechando o cano matava o processo com
-  -- SIGPIPE. A ferramenta parecia sair sozinha. Quem chamou sem cano ficou
-  -- pendurado. Ja e a segunda vez neste projeto que um processo que nao
-  -- termina se disfarca de processo que terminou.
+  -- And the worst part: this went unnoticed because the first test of this
+  -- mode ended in `| head`, and head closing the pipe killed the process with
+  -- SIGPIPE. The tool looked like it exited on its own. Whoever called it
+  -- without a pipe was left hanging. This is already the second time in this
+  -- project that a process that does not terminate disguises itself as a
+  -- process that did.
   love.draw = function() end
   love.update = function() love.event.quit() end
   love.event.quit()
