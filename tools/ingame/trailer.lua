@@ -62,6 +62,56 @@ return function(game)
   local Pipelines = require("src.render.Pipelines")
   local FPLEVEL = VoxelState.FP_LEVEL or 6
 
+  -- TIME OF DAY, per shot.
+  --
+  -- Two things are wrong with leaving it alone, and pinning it fixes both.
+  --
+  -- The trailer was NOT REPRODUCIBLE. The host's default is "sync", which
+  -- follows the machine's wall clock, so the same shot list filmed in the
+  -- morning and in the evening produces different footage. A comparison
+  -- between two recordings, which is how the clip guard works, would have been
+  -- measuring the hour.
+  --
+  -- And every shot looked the same. "Variety in time of day" is on the roadmap
+  -- as missing; it turns out to be one call, because DayNight.setting is an
+  -- ordinary ModSetting and the host itself sets it programmatically.
+  --
+  -- IT IS RESTORED AT THE END, including on the way out through an error.
+  -- setIndex WRITES TO THE SAVE (game.save.options.modOptions), so a trailer
+  -- run that forgot would leave the player's own game pinned to dusk, and the
+  -- player would have no idea why.
+  local okDN, DayNight = pcall(lib.require, "DayNight")
+  local HORA = { sync = 1, day = 2, night = 3, dusk = 4, dawn = 5, cycle = 6 }
+  local horaOriginal = nil
+  if okDN and DayNight and DayNight.setting then
+    local ok, i = pcall(function() return DayNight.setting:read() end)
+    if ok and i then horaOriginal = i end
+  else
+    log("host sem DayNight: os planos vao usar a hora que estiver")
+  end
+
+  -- VC_TRAILER_HORA forces every shot to one hour. It exists to make the
+  -- setting PROVABLE: film the whole list twice, once as day and once as
+  -- night, and the frames must differ. Without it, "the hour arrived" and "the
+  -- hour was ignored" produce the same log line, which is the failure shape
+  -- this project keeps paying for.
+  local HORA_FORCADA = os.getenv("VC_TRAILER_HORA")
+
+  local function porHora(nome)
+    nome = HORA_FORCADA or nome
+    if not (okDN and DayNight and DayNight.setting and nome) then return end
+    local i = HORA[nome]
+    if not i then log("hora desconhecida: %s", tostring(nome)); return end
+    pcall(function() DayNight.setting:setIndex(i, game) end)
+  end
+
+  local function restauraHora()
+    if horaOriginal and okDN and DayNight and DayNight.setting then
+      pcall(function() DayNight.setting:setIndex(horaOriginal, game) end)
+      log("hora restaurada para o indice %d", horaOriginal)
+    end
+  end
+
   -- The steps by NAME, so the script doesn't carry a magic number. The host's
   -- ladder is ANGLES_DEG = {0, 35, 15, 35, 50, 75, 75, 75}, indexed by
   -- level + 1, so level 0 is the flat game and 5 is the most upright.
@@ -84,31 +134,38 @@ return function(game)
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "alto",
       seg = 5, legenda = "Voxel Characters gives a body to whoever walks in it" },
     { mapa = "VIRIDIAN_CITY", x = 17, y = 17, dir = "down", degrau = "alto",
-      anda = true, seg = 6, legenda = "A whole city, and not one flat card" },
+      anda = true, seg = 6, hora = "dusk",
+      legenda = "A whole city, and not one flat card" },
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "up", degrau = "medio",
       seg = 5, opcoes = { breath = 0.035 },
       legenda = "They breathe, each at their own pace" },
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "up", degrau = "empe",
       seg = 4, opcoes = { blink = "on" }, legenda = "And they blink" },
     { mapa = "ROUTE_1", x = 10, y = 20, dir = "down", degrau = "alto",
-      anda = true, seg = 6, opcoes = { footfall = 0.7, lag = 0.6 },
+      anda = true, seg = 6, hora = "dawn", opcoes = { footfall = 0.7, lag = 0.6 },
       legenda = "The step carries weight, and the body takes a moment to follow" },
     { mapa = "VIRIDIAN_CITY", x = 17, y = 17, dir = "down", degrau = "empe",
-      seg = 4, opcoes = { front_shape = 0.17, top_dome = 0.15 },
+      seg = 4, hora = "dusk", opcoes = { front_shape = 0.17, top_dome = 0.15 },
       legenda = "Shading that suggests volume without inventing geometry" },
     -- FIRST PERSON IN A PAIR, and not in a single shot. Kim watched it and said
     -- he didn't see a difference, and he was right: a single shot alone shows the
     -- result without showing what changed, and in first person the difference is
     -- precisely the thickness, which only exists through comparison. Same place,
     -- same direction, same step, only the option changes between the two.
+    -- Both halves of the pair pin the SAME hour, said out loud rather than
+    -- left to the default. The pair's whole job is that only the option
+    -- differs between the two shots, and time of day is now something that
+    -- can differ.
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "right",
-      degrau = "primeira", seg = 4, opcoes = { first_person = "card" },
+      degrau = "primeira", seg = 4, hora = "day",
+      opcoes = { first_person = "card" },
       legenda = "In first person we used to fall back to the flat card" },
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "right",
-      degrau = "primeira", seg = 5, opcoes = { first_person = "solid" },
+      degrau = "primeira", seg = 5, hora = "day",
+      opcoes = { first_person = "solid" },
       legenda = "Now the body stays" },
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "alto",
-      seg = 4, legenda = "Voxel Characters" },
+      seg = 4, hora = "night", legenda = "Voxel Characters" },
   }
 
   -- Scales the whole script when you just want to check the plumbing.
@@ -184,6 +241,12 @@ return function(game)
     for k, v in pairs(p.opcoes or {}) do opcao(k, v) end
 
     pcall(Pipelines.setLevel, "voxel", DEGRAU[p.degrau] or 4)
+    -- AFTER the options, never before. DayNight.forceSync is called from every
+    -- path that can act under the FULL preset, including the manager's
+    -- options_changed hook, and this loop changes options on every shot. Set
+    -- the hour first and it would be reset to "sync" before a single frame was
+    -- recorded, which would look exactly like the setting not working.
+    porHora(p.hora or "day")
     local _, px, py = Pouso.escolher(game, p.mapa, p.x, p.y)
     U.teleport(game, p.mapa, px, py, p.dir)
     -- Settle before recording: the step does a tween, the mesh rebuilds and the
@@ -228,6 +291,7 @@ return function(game)
 
   legenda = nil
   love.draw = desenhoOriginal
+  restauraHora()
   log("cortes: %s", table.concat(cortes, " "))
   log("fim, %d quadros a %d fps, %.1f s", n, FPS, n / FPS)
 end
