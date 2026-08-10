@@ -15,7 +15,7 @@ REF="${1:-HEAD}"
 shift 2>/dev/null || true
 
 LUAJIT=$(command -v luajit || echo /usr/local/bin/luajit)
-[ -x "$LUAJIT" ] || { echo "luajit nao encontrado"; exit 2; }
+[ -x "$LUAJIT" ] || { echo "luajit not found"; exit 2; }
 
 if [ $# -eq 0 ]; then
   # The sweep's list comes from git itself, so a path in it that is not in the
@@ -23,7 +23,7 @@ if [ $# -eq 0 ]; then
   export VC_SOC_SWEEP=1
   set -- $(git -C "$MOD" diff --name-only "$REF" -- '*.lua')
 fi
-[ $# -gt 0 ] || { echo "nenhum .lua modificado contra $REF"; exit 0; }
+[ $# -gt 0 ] || { echo "no .lua modified against $REF"; exit 0; }
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
@@ -65,18 +65,18 @@ EXPLICITOS=1
 for f in "$@"; do
   rel=$(normaliza_caminho "$f")
   if [ ! -f "$MOD/$rel" ]; then
-    printf "%-40s %s\n" "$rel" "NAO EXISTE em $MOD"
+    printf "%-40s %s\n" "$rel" "DOES NOT EXIST in $MOD"
     FALHOU=1
     continue
   fi
   if ! git -C "$MOD" show "$REF:$rel" > "$TMP/orig.lua" 2>/dev/null; then
     if [ "$EXPLICITOS" = "1" ]; then
-      printf "%-40s %s\n" "$rel" "NAO ESTA EM $REF"
-      echo "    Pedido explicitamente, entao nao ha com o que comparar e isso"
-      echo "    e uma falha, nao um 'ok'. Confira o caminho e o ref."
+      printf "%-40s %s\n" "$rel" "NOT IN $REF"
+      echo "    Requested explicitly, so there is nothing to compare against, and"
+      echo "    that is a failure, not an 'ok'. Check the path and the ref."
       FALHOU=1
     else
-      printf "%-40s %s\n" "$rel" "novo no ref, nada a comparar"
+      printf "%-40s %s\n" "$rel" "new in the ref, nothing to compare"
     fi
     continue
   fi
@@ -84,7 +84,7 @@ for f in "$@"; do
   if [ $? -eq 0 ]; then
     printf "%-40s %s\n" "$rel" "ok"
   else
-    printf "%-40s %s\n" "$rel" "CODIGO MUDOU"
+    printf "%-40s %s\n" "$rel" "CODE CHANGED"
     echo "$SAIDA" | sed 's/^/    /'
     FALHOU=1
   fi
@@ -92,5 +92,5 @@ done
 
 echo
 [ $FALHOU -eq 0 ] && echo "SO COMENTARIOS OK" \
-                  || echo "NAO E SO COMENTARIO: a traducao mexeu em codigo"
+                  || echo "NOT COMMENTS ONLY: the translation touched code"
 exit $FALHOU

@@ -1,27 +1,28 @@
--- Acha CHECAGEM QUE NAO CHECA: chamada a um predicado cujo valor de retorno e
--- descartado.
+-- Finds a CHECK THAT DOES NOT CHECK: a call to a predicate whose return value
+-- is discarded.
 --
--- POR QUE ISTO EXISTE. A suite tinha seis linhas assim:
+-- WHY THIS EXISTS. The suite had six lines like this:
 --
---     close(pullEm(20, 6), 4, "a 20 unidades o pull cede para 4")
+--     close(pullEm(20, 6), 4, "at 20 units the pull gives way to 4")
 --
--- `close(a, b)` DEVOLVE um booleano; ele nao registra checagem nenhuma. A
--- mensagem era um terceiro argumento ignorado. As seis rodavam, passavam,
--- e nao contavam: o total pulou de 552 para 558 quando foram consertadas.
--- Nenhuma delas teria pego a mutacao que existiam para pegar.
+-- `close(a, b)` RETURNS a boolean; it does not register any check on its
+-- own. The message was an ignored third argument. The six ran, passed, and
+-- did not count: the total jumped from 552 to 558 when they were fixed.
+-- None of them would have caught the mutation they existed to catch.
 --
--- E o pior da familia: elas LEEM como assercao. Quem revisa passa o olho e ve
--- uma checagem com mensagem. So contando o total dava para notar.
+-- And the worst part of the family: they READ like an assertion. Whoever
+-- reviews glances over and sees a check with a message. Only counting the
+-- total made it noticeable.
 --
--- COMO DECIDE O QUE E PREDICADO, e por que nao por lista escrita na mao: uma
--- lista apodrece no proximo helper. A regra e estrutural. Um `local function`
--- que TEM `return` e NAO chama nenhuma funcao de assercao e um predicado: ele
--- devolve uma resposta em vez de registrar um veredito. Quem registra veredito
--- chama `check` ou `eq` la dentro, ou e `check`/`eq`.
+-- HOW IT DECIDES WHAT IS A PREDICATE, and why not by a hand-written list: a
+-- list rots at the next helper. The rule is structural. A `local function`
+-- that HAS a `return` and calls NO assertion function is a predicate: it
+-- returns an answer instead of registering a verdict. Whoever registers a
+-- verdict calls `check` or `eq` inside it, or is `check`/`eq` itself.
 --
--- Uso:
---   luajit mods/voxel_characters/tools/lint_asserts.lua [arquivo...]
--- Sem argumento, olha a suite. Sai diferente de zero quando acha alguma.
+-- Usage:
+--   luajit mods/voxel_characters/tools/lint_asserts.lua [file...]
+-- With no argument, looks at the suite. Exits non-zero when it finds one.
 
 local ASSERTIVAS = { check = true, eq = true, fail = true }
 
@@ -33,14 +34,15 @@ local function lerLinhas(caminho)
   return linhas
 end
 
--- QUE FUNCAO E PREDICADO. A primeira versao desta regra dizia "tem return e
--- nao chama assercao", e isso marcou cinquenta funcoes, incluindo fabricas
--- como makeVoxelHandle e loadWith, que legitimamente sao chamadas pelo efeito
--- colateral. Regra larga demais nao e um linter, e ruido que ninguem le.
+-- WHICH FUNCTION IS A PREDICATE. The first version of this rule said "has a
+-- return and calls no assertion", and that flagged fifty functions,
+-- including factories like makeVoxelHandle and loadWith, which are
+-- legitimately called for their side effect. A rule that is too broad is not
+-- a linter, it is noise nobody reads.
 --
--- A regra apertada: TODO `return` da funcao devolve booleano. Ou seja uma
--- comparacao, um literal true/false, ou nada. Uma funcao assim so existe para
--- ser perguntada; descartar a resposta dela e sempre erro.
+-- The tight rule: EVERY `return` of the function returns a boolean. That is,
+-- a comparison, a true/false literal, or nothing. A function like that only
+-- exists to be asked; discarding its answer is always a mistake.
 local function pareceBooleano(expr)
   expr = expr:match("^%s*(.-)%s*$")
   if expr == "" then return false end
@@ -79,15 +81,15 @@ local function achaPredicados(linhas)
   return predicados
 end
 
--- Uma chamada e DESCARTADA quando ela e a instrucao INTEIRA. Duas coisas
--- disfarcam disso e as duas apareceram na primeira corrida:
+-- A call is DISCARDED when it is the WHOLE statement. Two things disguise
+-- this and both showed up on the first run:
 --
---   continuacao de expressao. `close(v[6], 0.90) or close(...)` comeca a linha
---   com o predicado, mas a linha anterior termina em `and (`, entao o valor
---   esta sendo consumido. Marcar isso e ruido, e ruido treina a pessoa a
---   ignorar o linter.
+--   expression continuation. `close(v[6], 0.90) or close(...)` starts the
+--   line with the predicate, but the previous line ends in `and (`, so the
+--   value is being consumed. Flagging this is noise, and noise trains the
+--   person to ignore the linter.
 --
---   chamada usada como argumento. Ai a linha nao comeca com o nome.
+--   a call used as an argument. Then the line does not start with the name.
 local function continuacao(anterior)
   local a = (anterior or ""):gsub("%s+$", "")
   return a:match("[%(,]$") ~= nil
