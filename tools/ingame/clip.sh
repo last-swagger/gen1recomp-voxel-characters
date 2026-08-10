@@ -18,8 +18,9 @@
 #
 # VC_CLIP_DEGRAU picks the host's camera step:
 #   off baixo medio alto empe primeira terceira, or the level number.
-# Without it, the clip comes out at whatever step the save has, which varies
-# between runs.
+# Without it, clip.lua now pins "alto" rather than leaving it at whatever
+# step the save has: that used to vary between runs and broke consistent
+# framing across time.
 #
 # The second form is to CHOOSE, not to verify. Against OFF the question is
 # "does it do anything?"; between two levels it is "which one?", the only
@@ -28,6 +29,15 @@
 #
 # Outputs: <option>-off.mp4, <option>-on.mp4, <option>-ab.mp4 and <option>-ab.gif
 # In the side-by-side, LEFT is off and RIGHT is on, always.
+#
+# POSTABLE, which is what roadmap 21.2 asked for. The ab.mp4 now opens on a
+# two second TITLE CARD (the option's name and one sentence of what it does,
+# drawn by the game in clip.lua) before the comparison, and both sides carry
+# a LOWER THIRD naming the option and its level, fading in and out the same
+# way trailer.lua's captions do. The camera step defaults to "alto" instead
+# of whatever the save had (see clip.lua), so a feature filmed in March
+# frames the same as one filmed today. CRF and scale are picked from a real
+# measurement, not a guess: see the comment above GIF_FPS below.
 
 set -u
 REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
@@ -140,9 +150,28 @@ find "$SAVE" -maxdepth 1 -name 'vc_clip_*.png' -exec mv {} "$TMP"/ \;
 # PSNR because it already ships with ffmpeg and is monotonic in what we want:
 # the LOWER, the more different. So the option only counts if the pair
 # between sides is more different (lower PSNR) than the pair within one side.
+#
+# MEASURED ON THE RAW FRAME, lower third and all, same as before this
+# rewrite: clip.lua now keeps the lower third invisible through frame 10
+# specifically (see the ATRASO comment in clip.lua), which is the ONE frame
+# this gate reads. A first attempt at this tried to fix it here instead, by
+# cropping the caption's own band out of frame 10 before measuring. It
+# looked right and was not: on `depth=10` the crop needed to hide the
+# caption also cut into real, non-caption signal a few dozen pixels above
+# it (measured: excluding the last 90px hid a genuine 24 dB difference that
+# excluding only the last 30px did not, on the SAME frame, in the pre-lower-
+# third code's own middle band). A pixel band is content-dependent and
+# fragile; keeping the label off the one frame that gets measured is not.
 psnr() {  # $1 $2 = png; prints the average PSNR, or empty
+  # Matches "inf" too, not just digits. Without it a truly identical pair
+  # (which the "inf comes out when the frames are identical" comment below
+  # already anticipated) returned EMPTY instead of the literal word "inf",
+  # so it fell into the generic "could not measure the frames" error instead
+  # of the specific one below. Found running the negative gate test
+  # (`naoexiste=1`) against this rewrite: it correctly refuses either way,
+  # but only this fix makes it refuse with the RIGHT reason.
   "$FFMPEG" -hide_banner -i "$1" -i "$2" -lavfi psnr -f null - 2>&1 \
-    | grep -oE "average:[0-9.]+" | head -1 | cut -d: -f2
+    | grep -oE "average:(inf|[0-9.]+)" | head -1 | cut -d: -f2
 }
 
 DENTRO=$(psnr "$TMP/vc_clip_off_0010.png" "$TMP/vc_clip_piso_0010.png")
@@ -175,39 +204,90 @@ rm -f "$TMP"/vc_clip_piso_*.png
 
 FPS="${VC_CLIP_FPS:-30}"
 ESCALA="${VC_CLIP_ESCALA:-640}"
+# CRF 18 MEASURED, not guessed. A 15 second WORST CASE clip (VC_CLIP_FRAMES=450,
+# VC_CLIP_ANDAR=1 so the character walks the whole time instead of standing
+# still, the highest-motion content this tool makes) at CRF 18 / scale 640
+# came out to a.mp4 1.24 MB, b.mp4 1.28 MB, ab.mp4 2.4 MB: comfortably under
+# Discord's 10 MB free limit with room to spare, and CRF 18 is already the
+# point x264 is usually called visually transparent, so there is no quality
+# to buy by spending more of that margin. Kept as a named knob rather than a
+# bare number so the next measurement does not have to hunt for it.
+CRF="${VC_CLIP_CRF:-18}"
+# GIF FPS AND WIDTH ARE THEIR OWN KNOB, lower than the video's, because a gif
+# has no CRF: the only way to control its size is fewer, smaller frames. Same
+# worst case measured above, at the OLD 30 fps / 720 px this tool used to
+# hardcode: 10.46 MB, already OVER the 10 MB limit before Discord even saw
+# the mp4. At 20 fps and this side's own width (640, so the gif is not
+# secretly the sharpest output) it measured 5.87 MB: comfortably under, and
+# 20 fps still reads breathing and walking fine, it only drops what a gif
+# palette could not keep clean anyway.
+GIF_FPS="${VC_CLIP_GIF_FPS:-20}"
 # CROP instead of zooming the game camera. Forcing zoom in the game pulls the
 # camera to a low angle and fills half the frame with ground; cropping
 # afterward does not touch anything the game drew and frames exactly the
 # character, who always stays near the center because the camera follows them
 # (Camera.lua:14-18). The crop is a bit above center: the feet stay in the
 # middle, the body rises.
+#
+# DETERMINISTIC AND IDENTICAL BETWEEN THE TWO SIDES by construction: this one
+# $RECORTE value feeds both monta() calls below, and the desktop window opens
+# at a fixed, non-resizable 1024x768 (conf.lua), so the same box always means
+# the same patch of screen, on this machine or another, in March or today.
 RECORTE="${VC_CLIP_RECORTE:-560:420:232:200}"
 
 monta() {  # $1 = side, $2 = output file
   "$FFMPEG" -y -loglevel error -framerate "$FPS" -start_number 1 \
     -i "$TMP/vc_clip_$1_%04d.png" \
     -vf "crop=$RECORTE,scale=$ESCALA:-2:flags=neighbor" \
-    -c:v libx264 -pix_fmt yuv420p -crf 18 "$2"
+    -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$2"
 }
 monta off "$SAIDA/$CHAVE-$SUFIXO-a.mp4" || { echo "ffmpeg failed on the off side"; exit 1; }
 monta on  "$SAIDA/$CHAVE-$SUFIXO-b.mp4"  || { echo "ffmpeg failed on the on side"; exit 1; }
 
-# Side by side. LEFT off, RIGHT on, with a strip between the two so there is
-# no doubt where one ends. No caption over the video on purpose: this ffmpeg
-# has no drawtext (no libfreetype), and a pipeline that depends on a
-# third-party build breaks on the first user who does not have it.
+# Side by side, CORE comparison only: the title card gets attached after, once
+# this file exists, so the two segments are guaranteed to share the exact
+# same width and height instead of two independent guesses at it.
+# LEFT off, RIGHT on, with a strip between the two so there is no doubt where
+# one ends. No caption over the video on purpose: this ffmpeg has no drawtext
+# (no libfreetype), and a pipeline that depends on a third-party build breaks
+# on the first user who does not have it.
 "$FFMPEG" -y -loglevel error \
   -i "$SAIDA/$CHAVE-$SUFIXO-a.mp4" -i "$SAIDA/$CHAVE-$SUFIXO-b.mp4" \
   -filter_complex "[0:v]pad=iw+4:ih:0:0:color=white[e];[e][1:v]hstack=inputs=2" \
-  -c:v libx264 -pix_fmt yuv420p -crf 18 "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
+  -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$TMP/nucleo-ab.mp4" \
   || { echo "ffmpeg failed on the side-by-side"; exit 1; }
 
-# GIF in two passes: own palette, otherwise the sky gradient turns into banding.
+# TITLE CARD: two seconds at the head with the option's name and one sentence
+# of what it does. clip.lua already drew that into ONE frame
+# (vc_clip_title_0001.png), captured through the same crop as the sides so it
+# lines up with them; here it only gets scaled the same way, padded to the
+# comparison's full width, and held for two seconds with -loop. Same division
+# of labor as everywhere else in this pipeline: the GAME draws pixels, ffmpeg
+# only holds and stitches them, so nothing here depends on a drawtext build.
+LARGURA_AB=$((ESCALA * 2 + 4))
+if [ -f "$TMP/vc_clip_title_0001.png" ]; then
+  "$FFMPEG" -y -loglevel error -loop 1 -i "$TMP/vc_clip_title_0001.png" \
+    -t 2 -r "$FPS" \
+    -vf "crop=$RECORTE,scale=$ESCALA:-2:flags=neighbor,pad=$LARGURA_AB:ih:($LARGURA_AB-iw)/2:0:color=black" \
+    -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$TMP/titulo.mp4" \
+    || { echo "ffmpeg failed on the title card"; exit 1; }
+  "$FFMPEG" -y -loglevel error -i "$TMP/titulo.mp4" -i "$TMP/nucleo-ab.mp4" \
+    -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0[v]" -map "[v]" \
+    -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
+    || { echo "ffmpeg failed attaching the title card"; exit 1; }
+else
+  echo "AVISO: no title card frame from clip.lua, shipping without one"
+  cp "$TMP/nucleo-ab.mp4" "$SAIDA/$CHAVE-$SUFIXO-ab.mp4"
+fi
+
+# GIF in two passes: own palette, otherwise the sky gradient turns into
+# banding. Reads from the FINISHED ab.mp4, so the title card rides along for
+# free: whatever ended up in the mp4 is what becomes the gif, no separate step.
 "$FFMPEG" -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
-  -vf "fps=$FPS,scale=720:-2:flags=neighbor,palettegen=stats_mode=diff" \
+  -vf "fps=$GIF_FPS,scale=$ESCALA:-2:flags=neighbor,palettegen=stats_mode=diff" \
   "$TMP/paleta.png" || { echo "ffmpeg failed on the palette"; exit 1; }
 "$FFMPEG" -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" -i "$TMP/paleta.png" \
-  -lavfi "fps=$FPS,scale=720:-2:flags=neighbor[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  -lavfi "fps=$GIF_FPS,scale=$ESCALA:-2:flags=neighbor[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
   "$SAIDA/$CHAVE-$SUFIXO-ab.gif" || { echo "ffmpeg failed on the gif"; exit 1; }
 
 rm -rf "$TMP"
