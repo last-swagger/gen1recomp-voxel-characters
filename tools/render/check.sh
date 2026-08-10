@@ -213,6 +213,26 @@ say "a escolha vira linha de arquivo" \
     "$([ "${LINHAS:-0}" -ge 1 ] && echo "ok, $LINHAS linha" || echo FALHOU)"
 [ "${LINHAS:-0}" -ge 1 ] || FAIL=1
 
+# 8. O LOOP DO JUIZ fecha: modelo sai em arquivo, pares saem do modelo, e o
+#    laboratorio consome os pares. Cada peca ja tem prova propria; o que este
+#    check cobre e a JUNCAO, que e onde formato de arquivo costuma divergir sem
+#    ninguem notar ate a hora de usar.
+rm -f "$HOME/Library/Application Support/LOVE/render/chk_pares.txt"
+$LOVE $H features=/dev/stdin > /tmp/vc_chk_feat.tsv 2>/dev/null <<'ENTRADA'
+red	0	0	depth:3,shape:slab,side_color:body
+red	0	0	depth:3,shape:slab,side_color:outline
+red	0	0	depth:10,shape:slab,side_color:body
+ENTRADA
+luajit mods/voxel_characters/tools/juiz/ajusta.lua --pares /tmp/vc_chk_feat.tsv   "" 3 > /tmp/vc_chk_pares.txt 2>/dev/null
+NPARES=$(wc -l < /tmp/vc_chk_pares.txt | tr -d " ")
+say "o juiz propoe par a partir de features"     "$([ "${NPARES:-0}" -ge 1 ] && echo "ok, $NPARES" || echo FALHOU)"
+[ "${NPARES:-0}" -ge 1 ] || FAIL=1
+
+LAB2=$($LOVE $H lab=1 labab=1 labpares=/tmp/vc_chk_pares.txt labpick=A        labfile=chk_pares.txt labshot=chk_lab_pares.png 2>&1)
+R=$(echo "$LAB2" | grep -c "pares pedidos pelo juiz")
+say "o laboratorio consome os pares do juiz"     "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
+[ "$R" = "1" ] || FAIL=1
+
 echo
 [ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: nao confie em medicao ate consertar"
 exit $FAIL

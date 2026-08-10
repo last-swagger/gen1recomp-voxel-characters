@@ -363,12 +363,140 @@ local function comandoAutoteste()
   os.exit(1)
 end
 
+------------------------------------------------------------------ o gerador
+
+-- O MODELO SAI EM ARQUIVO, e nao so na tela. Sem isso o ajuste morre a cada
+-- execucao e nada consegue PONTUAR uma variante nova.
+local function comandoPesos(caminhoEscolhas, caminhoFeatures, saida)
+  local escolhas = lerEscolhas(caminhoEscolhas)
+  local nomes, mapa = lerFeatures(caminhoFeatures)
+  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
+  local X, y = {}, {}
+  for _, e in ipairs(escolhas) do
+    local pre = e.folha .. "\t" .. e.frame .. "\t" .. e.clock .. "\t"
+    local fa, fb = mapa[pre .. e.a], mapa[pre .. e.b]
+    if fa and fb then
+      local dif, zero = {}, true
+      for j = 1, #fa do
+        dif[j] = fa[j] - fb[j]
+        if math.abs(dif[j]) > 1e-9 then zero = false end
+      end
+      if not zero then
+        X[#X + 1] = dif
+        y[#y + 1] = (e.escolha == "A") and 1 or 0
+      end
+    end
+  end
+  if #X < 5 then print("poucas escolhas para exportar modelo"); os.exit(1) end
+  local r = M.ajusta(X, y, nomes)
+  local f = assert(io.open(saida, "w"))
+  f:write("# modelo do juiz, gerado por ajusta.lua --pesos\n")
+  f:write(string.format("# %d escolhas, acuracia fora da amostra %.3f, "
+    .. "melhor coluna %.3f\n", #X, r.acTeste, r.base.teste))
+  for j = 1, #r.w do
+    f:write(string.format("%s\t%.8f\t%.8f\t%.8f\n",
+      nomes[j], r.w[j], r.media[j], r.desvio[j]))
+  end
+  f:close()
+  print(string.format("modelo em %s (%d escolhas, fora da amostra %.1f%%)",
+    saida, #X, r.acTeste * 100))
+end
+
+local function lerModelo(caminho)
+  local f = io.open(caminho, "r")
+  if not f then return nil end
+  local nomes, w, media, desvio = {}, {}, {}, {}
+  for linha in f:lines() do
+    if linha:sub(1, 1) ~= "#" then
+      local n, a, b, c = linha:match("^(%S+)\t(%S+)\t(%S+)\t(%S+)$")
+      if n then
+        nomes[#nomes + 1] = n
+        w[#w + 1] = tonumber(a) or 0
+        media[#media + 1] = tonumber(b) or 0
+        desvio[#desvio + 1] = tonumber(c) or 1
+      end
+    end
+  end
+  f:close()
+  return (#nomes > 0) and { nomes = nomes, w = w, media = media,
+                            desvio = desvio } or nil
+end
+
+-- OS PARES QUE MAIS ENSINAM, e nao os que o sorteio entregar.
+--
+-- Trinta escolhas do Kim sao o insumo caro deste projeto. Sorteadas, boa parte
+-- cai em pares que o modelo ja acerta de olhos fechados e que portanto nao
+-- movem nenhum peso. Pedir justamente os pares em que o modelo esta EM CIMA DO
+-- MURO faz cada escolha valer varias, e e o unico jeito de trinta escolhas
+-- virarem um modelo em vez de ruido.
+--
+-- Sem modelo ainda (a primeira rodada), a ordem e por MAIOR distancia de
+-- feature: pares obviamente diferentes primeiro, que e o que se quer para
+-- comecar a separar as colunas.
+local function comandoPares(caminhoFeatures, caminhoModelo, quantos)
+  local nomes, mapa = lerFeatures(caminhoFeatures)
+  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
+  local modelo = caminhoModelo and lerModelo(caminhoModelo) or nil
+
+  -- Agrupa por (folha, quadro, relogio): so faz sentido comparar variantes da
+  -- mesma folha na mesma condicao.
+  local grupos = {}
+  for chave, v in pairs(mapa) do
+    local folha, qf, qt, estado = chave:match("^(.-)\t(.-)\t(.-)\t(.*)$")
+    local g = folha .. "\t" .. qf .. "\t" .. qt
+    grupos[g] = grupos[g] or {}
+    grupos[g][#grupos[g] + 1] = { estado = estado, v = v }
+  end
+
+  local cand = {}
+  for g, lista in pairs(grupos) do
+    for i = 1, #lista do
+      for j = i + 1, #lista do
+        local dif, zero = {}, true
+        for k = 1, #lista[i].v do
+          dif[k] = lista[i].v[k] - lista[j].v[k]
+          if math.abs(dif[k]) > 1e-9 then zero = false end
+        end
+        if not zero then
+          local score
+          if modelo then
+            local z = 0
+            for k = 1, math.min(#dif, #modelo.w) do
+              z = z + modelo.w[k] * (dif[k] / (modelo.desvio[k] ~= 0
+                and modelo.desvio[k] or 1))
+            end
+            score = math.abs(z)          -- menor = mais em cima do muro
+          else
+            local d = 0
+            for k = 1, #dif do d = d + dif[k] * dif[k] end
+            score = -math.sqrt(d)        -- maior distancia primeiro
+          end
+          cand[#cand + 1] = { g = g, a = lista[i].estado, b = lista[j].estado,
+                              score = score }
+        end
+      end
+    end
+  end
+  table.sort(cand, function(x, y) return x.score < y.score end)
+  local n = math.min(tonumber(quantos) or 30, #cand)
+  for i = 1, n do
+    local c = cand[i]
+    print(c.g .. "\t" .. c.a .. "\t" .. c.b)
+  end
+  io.stderr:write(string.format("%d pares de %d candidatos, criterio: %s\n",
+    n, #cand, modelo and "incerteza do modelo" or "maior distancia (sem modelo)"))
+end
+
 local cmd = arg and arg[1]
 if cmd == "--estados" then comandoEstados(assert(arg[2], "falta o escolhas.txt"))
 elseif cmd == "--ajusta" then
   comandoAjusta(assert(arg[2], "falta o escolhas.txt"),
                 assert(arg[3], "falta o features.tsv"))
 elseif cmd == "--autoteste" then comandoAutoteste()
+elseif cmd == "--pesos" then
+  comandoPesos(assert(arg[2]), assert(arg[3]), arg[4] or "modelo.txt")
+elseif cmd == "--pares" then
+  comandoPares(assert(arg[2]), arg[3], arg[4])
 else
   print("uso: ajusta.lua --estados <escolhas.txt>")
   print("     ajusta.lua --ajusta <escolhas.txt> <features.tsv>")

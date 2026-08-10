@@ -111,6 +111,9 @@ local opts = {
   -- arquivo que vai treinar o juiz: seria envenenar o dado com a propria
   -- ferramenta de teste.
   labfile = "escolhas.txt",
+  -- `labpares=<arquivo>` faz o laboratorio oferecer os pares que o juiz pediu,
+  -- em vez de sortear. Ver labParDoArquivo.
+  labpares = "",
   labpick = "",
   -- `features=<arquivo>` le uma linha por variante (folha TAB chave:valor,...)
   -- e imprime uma linha TSV de features por variante. E a metade cara do
@@ -2238,7 +2241,79 @@ end
 -- Sorteia ate cair um par que de fato mostra diferenca. Tenta um numero fixo
 -- de vezes e desiste em voz alta: laco sem teto num sorteio que pode nunca
 -- acertar e como uma ferramenta trava sem ninguem entender por que.
+-- OS PARES QUE O JUIZ PEDIU, quando existem.
+--
+-- Sortear e o certo na primeira rodada, quando nao ha modelo. Depois disso e
+-- desperdicio: boa parte dos sorteios cai em par que o modelo ja acerta de
+-- olhos fechados, e uma escolha dessas nao move peso nenhum. O tempo do Kim e
+-- o insumo caro aqui, entao a partir do momento em que existe modelo, quem
+-- escolhe o que perguntar e o proprio juiz, pelos pares em que ele esta em
+-- cima do muro (tools/juiz/ajusta.lua --pares).
+--
+-- Formato, uma linha por par: folha TAB quadro TAB relogio TAB estadoA TAB estadoB
+local labFilaPares = nil
+local function labParDoArquivo()
+  if opts.labpares == "" then return nil end
+  if not labFilaPares then
+    labFilaPares = {}
+    local f = io.open(opts.labpares, "r")
+    if f then
+      for linha in f:lines() do
+        local folha, qf, qt, ea, eb =
+          linha:match("^(%S+)\t(%S+)\t(%S+)\t(%S+)\t(%S+)$")
+        if folha then
+          labFilaPares[#labFilaPares + 1] =
+            { folha = folha, qf = qf, qt = qt, a = ea, b = eb }
+        end
+      end
+      f:close()
+    end
+    print(string.format("laboratorio: %d pares pedidos pelo juiz em %s",
+      #labFilaPares, opts.labpares))
+  end
+  local item = table.remove(labFilaPares, 1)
+  if not item then return nil end
+
+  local function paraValores(txt)
+    local v = {}
+    for oo in ipairs(LAB_SCHEMA or {}) do local _ = oo end
+    for par in txt:gmatch("[^,]+") do
+      local k, val = par:match("^%s*([%w_]+)%s*:%s*(.-)%s*$")
+      if k then v[k] = tonumber(val) or val end
+    end
+    return v
+  end
+  local va, vb = paraValores(item.a), paraValores(item.b)
+
+  -- Qual opcao difere: e ela que da nome aos dois lados na tela.
+  local chave
+  for _, o in ipairs(LAB_SCHEMA or {}) do
+    if tostring(va[o.key]) ~= tostring(vb[o.key]) then chave = o; break end
+  end
+  if not chave then return nil end
+
+  local function rotulo(o, valor)
+    for _, nivel in ipairs(o.choices or {}) do
+      if tostring(nivel[2]) == tostring(valor) then return nivel[1] end
+    end
+    return tostring(valor)
+  end
+
+  local cond, sempre = labCondicao(item.folha, chave, va, vb)
+  if not cond then return labParDoArquivo() end
+  return {
+    opcao = chave, folha = item.folha,
+    rotuloA = rotulo(chave, va[chave.key]),
+    rotuloB = rotulo(chave, vb[chave.key]),
+    valoresA = va, valoresB = vb,
+    congela = (not sempre) and cond or nil,
+    doJuiz = true,
+  }
+end
+
 local function labSorteiaParValido()
+  local pedido = labParDoArquivo()
+  if pedido then return pedido end
   for _ = 1, 40 do
     local p = labSorteiaPar()
     if p then return p end
@@ -2420,8 +2495,10 @@ local function labDrawAB()
   local p = lab.par
   if p then
     labTexto(AX, 72, string.format(
-      "%s, %s, rung %d, e o resto esta igual dos dois lados",
-      p.folha, FACINGS[lab.facing].nome, lab.rung), { 0.5, 0.54, 0.60, 1 })
+      "%s, %s, rung %d, e o resto esta igual dos dois lados%s",
+      p.folha, FACINGS[lab.facing].nome, lab.rung,
+      p.doJuiz and "   (par pedido pelo juiz)" or ""),
+      { 0.5, 0.54, 0.60, 1 })
     labTexto(AX, GY - 24, "A", { 1, 1, 1, 1 })
     labTexto(BX, GY - 24, "B", { 1, 1, 1, 1 })
     labTexto(AX + 22, GY - 24, p.opcao.label .. "  " .. p.rotuloA,
