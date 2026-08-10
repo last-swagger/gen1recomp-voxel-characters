@@ -2730,19 +2730,70 @@ end
 --
 -- Escrito aberto, sem laco sobre indices, porque este e o caminho mais quente do
 -- mod: roda uma vez por personagem por desenho, duas vezes por quadro cada.
-local function lifeApply(m, s, kx, kz, sx)
+local function lifeApply(m, s, kx, kz, sx, corr)
   local out = {
     m[1], m[2], m[3], m[4],
     m[5], m[6], m[7], m[8],
     m[9], m[10], m[11], m[12],
     m[13], m[14], m[15], m[16],
   }
-  -- Coluna 2 e a imagem do eixo Y local: escalar a coluna e escalar o eixo, e
-  -- somar multiplos das colunas 1 e 3 nela e o cisalhamento.
-  out[2] = m[2] * s + m[1] * kx + m[3] * kz
-  out[6] = m[6] * s + m[5] * kx + m[7] * kz
-  out[10] = m[10] * s + m[9] * kx + m[11] * kz
-  out[14] = m[14] * s + m[13] * kx + m[15] * kz
+  -- A TRANSFORMACAO E CONJUGADA PELA CORRECAO DE INCLINACAO, e sem isso ela
+  -- opera no eixo errado. Isto era um defeito em producao.
+  --
+  -- O builder devolve o vertice ja contra-rotacionado: `p()` aplica Rx(corr)
+  -- com corr = pi/2 menos o angulo da camera, e o host desfaz com
+  -- Rx(angulo - pi/2). Liquido, o personagem fica em pe. Mas pos-multiplicar
+  -- aqui poe a nossa transformacao no espaco da MALHA, que esta girado pelo
+  -- pitch, e nao no espaco do personagem. O mundo entao ve Rx(t)*L*Rx(-t) em
+  -- vez de L.
+  --
+  -- Medido: com BREATH SUBTLE a cabeca subia 16*eps*cos^2(corr) em vez de
+  -- 16*eps. No degrau padrao (35) isso e 33% do prometido; no degrau 15 sobra
+  -- 7%. E aparecia deriva em Z de 16*eps*sin*cos, ate 0.079 px, empurrando o
+  -- corpo para tras sem ninguem pedir. O MOTION LAG era o pior: o termo kz
+  -- virava 82% vertical no degrau padrao, entao "inercia" era em boa parte o
+  -- corpo subindo e descendo.
+  --
+  -- Nenhum gate pegou porque todos os testes de vida afirmavam sobre a MATRIZ
+  -- e nenhum compunha a matriz com a rotacao assada no vertice. O teste que
+  -- faltava existe agora e mede deslocamento NO MUNDO nos quatro degraus.
+  --
+  -- Conserto: pos-multiplicar L' = Rx(corr) * L * Rx(-corr), que faz o mundo
+  -- ver exatamente L. Com corr = 0 isto colapsa em L e o comportamento antigo
+  -- volta identico, que e o certo quando nao ha inclinacao.
+  --
+  -- L, em coordenadas do personagem (x cisalha por y, y escala, z cisalha por
+  -- y), e a conjugacao expandida termo a termo:
+  --
+  --   L  = [ 1 kx 0 ; 0 s 0 ; 0 kz 1 ]
+  --   L' = [ 1        kx*c                 kx*n              ]
+  --        [ 0   s*c*c + n*n - kz*n*c   s*n*c - kz*n*n - n*c ]
+  --        [ 0   s*n*c + kz*c*c - c*n   s*n*n + kz*n*c + c*c ]
+  local c, n = 1, 0
+  if corr and corr ~= 0 then c, n = math.cos(corr), math.sin(corr) end
+
+  local a12, a13 = kx * c, kx * n
+  local a22 = s * c * c + n * n - kz * n * c
+  local a23 = s * n * c - kz * n * n - n * c
+  local a32 = s * n * c + kz * c * c - c * n
+  local a33 = s * n * n + kz * n * c + c * c
+
+  -- out[coluna j] = m * (coluna j de L')
+  local m1, m2, m3 = m[1], m[2], m[3]
+  local m5, m6, m7 = m[5], m[6], m[7]
+  local m9, m10, m11 = m[9], m[10], m[11]
+  local m13, m14, m15 = m[13], m[14], m[15]
+
+  out[2] = m1 * a12 + m2 * a22 + m3 * a32
+  out[6] = m5 * a12 + m6 * a22 + m7 * a32
+  out[10] = m9 * a12 + m10 * a22 + m11 * a32
+  out[14] = m13 * a12 + m14 * a22 + m15 * a32
+
+  out[3] = m1 * a13 + m2 * a23 + m3 * a33
+  out[7] = m5 * a13 + m6 * a23 + m7 * a33
+  out[11] = m9 * a13 + m10 * a23 + m11 * a33
+  out[15] = m13 * a13 + m14 * a23 + m15 * a33
+
   if sx and sx ~= 1 then
     local recuo = 8 - 8 * sx
     out[1] = m[1] * sx
@@ -2939,12 +2990,15 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   -- personagem virasse para o outro lado, e o pulo seria visivel.
   if espelhado then kx = -kx end
 
-  local novo = lifeApply(model, s, kx, kz, sx)
+  -- A MESMA correcao que o builder assou no vertice, quantizada igual: se as
+  -- duas divergirem, a conjugacao nao cancela e sobra um residuo.
+  local corr = quantizeCorrection(leanCorrection())
+  local novo = lifeApply(model, s, kx, kz, sx, corr)
   -- A sombra recebe a MESMA escala. Sem isso o corpo respira e a sombra fica
   -- imovel, e o personagem descola da propria sombra. O cisalhamento em Z fica
   -- de fora: a matriz de sombra ja achata z (casterMatrix termina em S(1,1,0))
   -- e reintroduzir profundidade ali nao teria significado.
-  local novoSol = sunModel and lifeApply(sunModel, s, kx, 0, sx) or nil
+  local novoSol = sunModel and lifeApply(sunModel, s, kx, 0, sx, corr) or nil
   return originalDraw(mesh, texture, novo, pull, novoSol)
 end
 

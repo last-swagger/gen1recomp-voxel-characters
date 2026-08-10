@@ -6189,4 +6189,112 @@ do
   end
 end
 
+-- ==========================================================================
+-- O EIXO: quanto o corpo anda NO MUNDO, e nao quanto a matriz muda
+-- ==========================================================================
+-- ESTE BLOCO EXISTE PORQUE ELE FALTAVA, e a ausencia dele escondeu um defeito
+-- em producao. Todo teste do canal de vida ate agora afirma sobre a MATRIZ:
+-- que a coluna 2 escalou, que o desvio bate com o nivel do menu. Nenhum
+-- compunha a matriz com a rotacao que o BUILDER ja assou no vertice.
+--
+-- O builder devolve `p(x,y,z) = Rx(corr)*(x,y,z)` com `corr = pi/2 - angulo da
+-- camera`, e o host desfaz com `Rx(angulo - pi/2)`. Liquido: em pe. Mas o
+-- canal de vida POS-multiplica, entao a transformacao dele acontece no espaco
+-- da MALHA, que esta girado pelo pitch, e nao no espaco do personagem.
+--
+-- O efeito e uma conjugacao: mundo = Rx(t) * S * Rx(-t) * ponto. Para BREATH,
+-- que escala y, a subida da cabeca no mundo sai `16*eps*cos^2(corr)` em vez de
+-- `16*eps`, e aparece uma deriva em z de `-16*eps*sin(corr)*cos(corr)` que
+-- ninguem pediu.
+--
+-- Medido no degrau padrao (35): 33% do prometido, mais 0.075 px de deriva.
+local function rotX(t)
+  local c, s = math.cos(t), math.sin(t)
+  return { 1, 0, 0, 0,
+           0, c, -s, 0,
+           0, s,  c, 0,
+           0, 0,  0, 1 }
+end
+
+local function aplicaMatriz(m, x, y, z)
+  return m[1]*x + m[2]*y + m[3]*z + m[4],
+         m[5]*x + m[6]*y + m[7]*z + m[8],
+         m[9]*x + m[10]*y + m[11]*z + m[12]
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+
+  -- Deslocamento da cabeca NO MUNDO, com BREATH ligado, para um degrau de
+  -- camera. Reproduz a cadeia inteira: o vertice sai do builder ja
+  -- contra-rotacionado, a matriz do host desfaz, e o canal de vida entrou no
+  -- meio pos-multiplicando.
+  -- ENVELOPE, e nao um instante. `s = 1 + amp*sin(fase)`, entao medir num
+  -- momento qualquer devolve qualquer coisa entre -amp e +amp. Varre um
+  -- periodo inteiro e fica com o extremo, que e o que a amplitude controla.
+  -- Esta e a mesma disciplina que a sonda in-game ja usa, e a primeira versao
+  -- deste teste nao usava: ela reprovou o conserto certo.
+  local function subidaDaCabeca(rungDeg, amp)
+    local angulo = math.rad(rungDeg)
+    local corr = math.pi / 2 - angulo
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      angulo, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, soEsta({ breath = amp })))
+    local mesh = modules.SpriteBillboards.mesh(
+      { image = "sheet.png", frames = 1 }, 0)
+    local host = rotX(angulo - math.pi / 2)
+
+    -- A cabeca em coordenadas do PERSONAGEM, levada ao espaco da malha pelo
+    -- mesmo Rx(corr) que o builder aplica.
+    local cx, cy, cz = 0, 16, 0
+    local mx = cx
+    local my = cy * math.cos(corr) - cz * math.sin(corr)
+    local mz = cy * math.sin(corr) + cz * math.cos(corr)
+    local _, y0, z0 = aplicaMatriz(host, mx, my, mz)
+
+    local topoY, topoZ = 0, 0
+    for i = 0, 40 do
+      withLoveTime(i * 0.15, function()
+        modules.Voxel3D.drawCalls = {}
+        modules.Voxel3D.draw(mesh, "tex", host, 6, nil)
+        local saida = modules.Voxel3D.drawCalls[1].model
+        local _, y1, z1 = aplicaMatriz(saida, mx, my, mz)
+        if math.abs(y1 - y0) > math.abs(topoY) then topoY = y1 - y0 end
+        if math.abs(z1 - z0) > math.abs(topoZ) then topoZ = z1 - z0 end
+      end)
+    end
+    return math.abs(topoY), math.abs(topoZ)
+  end
+
+  local AMP = 0.010          -- BREATH SUBTLE, o padrao entregue
+  local PROMETIDO = 16 * AMP -- o que o comentario de main.lua afirma: 0.16 px
+
+  -- O CONTRATO: a subida da cabeca tem que ser a mesma nos quatro degraus, e
+  -- tem que ser a anunciada. Um efeito cuja intensidade depende de onde a
+  -- camera esta nao e um efeito, e um acidente da montagem.
+  local pior, piorRung = 0, nil
+  for _, rung in ipairs({ 15, 35, 50, 75 }) do
+    local dy = subidaDaCabeca(rung, AMP)
+    local erro = math.abs(dy - PROMETIDO) / PROMETIDO
+    if erro > pior then pior, piorRung = erro, rung end
+  end
+  check(pior < 0.10, string.format(
+    "BREATH sobe a cabeca o mesmo em todos os degraus de camera "
+    .. "(pior erro %.0f%% no rung %s, teto 10%%)", pior * 100,
+    tostring(piorRung)))
+
+  -- E o eixo tem que ser LIMPO: escalar em y nao pode empurrar o corpo para
+  -- frente nem para tras. Deriva em z e o sintoma de estar operando no espaco
+  -- errado, e ela e o que impede movimento secundario direcional de existir.
+  local piorZ, piorZRung = 0, nil
+  for _, rung in ipairs({ 15, 35, 50, 75 }) do
+    local _, dz = subidaDaCabeca(rung, AMP)
+    if math.abs(dz) > piorZ then piorZ, piorZRung = math.abs(dz), rung end
+  end
+  check(piorZ < PROMETIDO * 0.10, string.format(
+    "BREATH nao empurra o corpo em z (pior deriva %.4f px no rung %s, "
+    .. "teto %.4f)", piorZ, tostring(piorZRung), PROMETIDO * 0.10))
+end
+
 T.finish("voxel_chars_test")
