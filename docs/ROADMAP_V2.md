@@ -157,7 +157,7 @@ art at all, so seams over them emphasise exactly the invented surface.
 If the wireframe ever starts appearing on characters, somebody changed something
 and we find out the same day. Cost of the whole item: one measurement.
 
-### 6. First-person depth: measured, and it asks a harder question than it answered
+### 6. ANSWERED: first-person depth, and what SOLID buys at full blend
 
 The plan was to measure art share per depth at the first-person camera and pick
 the value that holds the bar the overworld table uses (73.4%). Both halves of
@@ -239,7 +239,7 @@ lock file plus a clear refusal is the whole fix.
 
 ## Tier 2 — new capability
 
-### 8. Judge v2: pixel features and the generator loop
+### 8. DONE: pixel features shipped, and the generator loop is item 20
 
 **State:** the fitter reads mesh features only. The metric this project has
 always judged by, the pixel share of the frame that is the artist's work, needs
@@ -253,7 +253,7 @@ generation informed by the last.
 **Cost:** medium. The provenance render exists; feeding one variant per row
 through it is the work.
 
-### 9. Per-part secondary motion
+### 9. DONE: PART LAG, the head arrives late
 
 **State:** blocked. Body-wide inertia already ships. Real hair and bag lag needs
 the mesh split into regions drawn with their own matrices.
@@ -303,7 +303,7 @@ difference between a breathing statue and something that reads as alive.
 emission order reworked so a region is addressable at all, which is a change to
 both builders and not a draw-range trick.
 
-### 10. Attention and anticipation
+### 10. DONE: ATTENTION, a lean and never a turn
 
 **State:** designed, not started, with one hard rule already settled: never
 rotate in Y. Side faces carry 0.0% art and the only reason nobody sees that
@@ -314,7 +314,7 @@ is the cheapest possible step from "the world has depth" to "the world has
 people in it", and it needs hysteresis so it reads as attention rather than as
 twitching.
 
-### 11. Laboratory: regions and host settings
+### 11. DONE: the laboratory shows regions and host settings
 
 **State:** the lab shows one character, every mesh option, all 67 sheets, and
 records A/B picks.
@@ -397,7 +397,7 @@ rather than read from somewhere.
 
 ---
 
-## 0. The risk that outranks everything above
+## 0. DONE: headroom 41 to 77
 
 **`main.lua` uses 159 of LuaJIT's 200 chunk locals. Headroom: 41.**
 
@@ -480,7 +480,7 @@ result is discarded. A small linter over the test file would have found all six
 instantly. **What changes:** the failure mode that produced the most convincing
 wrong result in this project becomes impossible to reintroduce.
 
-### 16. Tests that ask "how much", not "did it change"
+### 16. DONE: the ceiling reads the schema
 
 MOTION LAG sheared the body 45 degrees and passed 465 offline checks and eight
 in-game checks, because every one of them asked whether something changed and
@@ -610,7 +610,7 @@ ruler, not just the tests.
 
 ---
 
-## 21. Hooks and the release pipeline
+## 21. DONE except publishing, which needs the token
 
 Kim's requirement: every release carries images and video, the clips are
 professional, and the tooling supplies the accessories rather than the person.
@@ -637,7 +637,7 @@ carries media.
 4. **Automatic assembly**: given a list of features in a release, produce the
    montage without a person choosing shots.
 
-## 22. What the AI agents working here need
+## 22. DONE: docs/TRAPS.md is that page
 
 Not a feature, but it decides how fast everything above goes.
 
