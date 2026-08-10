@@ -29,6 +29,32 @@ plain ssh: the CLI keeps credentials in the login Keychain and an ssh session
 cannot unlock it. Symptom is "OAuth session expired", which is not an expired
 token.
 
+## The judge works now (2026-08-10, late)
+
+Kim made 106 choices. The loop that followed is the clearest example in this
+repository of why using a tool beats reviewing it:
+
+| step | model | best column | margin | spread |
+|---|---|---|---|---|
+| as built | 73.7% | 63.2% | +10.5 | not measured |
+| composition by AREA not quad count | 73.6% | 70.6% | +3.0 | 6.4 |
+| plus four tonal features | **78.7%** | 69.6% | **+9.1** | **4.0** |
+
+The first row was the model leaning on an artefact: composition features were
+fractions of QUAD COUNT, so FRONT SHAPE inflated them by splitting runs without
+moving a vertex. Fixing it did not make the model worse, it made the baseline
+honest.
+
+The middle row was measured with cross validation replacing a 19-sample
+holdout whose learning curve swung 26 points on its own. That change is what
+made the third row provable rather than hopeful.
+
+**What it says, over 45 sheets, comparing best against worst inside each
+sheet:** `top_edge on` (8), `blink on` (7), `front_shape 0.22` (6),
+`top_dome 0.15` (4), `slab over carved_plus` (4). FRONT SHAPE and TOP DOME both
+ship OFF. `depth`, `ground_shade` and `side_color` win in both directions,
+which is the model saying it depends on the character.
+
 ## Blocked on Kim, not worked around
 
 | Item | What is needed | Why nobody else can |
