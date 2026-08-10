@@ -327,7 +327,7 @@ return function(game)
   end
 
   local m8ok, detalheM8 = false, "nao consegui montar a comparacao"
-  if porBreath("OFF") then
+  if porBreath("OFF") == "OFF" then
     local base = medeNoMundo()
     if abrirOpcoes() and porBreath("STRONG") == "STRONG" then
       local ligado = medeNoMundo()

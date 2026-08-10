@@ -405,13 +405,19 @@ return function(game)
       "o jogador nao conseguiu andar em nenhuma direcao; o teste nao vale")
   else
     nota("direcao que move a partir de (%d,%d): %s", PARTIDA_X, PARTIDA_Y, direcao)
+    -- PISO: a MESMA sequencia, a MESMA opcao (LAG off) dos dois lados. Duas
+    -- corridas independentes nao caem na mesma fase de tile animado ou de NPC
+    -- virando entre elas; isto mede quanto SO a passagem do tempo muda, para
+    -- a comparacao com LAG ligado abaixo nao confundir isso com o efeito.
+    local _, semLag2 = tentaPasso(direcao)
+    local piso = difere(semLag, semLag2)
     opcao("lag", 1.2); U.wait(20)
     local andou, comLag = tentaPasso(direcao)
     local dLag = andou and difere(semLag, comLag) or -1
-    nota("um passo para %s, com e sem MOTION LAG: %d pixels diferentes",
-      direcao, dLag)
-    veredito("V7", dLag > 40,
-      "o atraso tem que aparecer logo depois do passo")
+    nota("piso (LAG off nos dois lados): %d pixels; um passo para %s, com e sem MOTION LAG: %d pixels diferentes",
+      piso, direcao, dLag)
+    veredito("V7", piso >= 0 and dLag > piso + 40,
+      "o atraso tem que superar o piso de ruido entre duas corridas identicas")
   end
 
   -- ---------------------------------------------------------------- V9
@@ -428,18 +434,21 @@ return function(game)
 
   -- ---------------------------------------------------------------- V10
   do
-    opcao("footfall", "off"); U.wait(20)
-    local semPisada = fotoAposUmPasso and nil
     -- reaproveita a mesma sequencia deterministica do V7: mesma celula de
     -- partida, mesmo numero de quadros, so a opcao muda.
-    local a, b
     opcao("footfall", "off"); U.wait(20)
-    local andou1; andou1, a = tentaPasso(direcao or "left")
+    local andou1, a = tentaPasso(direcao or "left")
+    -- PISO: mesmo motivo do V7. FOOTFALL off nos dois lados, mesma sequencia,
+    -- mede o que so a passagem do tempo muda entre duas corridas.
+    local andou1b, a2 = tentaPasso(direcao or "left")
+    local piso = (andou1 and andou1b) and difere(a, a2) or -1
     opcao("footfall", 0.7); U.wait(20)
-    local andou2; andou2, b = tentaPasso(direcao or "left")
+    local andou2, b = tentaPasso(direcao or "left")
     local d = (andou1 and andou2) and difere(a, b) or -1
-    nota("um passo, com e sem FOOTFALL: %d pixels diferentes", d)
-    veredito("V10", d > 40, "a pisada tem que aparecer durante o passo")
+    nota("piso (FOOTFALL off nos dois lados): %d pixels; um passo, com e sem FOOTFALL: %d pixels diferentes",
+      piso, d)
+    veredito("V10", piso >= 0 and d > piso + 40,
+      "a pisada tem que superar o piso de ruido entre duas corridas identicas")
     opcao("footfall", "off"); U.wait(10)
   end
 
@@ -461,6 +470,32 @@ return function(game)
   -- Consertado com aquecimento antes e A/B/A/B depois: se a diferenca fosse
   -- deriva de aquecimento, ela sumiria no segundo par.
   do
+    -- CONTROLE POSITIVO, MEDIDO NO QUARTO VAZIO, ANTES DE IR PARA A CIDADE.
+    --
+    -- O bloco de tempo abaixo so cronometra; se opcao() falhar em silencio
+    -- (AVISO em "nota", emit quebrado), liga() e desliga() ficam identicos e o
+    -- custo medido da ~0, e "abaixo do ruido, nao mensuravel" passaria por
+    -- "a feature e barata" quando o problema de verdade e que ela nunca ligou.
+    --
+    -- A cidade NAO serve para este controle: Viridian tem NPC andando e agua
+    -- animada, e um par de fotos OFF-contra-OFF la deu 0 pixels numa janela e
+    -- 817 na seguinte, so de NPC — o mesmo erro de instrumento que V7 e V10
+    -- tinham antes do piso. Entao o controle usa o ENVELOPE (mesma disciplina
+    -- do resto do arquivo: so mede quando a assinatura da cena fica parada) no
+    -- quarto vazio que o resto deste driver ja estabeleceu, e so DEPOIS disso
+    -- teleporta para a cidade cheia, onde o custo por quadro e realista.
+    opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
+    U.wait(30)
+    local controleBase = parDeQuadros()
+    opcao("breath", 0.020); opcao("sway", 0.45); opcao("lag", 1.2)
+    U.wait(30)
+    local controleLigado = parDeQuadros()
+    local controleOk = controleBase >= 0 and controleLigado > controleBase + 40
+    nota("controle positivo (quarto vazio): envelope de %d OFF, %d ligado (%s)",
+      controleBase, controleLigado, controleOk and "OK" or "FALHOU")
+    opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
+    U.wait(20)
+
     U.teleport(game, "VIRIDIAN_CITY", 17, 17, "down")
     U.wait(60)
     local function mede(quadros)
@@ -509,9 +544,9 @@ return function(game)
     -- 0.5 que nao tinha nada a ver com a mensagem. Veredito que contradiz o
     -- proprio texto e pior que veredito nenhum.
     local aceitavel = diferenca < ruido or diferenca < 0.5
-    veredito("V8", off > 0 and on > 0 and aceitavel and diferenca < 1.5,
-      string.format("diferenca %.3f ms contra piso de ruido %.3f ms: %s",
-        diferenca, ruido, diferenca < ruido
+    veredito("V8", controleOk and off > 0 and on > 0 and aceitavel and diferenca < 1.5,
+      string.format("controle positivo %s (envelope OFF %d, ligado %d); diferenca %.3f ms contra piso de ruido %.3f ms: %s",
+        controleOk and "OK" or "FALHOU", controleBase, controleLigado, diferenca, ruido, diferenca < ruido
           and "abaixo do ruido, o custo nao e mensuravel aqui"
           or "acima do ruido, e um custo real"))
   end
