@@ -156,12 +156,24 @@ return function(game)
   end
   nota("FP_LEVEL do host: %d", FPLEVEL)
 
-  -- O quarto do Red foi a primeira escolha e foi errada: em primeira pessoa o
-  -- unico personagem la e o JOGADOR, e o host esconde o card do proprio
-  -- jogador acima de blend 0.9 (FirstPerson.hidePlayer). No blend cheio a tela
-  -- ficava sem personagem nenhum e a medicao dava zero, que eu quase li como
-  -- "o solido nao aparece". Centro pokemon tem gente parada atras do balcao.
-  local MAPA = os.getenv("VC_MAP") or "CERULEAN_POKECENTER"
+  -- O QUARTO DO RED, e a volta a ele conta uma historia inteira.
+  --
+  -- Primeira escolha: quarto do Red, zero object events. Errado, porque no
+  -- blend CHEIO o unico personagem ali e o jogador e o host esconde o card
+  -- dele acima de 0.9. A tela ficava sem ninguem e a medicao dava zero, que le
+  -- como "o solido nao aparece".
+  --
+  -- Segunda escolha: centro pokemon, "porque tem gente parada". Media com
+  -- sorte: uma corrida achou um NPC no cone da camera e a seguinte nao achou
+  -- nenhum nas quatro direcoes. E quando finalmente casei os blends, o piso
+  -- CARD contra CARD deu 29 mil de 87 mil amostras, 33% do quadro, porque
+  -- aquele mapa tem NPC andando e o gate estava medindo eles.
+  --
+  -- Terceira, e a certa: quarto do Red DE NOVO, mas medindo no MEIO do blend
+  -- em vez de no fim. Ali o card do proprio jogador esta em cena por
+  -- construcao, e ele e o pior caso do defeito, porque a camera esta entrando
+  -- na cabeca dele. Zero object events volta a ser a vantagem que era.
+  local MAPA = os.getenv("VC_MAP") or "REDS_HOUSE_2F"
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   local _, PX, PY = Pouso.escolher(game, MAPA, 3, 4)
 
@@ -185,36 +197,70 @@ return function(game)
   -- uma direcao e torcer, o gate MEDE as quatro: liga e desliga o mod inteiro
   -- e fica com a que mais muda. Essa e a mesma pergunta do controle negativo,
   -- respondida uma vez e reaproveitada.
-  local melhor = { dir = nil, delta = -1 }
-  for _, dir in ipairs({ "up", "left", "right", "down" }) do
-    sai(); U.wait(30)
-    U.teleport(game, MAPA, PX, PY, dir)
-    U.wait(40)
+  -- O CONTROLE MEDE CONTRA O CARD DO PROPRIO JOGADOR, e nao contra um NPC que
+  -- talvez esteja no quadro.
+  --
+  -- A versao anterior varria as quatro direcoes procurando alguem em cena. Ela
+  -- recusava o veredito quando nao achava, que e o certo, mas achava com sorte:
+  -- mesmo comando, uma corrida achou 531 amostras e a seguinte achou zero nas
+  -- quatro. O probe teleporta para um centro pokemon e torce para um NPC estar
+  -- no cone da camera, e onde os NPCs estao nao e coisa que ele controle. Gate
+  -- que falha por motivo alheio ao codigo ensina a rodar de novo ate ficar
+  -- verde, e gate que se roda de novo nao e gate.
+  --
+  -- O jogador esta SEMPRE em cena abaixo do blend 0.9: o host so esconde o card
+  -- dele acima disso (FirstPerson.hidePlayer), e a faixa abaixo e exatamente
+  -- onde o defeito dos espetos vivia, porque e onde a camera entra na cabeca
+  -- dele. Entao o controle mora ali: garantido, e no caso que interessa.
+  -- ESPERAR PELO BLEND, e nao por um numero de quadros. Contar quadros deu
+  -- 0.64 num lado e 0.94 no outro, e a diferenca entre as duas fotos passou a
+  -- ser a CAMERA em vez da opcao: 62 mil amostras de "controle" que nao
+  -- controlavam nada. Parar num valor de blend faz os dois lados casarem por
+  -- construcao.
+  local ALVO = 0.55
+  local function noBlend(alvo)
+    sai(); U.wait(50)
     entra()
     for _ = 1, 240 do
       U.wait(1)
-      if blendAgora() >= 0.999 then break end
+      if blendAgora() >= alvo then break end
     end
-    opcao("depth", 3); U.wait(8)
-    local com = captura()
-    opcao("depth", "off"); U.wait(8)
-    local sem = captura()
-    opcao("depth", 3); U.wait(8)
-    local d = difere(com, sem)
-    nota("  olhando para %-5s: mod ligado contra desligado %d (%.1f%%)",
-         dir, d, d / total(com) * 100)
-    if d > melhor.delta then melhor = { dir = dir, delta = d } end
+    local b = blendAgora()
+    return b, captura()
   end
 
-  veredito("P1", blendAgora() >= 0.999,
-    string.format("a camera entrou em primeira pessoa, blend %.3f", blendAgora()))
-  veredito("P2", melhor.delta > total() * 0.005,
-    string.format("olhando para %s ha personagem nosso na tela: %d de %d "
-      .. "amostras (%.1f%%)", tostring(melhor.dir), melhor.delta, total(),
-      melhor.delta / total() * 100))
-  if melhor.delta <= total() * 0.005 then
-    nota("sem personagem no quadro em nenhuma das quatro direcoes, nada abaixo")
-    nota("mediria a opcao. Tente outro mapa com VC_MAP.")
+  sai(); U.wait(40)
+  U.teleport(game, MAPA, PX, PY, "down")
+  U.wait(40)
+
+  -- O CONTROLE RODA EM SOLID, e isto ja me enganou uma vez. Com FIRST PERSON
+  -- em CARD o mod devolve o card original nessa camera POR CONTRATO, entao
+  -- ligar e desligar o mod inteiro nao muda nada e o controle mede zero por
+  -- decisao de projeto, nao por falta de personagem em cena. Um controle que
+  -- pode dar zero pelo motivo certo e pelo motivo errado nao controla nada.
+  opcao("first_person", "solid")
+  opcao("depth", 3); U.wait(8)
+  local bCom, com = noBlend(ALVO)
+  opcao("depth", "off"); U.wait(8)
+  local bSem, sem = noBlend(ALVO)
+  opcao("depth", 3); U.wait(8)
+  total(com)
+  local melhor = { dir = "down", delta = difere(com, sem) }
+  nota("controle no blend %.2f e %.2f: mod ligado contra desligado %d de %d",
+       bCom, bSem, melhor.delta, total())
+  veredito("P1", math.abs(bCom - bSem) <= 0.05 and bCom > 0.02 and bCom < 0.9,
+    string.format("as duas medidas casaram no meio da entrada: blend %.2f e "
+      .. "%.2f", bCom, bSem))
+  if math.abs(bCom - bSem) > 0.05 then
+    nota("blends diferentes: a medida seria da camera, nao da opcao")
+    return fim()
+  end
+
+  veredito("P2", melhor.delta > total() * 0.002,
+    string.format("ha personagem nosso na tela: %d de %d amostras (%.2f%%)",
+      melhor.delta, total(), melhor.delta / total() * 100))
+  if melhor.delta <= total() * 0.002 then
+    nota("nem o card do proprio jogador aparece; nada abaixo mede a opcao")
     return fim()
   end
 
@@ -227,22 +273,20 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- P3
-  posiciona()
-  entra()
-  for _ = 1, 240 do U.wait(1); if blendAgora() >= 0.999 then break end end
-  local function tela(modo)
+  -- No MESMO blend do controle, porque e ali que existe personagem garantido.
+  local function ladoNoBlend(modo)
     opcao("first_person", modo); U.wait(8)
-    return captura()
+    return noBlend(ALVO)
   end
-  local c1, c2 = tela("card"), tela("card")
-  local s1 = tela("solid")
+  local b1, c1 = ladoNoBlend("card")
+  local b2, c2 = ladoNoBlend("card")
+  local b3, s1 = ladoNoBlend("solid")
   local piso = difere(c1, c2)
   local sinal = difere(c1, s1)
-  nota("blend cheio: piso CARD-CARD %d, sinal CARD-SOLID %d de %d amostras",
-       piso, sinal, total())
-  veredito("P3", sinal > piso * 4 + 20,
-    string.format("no blend cheio o SOLID muda a tela: %d contra piso %d",
-      sinal, piso))
+  nota("blend %.2f/%.2f/%.2f: piso CARD-CARD %d, sinal CARD-SOLID %d de %d",
+       b1, b2, b3, piso, sinal, total())
+  veredito("P3", sinal > piso * 2 + 20,
+    string.format("o SOLID muda a tela: %d contra piso %d", sinal, piso))
 
   -- ---------------------------------------------------------------- P4
   --
@@ -250,21 +294,21 @@ return function(game)
   -- absoluto escolhido por mim mediria o meu chute; comparar contra CARD-CARD
   -- feito com a mesma saida, mesma entrada e mesma espera mede so o que a
   -- opcao mudou. Tudo que a cena faz sozinha nesse intervalo aparece nos dois.
-  local function amostraEm(frames, modo)
-    posiciona()
+  -- Tambem por blend, e nao por quadro. Com contagem de quadros o piso da
+  -- transicao chegou a 39 mil de 87 mil amostras, quase o teto inteiro: os
+  -- dois lados paravam em blends diferentes e a diferenca era a camera.
+  local function amostraEm(alvo, modo)
     opcao("first_person", modo); U.wait(6)
-    entra()
-    U.wait(frames)
-    return blendAgora(), captura()
+    return noBlend(alvo)
   end
 
   local piorSinal, piorBlend, piorPiso = 0, 0, 0
   local usadas, descartadas = 0, 0
   for passo = 1, 8 do
-    local frames = passo * 4
-    local bA, imgA = amostraEm(frames, "card")
-    local bF, imgF = amostraEm(frames, "card")
-    local bS, imgS = amostraEm(frames, "solid")
+    local alvo = 0.10 + (passo - 1) * 0.10
+    local bA, imgA = amostraEm(alvo, "card")
+    local bF, imgF = amostraEm(alvo, "card")
+    local bS, imgS = amostraEm(alvo, "solid")
     if math.abs(bA - bF) > 0.03 or math.abs(bA - bS) > 0.03 then
       descartadas = descartadas + 1
       nota("  descartada: blends %.2f / %.2f / %.2f nao bateram", bA, bF, bS)
