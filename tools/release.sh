@@ -61,6 +61,22 @@ fi
 grep -E '^\s+\S+\s+ok$' "$SAIDA.bateria.log" | sed 's/^/  /' | head -12
 echo "  BATERIA OK"
 
+# ------------------------------------------------------------- 2b. mutants
+# The battery says the checks pass. This says the checks are checking. It is
+# not in bateria.sh because it needs a clean tree and it rewrites files while
+# it runs, so it belongs at a moment when nothing else is happening: this one.
+#
+# Its first run found that flipping the sign of the MOTION LAG term changed
+# nothing any of 603 checks looked at. A release is exactly the wrong moment to
+# discover the suite has a blind spot.
+passo "2b. os mutantes: a suite esta mesmo checando?"
+if ! bash "$AQUI/mutantes.sh" > "$SAIDA.mutantes.log" 2>&1; then
+  tail -12 "$SAIDA.mutantes.log"
+  falha "um mutante sobreviveu: a suite passa por cima dessa linha.
+  Log completo em $SAIDA.mutantes.log"
+fi
+tail -1 "$SAIDA.mutantes.log" | sed 's/^/  /'
+
 # ----------------------------------------------------------- 3. the changelog
 # The body comes from CHANGELOG.md and nowhere else. Writing release notes by
 # hand at publish time is how a release ends up saying something the changelog

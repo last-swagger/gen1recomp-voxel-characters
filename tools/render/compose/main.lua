@@ -481,9 +481,9 @@ function love.load(argv)
   end
 
   for _, a in ipairs(argv or {}) do
-    -- Corta no ULTIMO `=`, nao no primeiro: legenda com sinal de igual e
-    -- normal ("t=0.4"), caminho com sinal de igual nao e. Cortar no primeiro
-    -- ja quebrou duas vezes e o sintoma aparece como arquivo inexistente.
+    -- Cuts at the LAST `=`, not the first: a caption with an equals sign is
+    -- normal ("t=0.4"), a path with one is not. Cutting at the first already
+    -- broke twice and the symptom shows up as a nonexistent file.
     local k, v = a:match("^(.*)=([^=]*)$")
     if k == "out" or k == "title" then
       opts[k] = v

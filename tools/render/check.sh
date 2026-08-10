@@ -1,12 +1,12 @@
 #!/bin/bash
-# Verifica a REGUA antes de confiar em qualquer medicao feita com ela.
+# Checks the RULER before trusting any measurement made with it.
 #
-# Rode da raiz do repo:  bash mods/voxel_characters/tools/render/check.sh
+# Run from the repo root:  bash mods/voxel_characters/tools/render/check.sh
 #
-# Existe porque numa unica sessao dez defeitos foram do harness se passando por
-# defeito do mod, e cada um custou um ciclo de diagnostico apontado para o lugar
-# errado. Uma medicao feita com regua torta e pior que nenhuma: ela produz
-# confianca.
+# Exists because in a single session ten defects were the harness's own,
+# passing themselves off as mod defects, and each one cost a diagnostic
+# cycle pointed at the wrong place. A measurement made with a crooked ruler
+# is worse than none: it produces confidence.
 set -u
 . "$(cd "$(dirname "$0")/.." && pwd)/tools_bin.sh"
 H=mods/voxel_characters/tools/render
@@ -14,30 +14,32 @@ FAIL=0
 
 say() { printf "%-52s %s\n" "$1" "$2"; }
 
-# Checagem que compara DUAS medicoes passa comparando vazio com vazio quando o
-# render nem rodou. Foi assim que a regua ficou verde numa maquina sem o LOVE
-# no caminho esperado. Toda medicao usada numa igualdade passa por aqui antes.
+# A check that compares TWO measurements passes by comparing empty with empty
+# when the render did not even run. That is how the ruler went green on a
+# machine without LOVE on the expected path. Every measurement used in an
+# equality passes through here first.
 medido() {
   [ -n "$1" ] && return 0
-  echo "  (sem medicao: o render nao produziu saida)" >&2
+  echo "  (no measurement: the render produced no output)" >&2
   return 1
 }
 
-# 1. Convencoes internas: eixos, formas de setVertex, contagem de frames.
+# 1. Internal conventions: axes, setVertex forms, frame count.
 OUT=$($LOVE $H selftest=1 2>&1 | grep "autoteste")
 say "autoteste de convencoes" "$OUT"
-# Compara os DOIS numeros de verdade, em vez de casar um padrao com
-# retrovisor. `grep -qE "([0-9]+)/\1$"` aceitava "12/2", porque o grupo casa o
-# "2" final de "12", e aceitava "0/0", que e um autoteste sem nenhum caso.
-# Retrovisor em ERE tambem e indefinido em POSIX e explode sob ugrep.
+# Compares the TWO numbers for real, instead of matching a pattern with a
+# backreference. `grep -qE "([0-9]+)/\1$"` accepted "12/2", because the group
+# matches the trailing "2" of "12", and accepted "0/0", which is a selftest
+# with zero cases. A backreference in ERE is also undefined in POSIX and
+# blows up under ugrep.
 PASSOU=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1)
 DE=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f2)
 [ -n "${PASSOU:-}" ] && [ -n "${DE:-}" ] && [ "$PASSOU" = "$DE" ] && [ "$DE" -gt 0 ] || FAIL=1
 
-# 2. Conformidade: de frente, a pitch zero, o SLAB tem que ser identico ao card
-#    original. Isto pega sinal de profundidade invertido, pivo errado, eixo Y
-#    trocado e canvas espelhado de uma vez so, porque qualquer um deles quebra
-#    a igualdade.
+# 2. Conformance: from the front, at pitch zero, the SLAB has to be identical
+#    to the original card. This catches an inverted depth sign, a wrong
+#    pivot, a swapped Y axis and a mirrored canvas all at once, because any
+#    one of them breaks the equality.
 for s in red blue snorlax poke_ball nurse; do
   R=$($LOVE $H sprite=$s shapes=flat,slab frames=0 yaws=0 pitch=0 cell=256 \
       metrics=1 out=chk_$s.png 2>&1 | grep slab | grep -o "IoU [0-9.]*" | head -1)
@@ -45,10 +47,10 @@ for s in red blue snorlax poke_ball nurse; do
   [ "$R" = "IoU 1.000" ] || FAIL=1
 done
 
-# 2b. Conformidade nos frames de CAMINHADA, nao so no parado. O bloqueante da
-#     v1.4.0 existiu porque a tabela de olhos foi validada so no frame 0, e no
-#     frame 3 o rosto desce uma linha. "Amostra, nao exemplo" vale para o eixo
-#     dos frames tambem, nao so para o dos personagens.
+# 2b. Conformance on WALKING frames, not just standing. The v1.4.0 blocker
+#     existed because the eye table was only validated on frame 0, and on
+#     frame 3 the face drops a row. "Sample, not example" applies to the
+#     frame axis too, not just the character axis.
 for fr in 1 2 3 4 5; do
   R=$($LOVE $H sprite=red shapes=flat,slab frames=$fr yaws=0 pitch=0 cell=256 \
       metrics=1 out=chk_f$fr.png 2>&1 | grep slab | grep -o "IoU [0-9.]*" | head -1)
@@ -56,30 +58,31 @@ for fr in 1 2 3 4 5; do
   [ "$R" = "IoU 1.000" ] || FAIL=1
 done
 
-# 2c. O contrato da piscada mudou na v1.4.2 e a regua tinha ficado velha: ela
-#     ainda afirmava "nao pisca andando", que era o comportamento da v1.4.1.
-#     Agora a pose andando pisca SE o texel do olho transferir da pose parada
-#     sob o deslocamento do passo, medido folha a folha. Trocar a assercao por
-#     uma mais frouxa seria racionalizar um gate vermelho, entao ela ficou mais
-#     APERTADA: testa os dois lados da regra, e os dois lados vem de medicao.
+# 2c. The blink's contract changed in v1.4.2 and the ruler had gone stale: it
+#     still claimed "does not blink while walking", which was v1.4.1's
+#     behaviour. Now the walking pose blinks IF the eye texel transfers from
+#     the standing pose under the step's offset, measured sheet by sheet.
+#     Swapping the assertion for a looser one would be rationalising a red
+#     gate, so it got TIGHTER instead: it tests both sides of the rule, and
+#     both sides come from measurement.
 #
-#     red transfere nas duas poses de caminhada (frames 3 e 5). girl NAO
-#     transfere de frente: a cabeca dela e redesenhada entre as poses, e nesse
-#     caso a folha inteira tem que ficar de olho aberto. Se um dia a regra
-#     quebrar para o lado permissivo, e a girl que pega, e ela e a folha que
-#     representa o defeito que fez a v1.4.1 ser revertida: fechar o olho em
-#     cima de pele.
+#     red transfers in both walking poses (frames 3 and 5). girl does NOT
+#     transfer from the front: her head is redrawn between the poses, and in
+#     that case the whole sheet has to stay eye-open. If the rule ever breaks
+#     towards the permissive side, girl is the one that catches it, and she is
+#     the sheet that represents the defect that got v1.4.1 reverted: closing
+#     the eye on top of skin.
 for fr in 3 5; do
   R=$($LOVE $H sprite=red shapes=slab frames=$fr yaws=0 rungs=75 cell=140 \
       blink=on blinkscan=1 out=chk_b$fr.png 2>&1 | grep BLINKSCAN)
   say "red pisca andando, frame $fr" "$R"
-  # ANCORADO NO INICIO DA MENSAGEM, e este `BLINKSCAN ` custou uma auditoria
-  # inteira: o harness imprime "BLINKSCAN fecha em t=..." ou "BLINKSCAN nao
-  # fecha em 10 s", e a segunda CONTEM a primeira como substring. Um grep por
-  # "fecha em" casava com as duas, entao apagar a piscada inteira deixava
-  # estas tres checagens verdes, e as duas negativas ("nao fecha") tambem,
-  # porque ali a ausencia vira verdade. As cinco checagens do piscar
-  # sobreviviam a remocao da feature que existem para medir.
+  # ANCHORED AT THE START OF THE MESSAGE, and this `BLINKSCAN ` cost a whole
+  # audit: the harness prints "BLINKSCAN fecha em t=..." or "BLINKSCAN nao
+  # fecha em 10 s", and the second CONTAINS the first as a substring. A grep
+  # for "fecha em" matched both, so deleting the blink entirely left these
+  # three checks green, and the two negative ones ("nao fecha") too, because
+  # there the absence becomes truth. The five blink checks survived the
+  # removal of the feature they exist to measure.
   echo "$R" | grep -q "BLINKSCAN fecha em" || FAIL=1
 done
 
@@ -93,34 +96,35 @@ R=$($LOVE $H sprite=red shapes=slab frames=1 yaws=0 rungs=75 cell=140 \
 say "frame 1 de costas NAO pisca" "$R"
 echo "$R" | grep -q "nao fecha" || FAIL=1
 
-# 3. A piscada acontece. A janela e de 0,12 s num periodo de segundos, entao
-#    amostrar o tempo de longe nao prova nada: ja concluí que nao funcionava
-#    quando funcionava.
+# 3. The blink happens. The window is 0.12 s in a period of seconds, so
+#    sampling time from far away proves nothing: I already concluded it was
+#    not working when it was.
 R=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=75 cell=140 \
     blink=on blinkscan=1 out=chk_blink.png 2>&1 | grep BLINKSCAN)
 say "piscada dispara" "$R"
 echo "$R" | grep -q "BLINKSCAN fecha em" || FAIL=1
 
-# 4. O compositor aceita legenda com sinal de igual. Este bug apareceu duas
-#    vezes identico, e o sintoma e "arquivo nao encontrado", que manda quem
-#    lê procurar no lugar errado.
+# 4. The compositor accepts a caption with an equals sign. This bug showed up
+#    twice, identical both times, and the symptom is "file not found", which
+#    sends whoever reads it looking in the wrong place.
 R=$($LOVE $H/compose out=chk_compose.png \
     "t=0.4 uma legenda com igual=$HOME/Library/Application Support/LOVE/render/chk_red.png" \
     2>&1 | grep -cE "WROTE")
 say "compositor aceita '=' na legenda" "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
 [ "$R" = "1" ] || FAIL=1
 
-# 5. A REGUA MEDE A SI MESMA.
+# 5. THE RULER MEASURES ITSELF.
 #
-#    Uma revisao adversarial apontou que as tres mudancas mais recentes do
-#    harness nao tinham cobertura nenhuma, e que o gate oficial
-#    (voxel_chars_test.lua) estruturalmente NAO PODE cobri-las: ele nunca
-#    carrega este arquivo. Verde la nao diz nada sobre a regua. Entao os
-#    casos abaixo cobrem o instrumento, nao o mod.
+#    An adversarial review pointed out that the harness's three most recent
+#    changes had no coverage at all, and that the official gate
+#    (voxel_chars_test.lua) structurally CANNOT cover them: it never loads
+#    this file. Green there says nothing about the ruler. So the cases below
+#    cover the instrument, not the mod.
 
-# 5a. Vazamento entre celulas. Uma forma funda transbordava a propria celula e
-#     contaminava a vizinha, e so no tamanho de celula PADRAO: em celula menor
-#     nao vazava, o que fazia o defeito sumir quando alguem tentava reproduzir.
+# 5a. Leakage between cells. A deep shape used to overflow its own cell and
+#     contaminate the neighbouring one, and only at the DEFAULT cell size: at
+#     a smaller cell it did not leak, which made the defect disappear whenever
+#     someone tried to reproduce it.
 A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=220 \
     metrics=1 out=chk_iso.png 2>&1 | grep "^  slab" | grep -o "art *[0-9.]*")
 B=$($LOVE $H sprite=red shapes=flat,slab,carved frames=0 yaws=0 rungs=35 cell=220 \
@@ -128,29 +132,30 @@ B=$($LOVE $H sprite=red shapes=flat,slab,carved frames=0 yaws=0 rungs=35 cell=22
 say "medicao nao vaza entre celulas" "sozinho $A / ao lado do carved $B"
 medido "$A" && medido "$B" && [ "$A" = "$B" ] || FAIL=1
 
-# 5b. A passagem generica de opcao chega no mod. Sem isto, uma opcao nova
-#     mediria com o padrao e ninguem notaria.
+# 5b. The generic option pass-through reaches the mod. Without this, a new
+#     option would measure with the default and nobody would notice.
 A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     metrics=1 out=chk_o0.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
 B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     opt="front_shape:0.12" metrics=1 out=chk_o1.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
 say "opcao generica chega no mod" "sem opcao $A / com opcao $B"
-# Com guarda nos dois lados: sem ela, um run que MORRE deixa B vazio, "niveis 3"
-# difere de "", e a checagem fica verde afirmando que a opcao chegou. E o
-# harness morre de proposito em chave desconhecida (5c logo abaixo), entao
-# renomear uma chave do schema deixava 5b e 5c verdes ao mesmo tempo.
+# Guarded on both sides: without it, a run that DIES leaves B empty, "niveis 3"
+# differs from "", and the check goes green claiming the option got through.
+# And the harness dies on purpose on an unknown key (5c right below), so
+# renaming a schema key left 5b and 5c green at the same time.
 medido "$A" && medido "$B" && [ "$A" != "$B" ] || FAIL=1
 
-# 5c. Chave desconhecida nao pode passar calada: um erro de digitacao vira
-#     "medi com a opcao desligada e nao percebi".
+# 5c. An unknown key must not pass silently: a typo turns into "I measured
+#     with the option off and did not notice".
 R=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=120 \
     opt="chave_que_nao_existe:1" metrics=1 out=chk_o2.png 2>&1 | grep -c "OPCAO DESCONHECIDA")
 say "chave de opcao desconhecida grita" "$([ "$R" -ge 1 ] && echo ok || echo FALHOU)"
 [ "$R" -ge 1 ] || FAIL=1
 
-# 5d. A estrutura tonal precisa DISTINGUIR FORCA. A primeira versao contava
-#     tons distintos e dava o mesmo numero para 0.12 e 0.22, com 2382 de 43600
-#     pixels realmente diferentes: dizia "igual" com 5% da tela mudada.
+# 5d. The tonal structure needs to DISTINGUISH STRENGTH. The first version
+#     counted distinct tones and gave the same number for 0.12 and 0.22, with
+#     2382 of 43600 pixels actually different: it said "same" with 5% of the
+#     screen changed.
 A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     opt="front_shape:0.12" metrics=1 out=chk_d1.png 2>&1 | grep "front  niveis" | grep -o "desvio [0-9.]*")
 B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
@@ -158,15 +163,15 @@ B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
 say "estrutura tonal distingue forca" "0.12 -> $A / 0.22 -> $B"
 medido "$A" && medido "$B" && [ "$A" != "$B" ] || FAIL=1
 
-# 6. O LABORATORIO abre, e classifica as opcoes do lado certo.
+# 6. The LABORATORY opens, and classifies the options on the right side.
 #
-#    Ferramenta interativa que ninguem testa quebra calada, entao ela sabe
-#    abrir sozinha, fotografar e sair (`labshot=`). Alem de abrir, o que se
-#    afirma aqui e uma invariante de ARQUITETURA e nao um numero: respiracao,
-#    balanco, inercia e pisada pos-multiplicam a matriz que o host passa para
-#    Voxel3D.draw, entao elas NAO PODEM mudar a malha. No dia em que uma delas
-#    aparecer do lado de ca, ou virou geometria sem ninguem dizer, ou o
-#    classificador quebrou. As duas merecem parar a fila.
+#    An interactive tool nobody tests breaks silently, so it knows how to open
+#    on its own, take a photo and exit (`labshot=`). Beyond opening, what is
+#    asserted here is an ARCHITECTURE invariant and not a number: breath,
+#    sway, inertia and footfall post-multiply the matrix the host passes to
+#    Voxel3D.draw, so they CANNOT change the mesh. The day one of them shows
+#    up on this side, either it turned into geometry without anyone saying so,
+#    or the classifier broke. Both deserve to stop the queue.
 LAB=$($LOVE $H lab=1 labshot=chk_lab.png sprite=red 2>&1)
 R=$(echo "$LAB" | grep -c "laboratorio ok")
 say "laboratorio abre" "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
@@ -178,11 +183,11 @@ FALTOU=""
 for k in breath sway lag footfall; do
   echo "$SEM" | grep -q "\b$k\b" || FALTOU="$FALTOU -$k"
 done
-# OS DOIS LADOS. Checar so a lista "sem efeito" deixava passar a mutacao que
-# quebra o classificador inteiro: se buildGeometry falhar, labAssinatura devolve
-# "sem malha" para TODOS os niveis, nenhuma opcao muda, todas caem na lista
-# "sem efeito", o laboratorio fica sem controle nenhum e este gate fica verde.
-# Comparar vazio com vazio de novo, agora em forma de lista.
+# BOTH SIDES. Checking only the "no effect" list let through the mutation
+# that breaks the entire classifier: if buildGeometry fails, labAssinatura
+# returns "no mesh" for EVERY level, no option changes, all of them fall into
+# the "no effect" list, the laboratory ends up with no controls at all, and
+# this gate stays green. Comparing empty with empty again, now in list form.
 for k in depth shape front_shape top_dome step_weight; do
   echo "$AQUI" | grep -q "\b$k\b" || FALTOU="$FALTOU +$k"
 done
@@ -190,16 +195,16 @@ say "classificador poe cada opcao do lado certo" \
     "$([ -z "$FALTOU" ] && echo ok || echo "FALHOU:$FALTOU")"
 [ -z "$FALTOU" ] || FAIL=1
 
-# 7. O MODO ESCOLHA propoe um par visivel e grava a escolha.
+# 7. CHOICE MODE proposes a visible pair and records the choice.
 #
-#    Um par cujos dois lados sao identicos na tela nao coleta preferencia,
-#    coleta cara ou coroa, e cara ou coroa entra no ajuste do juiz com a mesma
-#    cara de dado que uma escolha de verdade. Entao o sorteio so entrega par
-#    depois de ACHAR uma condicao (pose, instante) em que os dois diferem, e
-#    este check prova que ele entrega.
+#    A pair whose two sides are identical on screen does not collect
+#    preference, it collects a coin flip, and a coin flip enters the judge's
+#    fit with the same face of a die as a real choice. So the roll only
+#    delivers a pair after FINDING a condition (pose, instant) where the two
+#    differ, and this check proves that it delivers.
 #
-#    Grava em arquivo separado de proposito: o gate nao pode escrever escolha
-#    inventada onde o juiz vai aprender.
+#    Records to a separate file on purpose: the gate must not write a
+#    made-up choice where the judge is going to learn from it.
 rm -f "$HOME/Library/Application Support/LOVE/render/chk_escolhas.txt"
 AB=$($LOVE $H lab=1 labab=1 labpick=A labfile=chk_escolhas.txt \
      labshot=chk_lab_ab.png 2>&1)
@@ -213,10 +218,10 @@ say "a escolha vira linha de arquivo" \
     "$([ "${LINHAS:-0}" -ge 1 ] && echo "ok, $LINHAS linha" || echo FALHOU)"
 [ "${LINHAS:-0}" -ge 1 ] || FAIL=1
 
-# 8. O LOOP DO JUIZ fecha: modelo sai em arquivo, pares saem do modelo, e o
-#    laboratorio consome os pares. Cada peca ja tem prova propria; o que este
-#    check cobre e a JUNCAO, que e onde formato de arquivo costuma divergir sem
-#    ninguem notar ate a hora de usar.
+# 8. THE JUDGE LOOP closes: model goes out to a file, pairs come out of the
+#    model, and the laboratory consumes the pairs. Each piece already has its
+#    own proof; what this check covers is the JOIN, which is where file
+#    format tends to diverge without anyone noticing until it is time to use it.
 rm -f "$HOME/Library/Application Support/LOVE/render/chk_pares.txt"
 $LOVE $H features=/dev/stdin > /tmp/vc_chk_feat.tsv 2>/dev/null <<'ENTRADA'
 red	0	0	depth:3,shape:slab,side_color:body
@@ -233,9 +238,9 @@ R=$(echo "$LAB2" | grep -c "pares pedidos pelo juiz")
 say "o laboratorio consome os pares do juiz"     "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
 [ "$R" = "1" ] || FAIL=1
 
-# 9. O CARD explicativo: a figura antes/depois que vai para release note e
-#    Discord. Uma figura publicada e afirmacao publica, entao ela e checada
-#    como medicao, nao como enfeite.
+# 9. The explanatory CARD: the before/after figure that goes into the release
+#    note and Discord. A published figure is a public claim, so it is checked
+#    like a measurement, not like decoration.
 COMPOSE="$HOME/Library/Application Support/LOVE/compose"
 CARDS=mods/voxel_characters/tools/render/cards
 rm -f "$COMPOSE/chk_card1.png" "$COMPOSE/chk_card2.png" "$COMPOSE/chk_sem.png"
@@ -245,9 +250,9 @@ say "o card sai da receita" \
     "$([ -f "$COMPOSE/chk_card1.png" ] && echo ok || echo FALHOU)"
 [ -f "$COMPOSE/chk_card1.png" ] || FAIL=1
 
-# 9b. PISO. Construir o mesmo card duas vezes tem que dar o mesmo arquivo. Sem
-#     isso, qualquer comparacao entre cards mede o ruido do desenho em vez do
-#     que mudou, e as duas checagens abaixo nao querem dizer nada.
+# 9b. FLOOR. Building the same card twice has to produce the same file.
+#     Without this, any comparison between cards measures the drawing's noise
+#     instead of what changed, and the two checks below mean nothing.
 bash $H/card.sh $CARDS/shading.card chk_card2.png > /dev/null 2>&1
 if [ -f "$COMPOSE/chk_card1.png" ] && [ -f "$COMPOSE/chk_card2.png" ]; then
   cmp -s "$COMPOSE/chk_card1.png" "$COMPOSE/chk_card2.png" && IGUAL=ok || IGUAL=FALHOU
@@ -257,18 +262,18 @@ fi
 say "o mesmo card duas vezes da o mesmo arquivo" "$IGUAL"
 [ "$IGUAL" = "ok" ] || FAIL=1
 
-# 9c. A COORDENADA da anotacao chega ao desenho.
+# 9c. The annotation's COORDINATE reaches the drawing.
 #
-#     A primeira versao deste check comparava um card com quatro pontos contra
-#     um card sem nenhum, e passava com o desenho dos callouts INTEIRAMENTE
-#     desligado: sem pontos o card tem outra altura, entao ele comparava
-#     tamanho de canvas e nunca a anotacao. Pego por mutacao, que e como esse
-#     tipo de check oco tem sido pego neste projeto.
+#     The first version of this check compared a card with four points
+#     against a card with none, and passed with the callout drawing ENTIRELY
+#     disabled: without points the card has a different height, so it was
+#     comparing canvas size and never the annotation. Caught by mutation,
+#     which is how this kind of hollow check has been caught in this project.
 #
-#     Agora os dois cards tem o MESMO texto e o MESMO numero de pontos, e so a
-#     coordenada muda. Layout identico por construcao, entao a unica coisa que
-#     pode diferir e a linha e o alvo. Se o tether parar de ser desenhado, os
-#     dois arquivos ficam iguais e este check cai.
+#     Now both cards have the SAME text and the SAME number of points, and
+#     only the coordinate changes. Layout identical by construction, so the
+#     only thing that can differ is the line and the target. If the tether
+#     stops being drawn, the two files come out equal and this check falls.
 SAVE_R="$HOME/Library/Application Support/LOVE/render"
 for par in "0.20,0.20 chk_p1.png" "0.80,0.80 chk_p2.png"; do
   set -- $par
@@ -285,10 +290,10 @@ fi
 say "a coordenada da anotacao chega ao desenho" "$ANOT"
 [ "$ANOT" = "ok" ] || FAIL=1
 
-# 9d. A RECUSA dispara. Duas metades identicas anunciam por escrito uma
-#     mudanca que nao aconteceu, que e o defeito que o clipe ja teve. Checa o
-#     codigo de saida: a primeira versao desta recusa imprimia a mensagem e
-#     saia com ZERO, e quem lesse o codigo de saida via sucesso.
+# 9d. The REFUSAL fires. Two identical halves announce in writing a change
+#     that did not happen, which is the defect the clip already had. Checks
+#     the exit code: the first version of this refusal printed the message
+#     and exited with ZERO, and whoever read the exit code saw success.
 $LOVE $H/compose mode=card out=chk_recusa.png \
   "before=A||$SAVE_R/card_antes.png" "after=B||$SAVE_R/card_antes.png" \
   > /dev/null 2>&1
@@ -298,5 +303,5 @@ say "card recusa metades identicas" \
 [ "$RC" -ne 0 ] || FAIL=1
 
 echo
-[ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: nao confie em medicao ate consertar"
+[ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: do not trust measurement until it's fixed"
 exit $FAIL

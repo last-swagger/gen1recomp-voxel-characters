@@ -27,8 +27,8 @@ AQUI="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$AQUI/../../.." && pwd)"
 . "$(cd "$AQUI/.." && pwd)/tools_bin.sh"
 
-RECEITA="${1:?uso: card.sh <receita.card> [saida.png]}"
-[ -f "$RECEITA" ] || { echo "receita nao encontrada: $RECEITA"; exit 1; }
+RECEITA="${1:?usage: card.sh <recipe.card> [output.png]}"
+[ -f "$RECEITA" ] || { echo "recipe not found: $RECEITA"; exit 1; }
 SAIDA="${2:-card.png}"
 
 SAVE_RENDER="$HOME/Library/Application Support/LOVE/render"
@@ -50,13 +50,13 @@ while IFS= read -r linha || [ -n "$linha" ]; do
     before_label|before_sub|before_opt|before_tag) printf -v "$chave" '%s' "$valor" ;;
     after_label|after_sub|after_opt) printf -v "$chave" '%s' "$valor" ;;
     point) PONTOS+=("point=$valor") ;;
-    *) echo "AVISO: chave desconhecida na receita: $chave" ;;
+    *) echo "WARNING: unknown key in recipe: $chave" ;;
   esac
 done < "$RECEITA"
 
 vc_trava_pega "card.sh" || exit 1
 
-render() {  # $1 = arquivo de saida, $2 = opt=, $3 = VOXEL_CHARS_MAIN ou vazio
+render() {  # $1 = output file, $2 = opt=, $3 = VOXEL_CHARS_MAIN or empty
   local out="$1" opt="$2" main="${3:-}"
   local args=(sprite="$sprite" shapes=slab frames="$frame" yaws="$yaw"
               rungs="$rung" cell="$cell" label=0 out="$out")
@@ -68,18 +68,18 @@ render() {  # $1 = arquivo de saida, $2 = opt=, $3 = VOXEL_CHARS_MAIN ou vazio
     bash "$AQUI/../love.sh" mods/voxel_characters/tools/render "${args[@]}" \
       > /dev/null || return 1
   fi
-  [ -f "$SAVE_RENDER/$out" ] || { echo "FALHOU: o harness nao escreveu $out"; return 1; }
+  [ -f "$SAVE_RENDER/$out" ] || { echo "FALHOU: the harness did not write $out"; return 1; }
 }
 
 ANTES_MAIN=""
 if [ -n "$before_tag" ]; then
   ANTES_MAIN="$(mktemp -t vc_before).lua"
   git -C "$REPO/mods/voxel_characters" show "$before_tag:main.lua" > "$ANTES_MAIN" \
-    || { echo "FALHOU: nao consegui ler main.lua de $before_tag"; exit 1; }
-  echo "antes: main.lua da tag $before_tag"
+    || { echo "FALHOU: could not read main.lua from $before_tag"; exit 1; }
+  echo "before: main.lua from tag $before_tag"
 fi
 
-echo "renderizando $sprite frame $frame, rung $rung, yaw $yaw"
+echo "rendering $sprite frame $frame, rung $rung, yaw $yaw"
 render card_antes.png "$before_opt" "$ANTES_MAIN" || exit 1
 render card_depois.png "$after_opt" "" || exit 1
 
