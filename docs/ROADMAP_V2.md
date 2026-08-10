@@ -79,7 +79,7 @@ and trailer tools produce, and verifies with the game's own parser.
 
 ## Tier 1 — the quality of what already exists
 
-### 4. Trailer, from 6/10 to something we would post
+### 4. DONE: the trailer's four missing things all landed
 
 **State:** it records, and the obvious defects are fixed (English captions, no
 wall pushing, first person shown as a before and after pair).
@@ -107,9 +107,24 @@ destination rather than a position. `degrauFim` in a shot is now the whole
 feature. The opening shot tips the world over WITHIN the shot instead of
 between two cuts, which is what the caption was already claiming.
 
-**Still missing:** a shot that holds on one face long enough to read the blink,
-and a recorded mod set that excludes other people's mods so nothing on screen
-is theirs.
+**The other two landed the same day, and both were also one call.**
+
+**A shot that holds on one face.** The shot list only ever chose a camera RUNG,
+which is an angle, not a distance. The host has a distance:
+`CamControl.zoomBy(notches)`, positive pulls OUT. The blink shot now closes in
+three notches and runs six seconds, which is long enough to catch two blinks on
+a 0.12 s event with a period of seconds. The zoom is undone at the end of each
+shot rather than at the end of the run, because every following shot's framing
+assumes the default.
+
+**A recorded mod set that is only ours.** `Loader:setEnabled` turns the others
+off for the recording and back on afterwards. Measured: it disabled
+`overworld_wild_spawns`, `example_mew_starter` and `nuzlocke`, and restored all
+three. `DramaticShapeVoxelMod` is never disabled, because without the host
+there is nothing to film. This one is not cosmetic: `overworld_wild_spawns`
+puts Pokemon in the overworld, so a viewer could not tell which of three mods
+they were looking at, and we would have been showing somebody else's work
+without saying so.
 
 **Cost:** low per improvement, and each one is a line in the shot list rather
 than code. That has now been true twice, which is worth trusting.

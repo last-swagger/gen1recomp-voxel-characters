@@ -125,6 +125,51 @@ return function(game)
     return (pcall(CamControl.zoomBy, n)) and true or false
   end
 
+  -- NOTHING ON SCREEN THAT IS SOMEBODY ELSE'S.
+  --
+  -- Item 4 lists this last: the trailer is published as this mod's, and other
+  -- installed mods put their own work in the frame. `overworld_wild_spawns`
+  -- puts Pokemon in the overworld and `gen1_modern_ui` changes the menu, so a
+  -- viewer cannot tell which of the three mods they are looking at, and we
+  -- would be showing somebody else's work without saying so.
+  --
+  -- Two are NOT disabled and must never be: DramaticShapeVoxelMod is the host
+  -- this mod patches, so without it there is nothing to film, and
+  -- voxel_characters is the subject.
+  --
+  -- Restored at the end. Turning a player's mods off and leaving them off is
+  -- exactly the kind of thing that gets a mod uninstalled.
+  local ESSENCIAIS = { DRAMATIC_SHAPE = true, voxel_characters = true,
+                       dramatic_shape_voxel = true }
+  local desligados = {}
+  local function soNossos()
+    local L = game.mods
+    if not (L and L.setEnabled and L.mods) then
+      log("nao consegui alcancar o loader: outros mods podem aparecer")
+      return
+    end
+    for id, m in pairs(L.mods) do
+      if not ESSENCIAIS[id] and m.enabled ~= false then
+        if pcall(L.setEnabled, L, id, false) then
+          desligados[#desligados + 1] = id
+        end
+      end
+    end
+    if #desligados > 0 then
+      log("desligados para a gravacao: %s", table.concat(desligados, ", "))
+    else
+      log("nenhum outro mod ativo, ou o loader nao deixou desligar")
+    end
+  end
+  local function restauraMods()
+    local L = game.mods
+    if not (L and L.setEnabled) then return end
+    for _, id in ipairs(desligados) do pcall(L.setEnabled, L, id, true) end
+    if #desligados > 0 then
+      log("mods restaurados: %s", table.concat(desligados, ", "))
+    end
+  end
+
   local function restauraHora()
     if horaOriginal and okDN and DayNight and DayNight.setting then
       pcall(function() DayNight.setting:setIndex(horaOriginal, game) end)
@@ -258,6 +303,8 @@ return function(game)
     return Pouso.recusa(ow.map, ow, cx, cy) == nil
   end
 
+  soNossos()
+
   local n = 0
   local cortes = {}
 
@@ -336,6 +383,7 @@ return function(game)
   legenda = nil
   love.draw = desenhoOriginal
   restauraHora()
+  restauraMods()
   log("cortes: %s", table.concat(cortes, " "))
   log("fim, %d quadros a %d fps, %.1f s", n, FPS, n / FPS)
 end
