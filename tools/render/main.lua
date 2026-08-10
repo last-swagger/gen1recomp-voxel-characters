@@ -1656,7 +1656,84 @@ end
 local FEATURE_NOMES = {
   "quads", "frente", "verso", "lado", "topo", "baixo",
   "arte", "profundidade", "shade_media", "shade_desvio", "shade_niveis",
+  -- Estas duas vem de RENDER, nao da malha, e sao o motivo de este modo ter
+  -- deixado de ser so aritmetica de vertice. `art_px` e a metrica com que este
+  -- projeto sempre julgou: a fracao do que o jogador VE que e trabalho do
+  -- artista, e nao a fracao de quads. Enquanto ela nao estava aqui, o
+  -- adversario do juiz era "a melhor coluna sozinha" entre colunas em que
+  -- nenhuma era a regua da casa.
+  "art_px", "cobertura", "luz_media", "tons",
 }
+
+-- Fracao de PIXEL que veio de face de arte (frente e verso), medida do mesmo
+-- jeito que o contact sheet mede: desenha com cor de PROVENIENCIA num canvas e
+-- le de volta. Canvas e nao screenshot de proposito: screenshot so fica pronto
+-- no fim do quadro, e este modo roda inteiro dentro do love.load.
+local function artePorPixel(row, cell, yawDeg)
+  local colour = love.graphics.newCanvas(cell, cell)
+  local depth = love.graphics.newCanvas(cell, cell,
+    { format = "depth24", readable = false })
+  love.graphics.setCanvas({ colour, depthstencil = depth })
+  love.graphics.clear(0, 0, 0, 0, true, true)
+  love.graphics.setDepthMode("less", true)
+  love.graphics.setShader(state.shader)
+  state.shader:send("provenance", 1)
+  drawCell(row, math.rad(yawDeg or 0), 0, 0, cell, true)
+  state.shader:send("provenance", 0)
+  love.graphics.setShader()
+  love.graphics.setDepthMode("always", false)
+  love.graphics.setCanvas()
+
+  local img = colour:newImageData()
+  local arte, total = 0, 0
+  for y = 0, cell - 1 do
+    for x = 0, cell - 1 do
+      local r, g, b, a = img:getPixel(x, y)
+      if a >= 0.5 then
+        total = total + 1
+        -- Mesma classificacao de kindAt no computeMetrics: frente e verso sao
+        -- as unicas faces que o artista desenhou.
+        if (g > 0.75 and r < 0.25) or (g > 0.25 and r < 0.25 and b < 0.25) then
+          arte = arte + 1
+        end
+      end
+    end
+  end
+
+  -- SEGUNDA PASSADA, COM COR DE VERDADE, e ela existe por causa de um buraco
+  -- que o proprio juiz apontou: `SIDE COLOR` aparecia na lista de "features
+  -- cegas" mesmo depois de art_px entrar. Faz sentido: ela troca QUAL texel a
+  -- face lateral amostra (corpo ou contorno), o que muda a cor na tela e nao
+  -- muda a proveniencia, que continua sendo "lado". Nenhuma coluna de
+  -- geometria e nenhuma de proveniencia enxerga cor.
+  love.graphics.setCanvas({ colour, depthstencil = depth })
+  love.graphics.clear(0, 0, 0, 0, true, true)
+  love.graphics.setDepthMode("less", true)
+  love.graphics.setShader(state.shader)
+  drawCell(row, math.rad(yawDeg or 0), 0, 0, cell)
+  love.graphics.setShader()
+  love.graphics.setDepthMode("always", false)
+  love.graphics.setCanvas()
+
+  local cor = colour:newImageData()
+  local soma, n, tons = 0, 0, {}
+  for y = 0, cell - 1 do
+    for x = 0, cell - 1 do
+      local r, g, b, a = cor:getPixel(x, y)
+      if a >= 0.5 then
+        local l = 0.299 * r + 0.587 * g + 0.114 * b
+        soma, n = soma + l, n + 1
+        tons[math.floor(l * 32 + 0.5)] = true
+      end
+    end
+  end
+  local distintos = 0
+  for _ in pairs(tons) do distintos = distintos + 1 end
+
+  colour:release(); depth:release()
+  return (total > 0 and arte / total or 0), total / (cell * cell),
+         (n > 0 and soma / n or 0), distintos
+end
 
 local function featuresDaMalha(mesh, kinds)
   local f = {}
@@ -1694,6 +1771,11 @@ local function featuresDaMalha(mesh, kinds)
   return f
 end
 
+-- Uma celula so, no degrau padrao do jogo. O degrau importa porque a fracao de
+-- arte depende da camera: e a lei que este projeto mediu, topo nao carrega arte
+-- e esta camera olha para ele.
+local FEATURE_CELL, FEATURE_RUNG = 140, 35
+
 function love.features()
   -- Saida em linha e nao em bloco. Sem isto, um run interrompido no meio
   -- entrega um arquivo truncado NO MEIO DE UMA LINHA, e um leitor cuidadoso
@@ -1702,6 +1784,11 @@ function love.features()
   -- rodava em paralelo, e o que ficou no arquivo parecia uma medicao curta em
   -- vez de uma medicao interrompida.
   io.stdout:setvbuf("line")
+  love.window.setMode(FEATURE_CELL, FEATURE_CELL, { depth = 24, vsync = 0 })
+  state.width, state.height = FEATURE_CELL, FEATURE_CELL
+  state.shader = love.graphics.newShader(SHADER)
+  local pal = PALETTES[opts.palette] or PALETTES.obj
+  for i = 1, 4 do state.shader:send("pal" .. (i - 1), pal[i]) end
   local entrada = assert(io.open(opts.features, "r"),
     "nao consegui abrir " .. opts.features)
   local cab = { "folha", "frame", "clock", "estado" }
@@ -1762,6 +1849,21 @@ function love.features()
           falhas = falhas + 1
         else
         local f = featuresDaMalha(mesh, kinds)
+        local texture = love.graphics.newImage(data)
+        texture:setFilter("nearest", "nearest")
+        local okArte, px, cob, luz, tons = pcall(artePorPixel, {
+          sprite = folha, frame = quadro, shape = shape, mesh = mesh,
+          texture = texture, cellW = sw, cellH = sh / def.frames,
+          kinds = kinds, role = 0, pitch = math.rad(90 - FEATURE_RUNG),
+        }, FEATURE_CELL, 0)
+        f.art_px = okArte and px or 0
+        f.cobertura = okArte and cob or 0
+        f.luz_media = okArte and luz or 0
+        f.tons = okArte and tons or 0
+        if not okArte then
+          io.stderr:write("SEM RENDER: " .. folha .. "  " .. tostring(px) .. "\n")
+        end
+        texture:release()
         -- O QUADRO PEDIDO, nao o quadro usado. A folha pode ter menos frames
         -- do que o pedido e ai ele e reduzido por modulo; imprimir o reduzido
         -- muda a chave e a linha deixa de casar com a escolha que a gerou. O
