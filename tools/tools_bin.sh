@@ -49,6 +49,19 @@ export FFMPEG
 # trailer matou uma extracao de features no meio e o arquivo parcial parecia
 # resultado.
 #
+# PROVADO, e nao so escrito: (1) a segunda ferramenta recusa e diz quem esta
+# segurando; (2) a trava e SOLTA quando a ferramenta falha, nao so quando ela
+# termina bem, porque o trap cobre EXIT INT TERM e nao apenas a saida limpa.
+# O segundo caso e o que decide se a trava e usavel: uma que fica presa depois
+# de um erro ensina a pessoa a apagar trava por reflexo, e ai ela apaga a de
+# uma medicao viva tambem.
+#
+# ARMADILHA DE SHELL, paga: em zsh um `trap ... EXIT` posto DENTRO de uma
+# funcao dispara quando a FUNCAO retorna, nao quando o script sai. Estas
+# ferramentas tem shebang bash, mas um teste escrito no shell interativo (zsh)
+# mostrou a trava sumindo sozinha e por um minuto pareceu que ela nao
+# funcionava.
+#
 # A trava e um diretorio, porque mkdir e atomico em qualquer sistema de
 # arquivos. Guarda o PID para poder detectar dono morto: sem isso, uma
 # ferramenta que caiu deixa a trava para sempre e o proximo tem que apagar na
