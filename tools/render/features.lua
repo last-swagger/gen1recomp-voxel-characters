@@ -130,9 +130,53 @@ local function featuresDaMalha(mesh, kinds)
   if not (mesh and mesh.verts and #mesh.verts > 0) then return f end
   local quads = math.floor(#mesh.verts / 4)
   f.quads = quads
-  local conta = {}
-  for _, k in ipairs(kinds or {}) do conta[k] = (conta[k] or 0) + 1 end
-  local function frac(k) return quads > 0 and (conta[k] or 0) / quads or 0 end
+  -- COMPOSITION IS WEIGHED BY AREA, NOT COUNTED BY QUAD.
+  --
+  -- These were fractions of quad COUNT, and that made them measure polygon
+  -- budget instead of what a character looks like. Any option that splits a
+  -- run inflates them without moving a single vertex.
+  --
+  -- FRONT SHAPE is exactly that option, by design: it steps a run into tone
+  -- bands and is built so that no vertex position changes, which is why the
+  -- ruler can assert IoU 1.000 for it at any strength. Measured on `warden`,
+  -- turning it from off to HIGH:
+  --
+  --     quads      110  ->  281
+  --     frente   0.209  ->  0.690     the old count fraction
+  --     art_px  0.7311  -> 0.7311     the pixel fraction, unchanged
+  --
+  -- The judge fitted on Kim's 106 real choices then ranked FRONT SHAPE HIGH
+  -- first in the entire candidate space and FRONT SHAPE off last, crediting a
+  -- 230% rise in "front faces" that was three times the same face. It may well
+  -- have been right that he prefers it, for a reason that does not exist, and
+  -- the danger is the next candidate that adds quads without improving
+  -- anything: the model would reward that just as hard.
+  --
+  -- Area in MESH space, not projected area, on purpose. Projected area would
+  -- depend on the camera rung and stop being comparable between variants,
+  -- and the specific defect being fixed is polygon count, which mesh area is
+  -- already immune to: a run split into three bands has the area of the run.
+  local function areaQuad(i)
+    local a, b, c, d = mesh.verts[i], mesh.verts[i+1], mesh.verts[i+2], mesh.verts[i+3]
+    if not (a and b and c and d) then return 0 end
+    local function tri(p, q, r)
+      local ux, uy, uz = q[1]-p[1], q[2]-p[2], q[3]-p[3]
+      local vx, vy, vz = r[1]-p[1], r[2]-p[2], r[3]-p[3]
+      local cx, cy, cz = uy*vz - uz*vy, uz*vx - ux*vz, ux*vy - uy*vx
+      return 0.5 * math.sqrt(cx*cx + cy*cy + cz*cz)
+    end
+    return tri(a, b, c) + tri(a, c, d)
+  end
+  local area, areaTotal = {}, 0
+  for qi = 1, quads do
+    local k = (kinds or {})[qi]
+    local s = areaQuad((qi - 1) * 4 + 1)
+    areaTotal = areaTotal + s
+    if k then area[k] = (area[k] or 0) + s end
+  end
+  local function frac(k)
+    return areaTotal > 0 and (area[k] or 0) / areaTotal or 0
+  end
   f.frente, f.verso = frac("front"), frac("back")
   f.lado = frac("side") + frac("side_e") + frac("side_w")
   f.topo, f.baixo = frac("top"), frac("bottom")

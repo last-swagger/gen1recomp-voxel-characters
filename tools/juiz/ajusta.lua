@@ -195,6 +195,65 @@ local function divide(n)
   return treino, teste
 end
 
+-- CROSS VALIDATION, because one fifth of a hundred choices is nineteen, and
+-- nineteen cannot tell 63% from 77%.
+--
+-- The single holdout above was the right call while the machinery was being
+-- proved: it is deterministic and cheap. But once real choices arrived it
+-- produced a curve that swung from 60% to 86% with nothing changing except
+-- how many rows were in the file, and a number that moves 26 points on its own
+-- cannot be used to decide anything.
+--
+-- Five folds test EVERY choice exactly once, so the estimate uses all 99
+-- instead of 19. Still deterministic, same fold for the same file. The spread
+-- ACROSS folds is reported too, because it is the honest error bar and the
+-- thing that says whether two numbers differ at all.
+--
+-- The best single column is run through the identical folds. Comparing a
+-- cross-validated model against a single-holdout baseline would be comparing
+-- two different measurements and calling the difference a result.
+local function foldsDe(n, k)
+  local folds = {}
+  for f = 1, k do folds[f] = { treino = {}, teste = {} } end
+  for i = 1, n do
+    local f = (i - 1) % k + 1
+    for g = 1, k do
+      if g == f then folds[g].teste[#folds[g].teste + 1] = i
+      else folds[g].treino[#folds[g].treino + 1] = i end
+    end
+  end
+  return folds
+end
+
+function M.validaCruzado(X, y, nomes, k)
+  k = k or 5
+  local n = #X
+  if n < k * 4 then return nil end
+  local somaM, somaC, porFold = 0, 0, {}
+  local colunaVence = {}
+  for _, fold in ipairs(foldsDe(n, k)) do
+    local media, desvio = padroniza(X, fold.treino)
+    local Z = {}
+    for i = 1, n do Z[i] = aplica(X[i], media, desvio) end
+    local w = treina(Z, y, fold.treino)
+    local acM = acerta(Z, y, fold.teste, w)
+    local base = melhorColuna(Z, y, fold.treino, fold.teste, nomes)
+    somaM, somaC = somaM + acM, somaC + base.teste
+    porFold[#porFold + 1] = acM
+    colunaVence[base.nome] = (colunaVence[base.nome] or 0) + 1
+  end
+  local mediaM, mediaC = somaM / k, somaC / k
+  local varM = 0
+  for _, a in ipairs(porFold) do varM = varM + (a - mediaM) ^ 2 end
+  local nomeColuna, vezes = "?", 0
+  for nome, c in pairs(colunaVence) do
+    if c > vezes then nomeColuna, vezes = nome, c end
+  end
+  return { modelo = mediaM, coluna = mediaC, folds = porFold,
+           desvio = math.sqrt(varM / k), nomeColuna = nomeColuna,
+           vezes = vezes, k = k, n = n }
+end
+
 function M.ajusta(X, y, nomes)
   local n = #X
   local treinoIdx, testeIdx = divide(n)
@@ -313,9 +372,46 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
   print(string.format("melhor coluna sozinha       %.1f%% fora (%s)",
     r.base.teste * 100, r.base.nome))
   print("")
-  if r.acTeste > r.base.teste then
+
+  -- THE VERDICT COMES FROM CROSS VALIDATION, not from the single holdout
+  -- above, whenever there is enough data for it. The holdout stays printed
+  -- because it is what the model file records and what earlier rounds
+  -- reported, but it tests 19 choices and swings 26 points on its own, so it
+  -- is not something to decide on.
+  local cv = M.validaCruzado(X, y, nomes, 5)
+  if not cv then
+    if r.acTeste > r.base.teste then
+      print("O MODELO GANHA DA MELHOR COLUNA (holdout unico, poucos dados).")
+    else
+      print("O MODELO NAO GANHA DE UMA COLUNA SOZINHA, no holdout unico.")
+    end
+    return
+  end
+
+  local margem = (cv.modelo - cv.coluna) * 100
+  print(string.format("VALIDACAO CRUZADA, %d dobras, %d escolhas testadas:",
+    cv.k, cv.n))
+  local partes = {}
+  for _, a in ipairs(cv.folds) do
+    partes[#partes + 1] = string.format("%.0f%%", a * 100)
+  end
+  print(string.format("  modelo        %.1f%%  (por dobra: %s)",
+    cv.modelo * 100, table.concat(partes, " ")))
+  print(string.format("  melhor coluna %.1f%%  (%s, em %d das %d dobras)",
+    cv.coluna * 100, cv.nomeColuna, cv.vezes, cv.k))
+  print(string.format("  margem        %+.1f pontos", margem))
+  print(string.format("  desvio entre dobras %.1f pontos", cv.desvio * 100))
+  print("")
+
+  -- A margin smaller than the spread across folds is not a margin. Saying so
+  -- out loud is the whole point: this project has published a difference that
+  -- was inside its own noise before.
+  if margem > cv.desvio * 100 then
     print("O MODELO GANHA DA MELHOR COLUNA SOZINHA: ele aprendeu uma")
     print("combinacao, e nao so a feature mais forte.")
+  elseif margem > 0 then
+    print("A MARGEM E MENOR QUE O RUIDO ENTRE AS DOBRAS. O modelo esta na")
+    print("frente, mas nao o suficiente para afirmar que ganha.")
   else
     print("O MODELO NAO GANHA DE UMA COLUNA SOZINHA. Isso nao e juiz ainda.")
     print("Duas causas, e elas pedem coisas opostas: ou faltam escolhas, ou o")
