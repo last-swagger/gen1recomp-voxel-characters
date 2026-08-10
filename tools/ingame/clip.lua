@@ -292,6 +292,20 @@ return function(game)
   reposiciona()
   grava("off")
 
+  -- O PISO: o MESMO lado, gravado DE NOVO, pelo mesmo caminho. E o unico jeito
+  -- de saber quanto dois clipes diferem entre si por motivo que nao e a opcao.
+  --
+  -- A primeira tentativa de piso comparava o quadro 10 com o quadro 40 da MESMA
+  -- gravacao, e isso mede outra coisa: quadros vizinhos de uma corrida continua
+  -- sao correlacionados, enquanto duas corridas comecam com fases diferentes.
+  -- Medido: com o mesmo valor nos dois lados, "entre" dava 22 dB e "dentro"
+  -- 28 dB, ou seja o par entre lados parecia MAIS diferente, e a guarda
+  -- aprovava um A/B que nao comparava nada.
+  --
+  -- Estes quadros nao entram no video; existem so para dar escala.
+  reposiciona()
+  grava("piso")
+
   -- Lado direito: a opcao pedida. MOTION LAG so aparece com o personagem se
   -- movendo, entao para ela os dois lados andam; para as outras, os dois lados
   -- ficam parados. O que os dois lados nunca fazem e coisas diferentes.

@@ -116,25 +116,55 @@ find "$SAVE" -maxdepth 1 -name 'vc_clip_*.png' -exec mv {} "$TMP"/ \;
 # Fechar o segundo caso exige comparar a diferenca ENTRE os lados contra a
 # variacao DENTRO de um lado, que e medida e nao comparacao de bytes. Esta na
 # lista, e ate la esta guarda promete so o que cumpre.
-IGUAIS=0; COMPARADOS=0
-for i in 0010 0030 0050 0070; do
-  A="$TMP/vc_clip_off_$i.png"; B="$TMP/vc_clip_on_$i.png"
-  if [ -f "$A" ] && [ -f "$B" ]; then
-    COMPARADOS=$((COMPARADOS + 1))
-    cmp -s "$A" "$B" && IGUAIS=$((IGUAIS + 1))
-  fi
-done
-if [ "$COMPARADOS" -eq 0 ]; then
-  echo "FALHOU: nao consegui comparar quadro nenhum entre os dois lados"
+# A MEDIDA, e nao a comparacao de bytes.
+#
+# A versao anterior so perguntava se os dois lados eram identicos. Isso pega o
+# defeito historico (opcao de malha que nao chegou, cache nunca reconstruido,
+# dois lados byte a byte iguais) e nao pega o caso que interessa agora: opcao
+# que chegou e nao fez nada. Com animacao ligada os lados sao gravados em
+# sequencia, a fase avanca, e eles SEMPRE diferem. Medido: filmar com o mesmo
+# valor nos dois lados nao disparava a guarda.
+#
+# Entao a pergunta certa nao e "diferem?", e "diferem MAIS do que um lado
+# difere de si mesmo?". A variacao dentro de um lado e a animacao; o que passa
+# disso e a opcao. Mesma forma do piso que a sonda de vida mede com o proprio
+# procedimento, e do relatorio de features cegas do juiz: comparacao so vira
+# evidencia quando outra coisa estabelece a escala.
+#
+# PSNR porque ele ja vem no ffmpeg e e monotonico no que a gente quer: quanto
+# MENOR, mais diferente. Entao a opcao so conta se o par entre lados for mais
+# diferente (PSNR menor) que o par dentro de um lado.
+psnr() {  # $1 $2 = png; imprime o PSNR medio, ou vazio
+  "$FFMPEG" -hide_banner -i "$1" -i "$2" -lavfi psnr -f null - 2>&1 \
+    | grep -oE "average:[0-9.]+" | head -1 | cut -d: -f2
+}
+
+DENTRO=$(psnr "$TMP/vc_clip_off_0010.png" "$TMP/vc_clip_piso_0010.png")
+ENTRE=$(psnr "$TMP/vc_clip_off_0010.png" "$TMP/vc_clip_on_0010.png")
+if [ -z "$DENTRO" ] || [ -z "$ENTRE" ]; then
+  echo "FALHOU: nao consegui medir os quadros (ffmpeg sem psnr?)"
   exit 1
 fi
-if [ "$IGUAIS" -eq "$COMPARADOS" ]; then
-  echo "FALHOU: os dois lados sao IDENTICOS nos $COMPARADOS quadros amostrados."
-  echo "  A opcao nao chegou na tela, e um clipe assim parece uma comparacao"
-  echo "  sem ser uma. Ver o AVISO em $LOG."
-  exit 1
-fi
-echo "lados diferem em $((COMPARADOS - IGUAIS)) de $COMPARADOS quadros amostrados"
+printf "psnr dentro de um lado %s, entre os lados %s\n" "$DENTRO" "$ENTRE"
+# `inf` sai quando os quadros sao identicos. Do lado DENTRO isso significa cena
+# parada, e ai a comparacao perde a referencia; do lado ENTRE significa a opcao
+# nao ter mudado nada, que e reprovacao direta.
+case "$ENTRE" in inf|"") echo "FALHOU: os dois lados sao identicos no quadro 10"; exit 1;; esac
+case "$DENTRO" in
+  inf) echo "  (cena parada: sem animacao, qualquer diferenca entre lados e a opcao)";;
+  *)
+    MAIOR=$(awk -v a="$ENTRE" -v b="$DENTRO" 'BEGIN{print (a < b) ? 1 : 0}')
+    if [ "$MAIOR" != "1" ]; then
+      echo "FALHOU: os lados diferem MENOS entre si ($ENTRE) do que um lado"
+      echo "  difere de si mesmo ($DENTRO). Isso e a animacao, nao a opcao."
+      echo "  Um clipe assim parece uma comparacao sem ser uma."
+      exit 1
+    fi;;
+esac
+
+# Os quadros do piso saem antes da montagem: eles existem para medir, nao para
+# aparecer.
+rm -f "$TMP"/vc_clip_piso_*.png
 
 FPS="${VC_CLIP_FPS:-30}"
 ESCALA="${VC_CLIP_ESCALA:-640}"
