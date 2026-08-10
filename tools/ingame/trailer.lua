@@ -105,6 +105,26 @@ return function(game)
     pcall(function() DayNight.setting:setIndex(i, game) end)
   end
 
+  -- ZOOM, so a shot can hold on one face.
+  --
+  -- Item 4 lists "a shot that holds on one face long enough to read the blink"
+  -- as missing, and it stayed missing because the shot list only ever chose a
+  -- camera RUNG, which is an angle and not a distance. The host has a
+  -- distance: `CamControl.zoomBy(notches)`, where POSITIVE PULLS OUT, so
+  -- closing in is a negative count.
+  --
+  -- Restored to the starting distance at the end of each shot rather than at
+  -- the end of the run, because the next shot's framing is written assuming
+  -- the default and a leftover zoom would silently reframe everything after
+  -- it.
+  local okCam, CamControl = pcall(lib.require, "CamControl")
+  local function porZoom(n)
+    if not (okCam and CamControl and CamControl.zoomBy and n and n ~= 0) then
+      return false
+    end
+    return (pcall(CamControl.zoomBy, n)) and true or false
+  end
+
   local function restauraHora()
     if horaOriginal and okDN and DayNight and DayNight.setting then
       pcall(function() DayNight.setting:setIndex(horaOriginal, game) end)
@@ -140,8 +160,12 @@ return function(game)
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "up", degrau = "medio",
       seg = 5, opcoes = { breath = 0.035 },
       legenda = "They breathe, each at their own pace" },
+    -- CLOSE, and long. The blink is a 0.12 s event on a period of seconds, so
+    -- a four second wide shot can miss it entirely and a viewer who does see it
+    -- has no idea what they saw. Six seconds close in is enough to catch two.
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "up", degrau = "empe",
-      seg = 4, opcoes = { blink = "on" }, legenda = "And they blink" },
+      seg = 6, zoom = -3, opcoes = { blink = "on" },
+      legenda = "And they blink" },
     { mapa = "ROUTE_1", x = 10, y = 20, dir = "down", degrau = "alto",
       anda = true, seg = 6, hora = "dawn", opcoes = { footfall = 0.7, lag = 0.6 },
       legenda = "The step carries weight, and the body takes a moment to follow" },
@@ -248,6 +272,7 @@ return function(game)
     -- the hour first and it would be reset to "sync" before a single frame was
     -- recorded, which would look exactly like the setting not working.
     porHora(p.hora or "day")
+    local zoomAplicado = p.zoom and porZoom(p.zoom) and p.zoom or nil
     local _, px, py = Pouso.escolher(game, p.mapa, p.x, p.y)
     U.teleport(game, p.mapa, px, py, p.dir)
     -- Settle before recording: the step does a tween, the mesh rebuilds and the
@@ -302,6 +327,7 @@ return function(game)
       end
     end
     legendaAlpha = 0
+    if zoomAplicado then porZoom(-zoomAplicado) end
     cortes[#cortes + 1] = string.format("%d:%d:%s", inicio, n, p.degrau)
     log("plano %d/%d  %-22s %-9s %ds  quadros %d a %d",
         indice, #PLANOS, p.mapa, p.degrau, p.seg, inicio, n)

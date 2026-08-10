@@ -462,6 +462,63 @@ end
 
 --------------------------------------------------------------------------
 
+-- `mode=conta a.png b.png` prints three numbers and exits. It exists for the
+-- critic calibration harness, which has to decide whether a PAIR IS EVEN A
+-- QUESTION before spending a judgement on it.
+--
+-- The first calibration run wasted more than half its pairs on things that
+-- were not about taste at all, and a critic caught it in prose that the
+-- harness should have caught in numbers: one side rendered BLANK, two pairs
+-- had the character blown up and cropped out of frame, and one differed by
+-- under 5% brightness, below anything anyone can see. The agreement number
+-- computed from that set said the critic knew nothing. The set was broken.
+--
+-- So: how much content is on each side, and how much they differ.
+local function comandoConta(a, b)
+  local ia, ib = loadImageData(a), loadImageData(b)
+  local function conteudo(id)
+    local w, h = id:getWidth(), id:getHeight()
+    local r0, g0, b0 = id:getPixel(0, 0)
+    local n = 0
+    for y = 0, h - 1 do
+      for x = 0, w - 1 do
+        local r, g, bb = id:getPixel(x, y)
+        if math.abs(r - r0) > 0.02 or math.abs(g - g0) > 0.02
+           or math.abs(bb - b0) > 0.02 then n = n + 1 end
+      end
+    end
+    return n
+  end
+  -- Content touching the frame edge means the character is CROPPED, and a
+  -- pair where one side is cut off is not a question about art either. The
+  -- critic spotted two of those by eye and called them framing failures, which
+  -- is exactly right and exactly what the harness should have said first.
+  local function tocaBorda(id)
+    local w, h = id:getWidth(), id:getHeight()
+    local r0, g0, b0 = id:getPixel(0, 0)
+    local function difere(x, y)
+      local r, g, bb = id:getPixel(x, y)
+      return math.abs(r - r0) > 0.02 or math.abs(g - g0) > 0.02
+             or math.abs(bb - b0) > 0.02
+    end
+    for x = 0, w - 1 do
+      if difere(x, 0) or difere(x, h - 1) then return 1 end
+    end
+    for y = 0, h - 1 do
+      if difere(0, y) or difere(w - 1, y) then return 1 end
+    end
+    return 0
+  end
+  local d = diffPixels(ia, ib)
+  print(string.format("conteudo_a %d", conteudo(ia)))
+  print(string.format("conteudo_b %d", conteudo(ib)))
+  print(string.format("borda_a %d", tocaBorda(ia)))
+  print(string.format("borda_b %d", tocaBorda(ib)))
+  print(string.format("diferenca %d", d))
+  io.stdout:flush()
+  os.exit(0)
+end
+
 function love.load(argv)
   -- Pixel art scaled or filtered turns to mush, and this tool exists to show
   -- pixels. Nearest before any image is created.
@@ -470,6 +527,17 @@ function love.load(argv)
   local mode = "stack"
   for _, a in ipairs(argv or {}) do
     if a == "mode=card" then mode = "card" end
+    if a == "mode=conta" then mode = "conta" end
+  end
+
+  if mode == "conta" then
+    local ficheiros = {}
+    for _, a in ipairs(argv or {}) do
+      if a ~= "mode=conta" then ficheiros[#ficheiros + 1] = a end
+    end
+    if #ficheiros < 2 then refuse("ERROR: mode=conta needs two files") end
+    comandoConta(ficheiros[1], ficheiros[2])
+    return
   end
 
   if mode == "card" then
