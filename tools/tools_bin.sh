@@ -69,10 +69,25 @@ export FFMPEG
 # which teaches the person to delete the lock by reflex.
 VC_TRAVA="${VC_TRAVA:-/tmp/vc-love.lock}"
 
+# A TOOL THAT CALLS ANOTHER TOOL MUST NOT DEADLOCK ON ITSELF.
+#
+# The ruler was given the lock, correctly, because running beside another tool
+# had just produced a false RED. But the ruler CALLS card.sh, which takes the
+# lock too, and card.sh was then refused by the lock the ruler was holding. The
+# ruler went red on two card checks that pass perfectly when run by hand.
+#
+# So the lock is reentrant across a process tree: whoever takes it exports
+# VC_TRAVA_DONO with its own pid, and a child that sees an inherited value
+# knows the machine is already ours and proceeds without taking anything. Only
+# the process that actually created the lock releases it.
 vc_trava_pega() {
   local quem="${1:-ferramenta}"
+  if [ -n "${VC_TRAVA_DONO:-}" ]; then
+    return 0
+  fi
   if mkdir "$VC_TRAVA" 2>/dev/null; then
     echo "$$ $quem" > "$VC_TRAVA/dono"
+    export VC_TRAVA_DONO=$$
     trap 'vc_trava_solta' EXIT INT TERM
     return 0
   fi
