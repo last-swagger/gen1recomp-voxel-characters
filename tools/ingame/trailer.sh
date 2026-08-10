@@ -1,13 +1,14 @@
 #!/bin/bash
-# Monta o TRAILER: roda o jogo dirigido pelo roteiro de trailer.lua, grava a
-# sequencia inteira e junta num mp4 com transicao entre os planos.
+# Builds the TRAILER: runs the game driven by trailer.lua's shot list, records
+# the whole sequence and joins it into an mp4.
 #
 #   tools/ingame/trailer.sh <pasta-de-saida>
-#   VC_TRAILER_SEGUNDOS=12 tools/ingame/trailer.sh /tmp/t    versao curta
+#   VC_TRAILER_SEGUNDOS=12 tools/ingame/trailer.sh /tmp/t    short version
+#   VC_TRAILER_HORA=night  tools/ingame/trailer.sh /tmp/t    force one hour
 #
-# O roteiro (mapas, degraus de camera, opcoes, legendas) mora em trailer.lua.
-# Este arquivo so executa e monta, de proposito: quem edita o trailer edita
-# dado, nao shell.
+# The shot list (maps, camera rungs, options, captions, hour) lives in
+# trailer.lua. This file only runs and assembles, deliberately: whoever edits
+# the trailer edits data, not shell.
 set -u
 REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
 SAVE="$HOME/Library/Application Support/LOVE/pokemon-love2d"
@@ -15,8 +16,8 @@ SAVE="$HOME/Library/Application Support/LOVE/pokemon-love2d"
 DRIVER="$REPO/mods/voxel_characters/tools/ingame/trailer.lua"
 
 SAIDA="${1:?uso: trailer.sh <pasta-de-saida>}"
-[ -n "$FFMPEG" ] || { echo "ffmpeg nao encontrado"; exit 1; }
-[ -f "$DRIVER" ] || { echo "roteiro nao encontrado: $DRIVER"; exit 1; }
+[ -n "$FFMPEG" ] || { echo "ffmpeg not found"; exit 1; }
+[ -f "$DRIVER" ] || { echo "shot list not found: $DRIVER"; exit 1; }
 
 versao_pronta() {
   case "$1" in
@@ -29,7 +30,7 @@ VERSAO="${VC_VERSION:-}"
 if [ -z "$VERSAO" ]; then
   for v in blue red yellow; do versao_pronta "$v" && { VERSAO="$v"; break; }; done
 fi
-[ -n "$VERSAO" ] || { echo "nenhuma versao pronta"; exit 1; }
+[ -n "$VERSAO" ] || { echo "no version ready"; exit 1; }
 
 vc_trava_pega "trailer.sh" || exit 1
 pkill -x love 2>/dev/null
@@ -40,34 +41,34 @@ find "$SAVE" -maxdepth 1 -name 'vc_trailer_*.png' -delete 2>/dev/null
 LOG="$SAIDA/trailer.log"
 
 cd "$REPO" || exit 1
-echo "versao: $VERSAO   roteiro: $(basename "$DRIVER")"
+echo "version: $VERSAO   shot list: $(basename "$DRIVER")"
 POKEPORT_VERSION="$VERSAO" POKEPORT_DRIVER="$DRIVER" "$LOVE" . > "$LOG" 2>&1
 
-# O driver diz quantos quadros gravou. Contar arquivo em vez de acreditar no
-# log ja pegou um run que morreu no meio parecendo completo.
+# The driver says how many frames it recorded. Counting files instead of
+# believing the log already caught a run that died halfway and looked complete.
 ESPERADOS=$(grep -oE 'fim, [0-9]+ quadros' "$LOG" | grep -oE '[0-9]+' | tail -1)
 N=$(find "$SAVE" -maxdepth 1 -name 'vc_trailer_*.png' | wc -l | tr -d ' ')
 if [ -z "$ESPERADOS" ]; then
-  echo "FALHOU: o roteiro nao chegou ao fim"
+  echo "FALHOU: the shot list did not reach the end"
   tail -5 "$LOG"
   exit 1
 fi
-echo "quadros: $N gravados, $ESPERADOS esperados"
-[ "$N" -ge "$ESPERADOS" ] || { echo "FALHOU: faltaram quadros"; exit 1; }
+echo "frames: $N recorded, $ESPERADOS expected"
+[ "$N" -ge "$ESPERADOS" ] || { echo "FALHOU: frames are missing"; exit 1; }
 
 TMP="$SAIDA/.quadros"
 mkdir -p "$TMP"
 find "$SAVE" -maxdepth 1 -name 'vc_trailer_*.png' -exec mv {} "$TMP"/ \;
 
 FPS="${VC_TRAILER_FPS:-30}"
-# Sem recorte: um trailer mostra o enquadramento do jogo, ao contrario do clipe
-# de feature, que recorta no personagem porque a pergunta ali e outra.
+# No crop: a trailer shows the game's own framing, unlike the feature clip,
+# which crops to the character because the question there is a different one.
 "$FFMPEG" -y -loglevel error -framerate "$FPS" -start_number 1 \
   -i "$TMP/vc_trailer_%05d.png" \
   -c:v libx264 -pix_fmt yuv420p -crf 18 -preset slow \
-  "$SAIDA/trailer.mp4" || { echo "ffmpeg falhou"; exit 1; }
+  "$SAIDA/trailer.mp4" || { echo "ffmpeg failed"; exit 1; }
 
-# Um GIF curto do comeco, para colar em thread onde video nao toca sozinho.
+# A short GIF of the opening, for threads where video does not autoplay.
 "$FFMPEG" -y -loglevel error -t 6 -i "$SAIDA/trailer.mp4" \
   -vf "fps=15,scale=640:-2:flags=neighbor,palettegen=stats_mode=diff" \
   "$TMP/paleta.png" >/dev/null 2>&1
