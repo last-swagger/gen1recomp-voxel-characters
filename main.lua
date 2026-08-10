@@ -390,7 +390,12 @@ local OPTIONS = {
     -- that those ship off until the community has seen one and approved it.
     levels = { { "OFF", "off" }, { "LOW", 0.08 }, { "HIGH", 0.16 } },
     defaultIndex = 1,
-    help = "Delays the upper body behind the lower one, so the head and hair arrive late instead of moving as one rigid piece.",
+    -- IT NEEDS SOMETHING TO DELAY, and that was found by the clip guard
+    -- refusing to publish it: with every other life option off, the shear is
+    -- constant, and a delayed constant is the same constant. PART LAG only
+    -- shows up on top of MOTION LAG, SWAY or ATTENTION, which is obvious in
+    -- hindsight and was not obvious when the option was written.
+    help = "Delays the upper body behind the lower one, so the head and hair arrive late instead of moving as one rigid piece. Needs MOTION LAG, SWAY or ATTENTION on: it delays their movement, and has nothing to delay on its own.",
   },
   {
     key = "first_person",

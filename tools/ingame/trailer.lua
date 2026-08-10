@@ -177,11 +177,15 @@ return function(game)
     end
   end
 
-  -- The steps by NAME, so the script doesn't carry a magic number. The host's
-  -- ladder is ANGLES_DEG = {0, 35, 15, 35, 50, 75, 75, 75}, indexed by
-  -- level + 1, so level 0 is the flat game and 5 is the most upright.
-  local DEGRAU = { plano = 0, baixo = 2, medio = 3, alto = 4, empe = 5,
-                   primeira = FPLEVEL }
+  -- THE SHOT LIBRARY, shared with every other tool that films (roadmap 21.3).
+  -- Locations and camera setups live in planos.lua so that a feature filmed
+  -- today and the same feature filmed in March are framed the same way, and so
+  -- that a bad landing spot is fixed once instead of in every list that copied
+  -- it.
+  local P = dofile("mods/voxel_characters/tools/ingame/planos.lua")
+  local DEGRAU = {}
+  for k, v in pairs(P.DEGRAUS) do DEGRAU[k] = v end
+  DEGRAU.primeira = FPLEVEL
 
   local BASE = {
     depth = 3, shape = "slab", side_color = "body", ground_shade = "off",

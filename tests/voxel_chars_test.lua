@@ -630,6 +630,18 @@ local function fakeMesh(verts, map)
         self.verts[index] = { row, ... }
       end
     end,
+    -- The real host's mesh is a LOVE Mesh, which has setDrawRange. Without it
+    -- here, PART LAG's per-band path was silently unreachable offline: the
+    -- code checks for the method before using it, correctly, and the mock
+    -- simply did not have it, so the suite could only ever exercise the
+    -- single-matrix fallback. Recording the calls as well, because "was the
+    -- range cleared afterwards" is a real question: the range is sticky on a
+    -- mesh shared between every character using that sheet.
+    setDrawRange = function(self, primeiro, quantos)
+      self.drawRanges = self.drawRanges or {}
+      self.drawRanges[#self.drawRanges + 1] = { primeiro, quantos }
+      self.rangeAtual = primeiro and { primeiro, quantos } or nil
+    end,
     setVertexMap = function(self, m) self.map = m end,
     setTexture = function(self, tex) self.texture = tex end,
     release = function(self) self.released = true end,
@@ -6751,6 +6763,82 @@ do
   check(math.abs(dir) * 16 < 1.2,
         "ATTENTION: the strongest level stays under 1.2 px of head movement")
   modules.Voxel3D.eye = nil
+end
+
+do
+  -- PART LAG (roadmap item 9): the head arrives late.
+  --
+  -- Measured on the DRAW CALLS rather than on one matrix, because the whole
+  -- feature is that there is now more than one: with bands on, each band is
+  -- drawn with its own transform, and the thing to prove is that they DIFFER
+  -- and that the head is the one lagging.
+  local pixels = {}
+  for i = 0, 255 do pixels[i] = 1 end
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { sway = 0.45, part_lag = 0.16 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+
+  local chamadas = 0
+  local kxPorBanda = {}
+  withDrivenClock(function(setClock)
+    for f = 0, 60 do
+      setClock(f / 60)
+      local antes = #modules.Voxel3D.drawCalls
+      modules.Voxel3D.draw(mesh, "tex", lifeProbeModel(0, 0, false), "pull", nil)
+      chamadas = #modules.Voxel3D.drawCalls - antes
+      if f == 60 then
+        for i = antes + 1, #modules.Voxel3D.drawCalls do
+          kxPorBanda[#kxPorBanda + 1] = modules.Voxel3D.drawCalls[i].model[2]
+        end
+      end
+    end
+  end)
+
+  check(chamadas > 1,
+        "PART LAG: the mesh is drawn once per band, not once in total")
+
+  -- The bands must not all carry the same shear, or the delay did nothing.
+  local iguais = true
+  for i = 2, #kxPorBanda do
+    if math.abs(kxPorBanda[i] - kxPorBanda[1]) > 1e-9 then iguais = false end
+  end
+  check(not iguais and #kxPorBanda > 1,
+        "PART LAG: the bands carry DIFFERENT shear, so one of them is late")
+
+  -- THE RANGE MUST BE CLEARED. It is sticky on the mesh OBJECT, and that mesh
+  -- is shared by every character using this sheet in the frame, so a range
+  -- left set draws the next character as one band of itself. This is the one
+  -- blocker from the old list that survived, and it survives as a rule that
+  -- has to be checked rather than as a reason not to build the feature.
+  check(mesh.rangeAtual == nil,
+        "PART LAG: the draw range is cleared after the last band")
+
+  -- AND IT NEEDS SOMETHING TO DELAY. With every other life option off the
+  -- shear is constant, and a delayed constant is the same constant, so the
+  -- feature correctly does nothing. The clip guard found this by refusing to
+  -- publish it, and it belongs in the suite rather than in somebody's memory.
+  loadWith(makeMod(handle, { part_lag = 0.16 }))
+  local mesh2 = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local kx2 = {}
+  withDrivenClock(function(setClock)
+    for f = 0, 60 do
+      setClock(f / 60)
+      local antes = #modules.Voxel3D.drawCalls
+      modules.Voxel3D.draw(mesh2, "tex", lifeProbeModel(0, 0, false), "pull", nil)
+      if f == 60 then
+        for i = antes + 1, #modules.Voxel3D.drawCalls do
+          kx2[#kx2 + 1] = modules.Voxel3D.drawCalls[i].model[2]
+        end
+      end
+    end
+  end)
+  local todosIguais = true
+  for i = 2, #kx2 do
+    if math.abs(kx2[i] - kx2[1]) > 1e-9 then todosIguais = false end
+  end
+  check(todosIguais,
+        "PART LAG: with nothing to delay, every band gets the same transform")
 end
 
 T.finish("voxel_chars_test")
