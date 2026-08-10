@@ -34,6 +34,7 @@ POKEPORT_VERSION=blue POKEPORT_DRIVER=<driver> love .
 bash mods/voxel_characters/tools/ingame/run.sh <dir>        15 photos + a control
 bash mods/voxel_characters/tools/ingame/clip.sh <dir> <k=v> side by side video
 bash mods/voxel_characters/tools/ingame/trailer.sh <dir>    the 49 second trailer
+bash mods/voxel_characters/tools/render/card.sh <recipe>    before/after explainer
 bash mods/voxel_characters/tools/release_check.sh           does the GAME accept it?
 bash mods/voxel_characters/tools/sala_de_teste.sh <host>    the whole battery, remotely
 bash mods/voxel_characters/tools/juiz/rodada.sh 30          one round of the judge
@@ -96,6 +97,23 @@ at an angle (at yaw 30: art 94.7, 85.7, 78.5, 65.2 percent for depths 1, 3, 5,
 first-person view is head-on. **So what does FIRST PERSON: SOLID buy at full
 blend?** The probe measures at 0.58, mid-transition. Nobody has measured 1.0
 with a character guaranteed in frame.
+
+## The explainer card, and what measuring it closed
+
+`card.sh` builds a before and after with numbered callouts from a recipe file
+(`tools/render/cards/*.card`), for release notes and Discord. `before_tag=`
+renders the before half from a released tag through `VOXEL_CHARS_MAIN`, so a
+release comparison is a measurement rather than an illustration. It refuses two
+halves that are pixel identical, exiting non-zero.
+
+It came from a reference Kim brought in (`docs/refs/`), and grading that
+reference's five points against this mod closed a question rather than opening
+one. **Neighbour ambient occlusion changes exactly zero pixels on a slab seen
+head on**; the entire effect is the ground contact term, which already ships as
+`GROUND SHADE`. A slab is an extrusion, a visual hull is convex in depth, so the
+front face is one flat plane and no geometry-derived lighting can vary within
+it. That is why `FRONT SHAPE` shades by position within a run: on a flat face,
+position in the run is the only variable there is. Full numbers in roadmap 26.
 
 ## Two machines
 
