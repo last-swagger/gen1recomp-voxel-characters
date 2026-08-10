@@ -615,6 +615,18 @@ local meshOrder = {}
 local optionState = {}
 local optionsRegistered = false
 local meshBlink = setmetatable({}, { __mode = "k" })
+
+-- REGION BANDS, for per-part secondary motion (roadmap item 9).
+--
+-- Weak keys, like meshBlink above and for the same reason: the mesh is owned
+-- by the host's cache and this table must not be what keeps it alive.
+--
+-- Four bands and not more. A 16 pixel character gives each band four pixels of
+-- height, which is already near the floor of what can lag visibly, and every
+-- extra band is another draw call per character per frame on a scene that
+-- draws twenty five of them.
+local meshBands = setmetatable({}, { __mode = "k" })
+local REGION_BANDS = 4
 local blinkVertexWarned = false
 -- v1.4.2, fine-tooth comb: `patch()` builds everything in locals and only
 -- commits these upvalues (SpriteBillboards and the others, installedMesh,
@@ -1784,10 +1796,94 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   for _, key in ipairs(finalSideKeys) do finishSideRun(key) end
   for _, run in ipairs(finishedSideRuns) do emitSideRun(run) end
 
+  -- REGIONS, for per-part secondary motion (roadmap item 9).
+  --
+  -- The mesh has to be addressable in bands so that hair can lag differently
+  -- from feet. Three blockers were recorded against doing that, and all three
+  -- come from the same wrong assumption, that a region means CUTTING the mesh:
+  --
+  --   cap faces: SLAB emits a top or bottom face only where the neighbouring
+  --   row is empty, so a cut anywhere else exposes the inside of the back
+  --   wall, because the host draws with culling disabled;
+  --
+  --   "the top N rows are a contiguous prefix" is false, because side faces
+  --   accumulate in sideRuns and are emitted after the whole row scan;
+  --
+  --   the mesh is shared between every instance of a sheet in the frame.
+  --
+  -- Nothing is cut here. The quads are REORDERED so that every quad in a band
+  -- is contiguous, and the index buffer is rebuilt to match. The set of quads
+  -- is identical, every cap face is still exactly where it was, and the
+  -- silhouette is unchanged: only the order in the buffer differs, and order
+  -- carries no meaning in an indexed mesh.
+  --
+  -- That leaves the third blocker, which is real and is handled elsewhere: the
+  -- ranges live on `ourMeshes`, beside the draw call, never on the mesh, so a
+  -- mesh shared by five instances still gives each of them its own transform.
+  local bandas, faixas = REGION_BANDS, nil
+  do
+    local quads = #verts / 4
+    local porBanda = {}
+    for b = 1, bandas do porBanda[b] = {} end
+    for q = 0, quads - 1 do
+      -- The band comes from the quad's own centre in Y, so a quad that
+      -- straddles a boundary lands wherever most of it is, and no quad ends up
+      -- in two bands or in none.
+      local y = 0
+      for k = 1, 4 do y = y + verts[q * 4 + k][2] end
+      y = y / 4
+      local b = math.floor(y / (m.cellH or 16) * bandas) + 1
+      if b < 1 then b = 1 elseif b > bandas then b = bandas end
+      porBanda[b][#porBanda[b] + 1] = q
+    end
+    local novos, novoIdx, mapa = {}, {}, {}
+    faixas = {}
+    local escritos = 0
+    -- HIGHEST BAND FIRST, which preserves the direction the row scan already
+    -- emitted in: the builder walks the sheet from its top row down, and in
+    -- mesh space the top of the sheet is the HIGH y.
+    --
+    -- This is not cosmetic. Two suite checks find "the front face" by taking
+    -- the FIRST quad whose z is 0 and whose shade is the front constant, so
+    -- reversing the vertical order handed them the foot quad where they
+    -- expected the head quad, and they failed with a UV range from the wrong
+    -- half of the sprite. They were right to fail: anything that reads the
+    -- first quad of a kind is entitled to the order the builder always had.
+    --
+    -- Band 1 is therefore the HEAD and band `bandas` is the FEET, which is
+    -- also the order a person describes a character in.
+    for b = bandas, 1, -1 do
+      local inicio = escritos
+      for _, q in ipairs(porBanda[b]) do
+        mapa[q] = escritos
+        for k = 1, 4 do novos[#novos + 1] = verts[q * 4 + k] end
+        Voxel3D.pushQuad(novoIdx, escritos)
+        escritos = escritos + 1
+      end
+      -- Ranges are in VERTEX INDICES, which is what mesh:setDrawRange takes,
+      -- and they are 1-based, which is what LOVE takes.
+      -- Indexed from the head down, so faixas[1] is the head whichever way
+      -- the loop above happens to run.
+      faixas[bandas - b + 1] = { primeiro = inicio * 4 + 1,
+                                 quantos = (escritos - inicio) * 4 }
+    end
+    -- The blink table names quads by their old position, so it moves too.
+    -- Missing this would make the eye animate a quad somewhere else on the
+    -- body, which is the kind of defect that only shows up on one sheet.
+    for i, bq in ipairs(blinkQuads) do
+      if bq.quad and mapa[bq.quad] then blinkQuads[i].quad = mapa[bq.quad] end
+      if bq.first and mapa[math.floor((bq.first - 1) / 4)] then
+        blinkQuads[i].first = mapa[math.floor((bq.first - 1) / 4)] * 4 + 1
+      end
+    end
+    verts, idx = novos, novoIdx
+  end
+
   local mesh = Voxel3D.newMesh(verts, idx)
   if mesh and #blinkQuads > 0 then
     meshBlink[mesh] = { baseName = baseName, quads = blinkQuads }
   end
+  if mesh then meshBands[mesh] = faixas end
   return mesh
 end
 
