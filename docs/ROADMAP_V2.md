@@ -601,8 +601,10 @@ cannot differ for any reason except the tether being drawn.
 ### 26b. The CONTENT, point by point, against what this mod actually is
 
 The five key changes in the reference are a description of a generic voxel
-remaster. Measured against this project, **two are already shipped, one is open
-and worth doing, and two would move our central metric the wrong way.**
+remaster. Measured against this project, **none of the five is open work: two
+already ship, one is closed by the geometry of a slab, and two would move our
+central metric the wrong way.** That is a more useful answer than a task list,
+because it says why the mod looks the way it does.
 
 **Point 3, bevelled edges: we have it, and as shade rather than geometry.**
 `FRONT SHAPE` steps the front face into three pixel-aligned tones toward the
@@ -619,13 +621,44 @@ above zero produces identical geometry.
 "false roundness without a gradient" for the same reason. Hue is preserved
 because the tone steps are multipliers on the artist's own texel.
 
-**Point 2, lighting and ambient occlusion: partly, and this is the open one.**
-`GROUND SHADE` is contact occlusion against the floor. What we do not have is
-occlusion between neighbouring voxels, so a concave corner is as bright as a
-convex one, and our shading is a function of position within a run rather than
-of a light direction. **This is the point worth taking from the reference**,
-and it is the cheapest of the three remaining because it modulates the artist's
-colour instead of replacing it.
+**Point 2, lighting and ambient occlusion: measured, and the answer is that
+there is nothing to occlude.**
+
+I first wrote here that neighbour occlusion was "the open one worth taking" and
+that the information was already in the builders. That was written from
+plausibility, and it was wrong. The harness has had a full AO prototype since
+before this item existed, with the host's own constants and corner rule, and it
+was built to test exactly this. Measuring it, on `red` frame 0:
+
+```
+AO complete,        head on (pitch 0)    4654 pixels change
+AO complete,        camera rung 35       4115
+neighbour term only, head on                0     <-- nothing at all
+neighbour term only, camera rung 35      1481
+```
+
+**Head on, with the ground term switched off, neighbour occlusion changes
+exactly zero pixels.** All 4654 of the head-on difference is the contact term,
+which already ships as `GROUND SHADE`. The 1481 that survive at the camera rung
+are entirely on top and side faces, which carry 0% art.
+
+The reason is geometric and it is the same law this project already wrote down
+from the other side. A slab is an extrusion, so it has no concavity in depth,
+and a visual hull cannot have any, because an intersection of silhouettes is
+convex along that axis. The front face is one flat plane, so **no
+geometry-derived lighting model can vary within it.** That is not a limitation
+of our AO implementation; it is why `FRONT SHAPE` shades by position within a
+run instead. Position in the run is the only variable a flat face has.
+
+Neighbour AO would pay off on `CARVED`, which has real corners. `CARVED` also
+has 1068 quads against SLAB's 104, thirteen times the upward-facing surface,
+and it trades the artist's front face for stair steps. That trade is already
+measured and already refused.
+
+**Note the sequence, because it is the recurring failure in this file.** I
+wrote the confident version into the roadmap first and measured second, and the
+measurement inverted it. The prototype that answered it was already in the
+repository, written for this exact question.
 
 **Point 1, finer textures simulating materials: no, and it is the one that
 would hurt.** This project judges itself by the share of on-screen pixels that
@@ -640,9 +673,14 @@ built out of voxels and the people walking in it should read as drawn.
 Supersampling only the characters makes them the one sharp thing in a soft
 scene, which is the same mistake in the opposite direction.
 
-**What changes if 26b's open point lands:** neighbour occlusion is the single
-effect doing most of the work in the reference's "after" image, and it is the
-one we can add without spending art share. It needs the builders to know which
-neighbouring cells are filled, which they already compute for cap emission
-(`main.lua:1662`, `:1669`), so the information is there and only the shading
-term is missing.
+**What this item is worth, given that none of it is buildable:** the reference
+came in as a wish list and leaves as an explanation. Every one of the five
+points is either shipped, refused with a number, or impossible on an extrusion,
+and each of those answers already existed somewhere in this repository and had
+never been written next to the question. Anyone who brings this reference back
+in six months, including me, gets the answer instead of the work.
+
+**One measurement is still missing and it is worth naming.** The harness only
+builds voxel occupancy for `slab` (`tools/render/main.lua:1088`), so running it
+with `ao=1` on `carved` changes zero pixels. That zero is the instrument, not
+the finding, and it looked exactly like a result for a minute.
