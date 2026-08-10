@@ -1428,7 +1428,13 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[17]
+  -- FOUND BY INDEX AND NOT BY POSITION, because adding PART LAG in front of
+  -- FIRST PERSON moved this row and broke twelve checks at once. A test that
+  -- hardcodes a row number is a test that fails every time a menu grows.
+  local option
+  for _, r in ipairs(rows) do
+    if r.label == "FIRST PERSON" then option = r break end
+  end
   eq(option.label, "FIRST PERSON", "row de FIRST PERSON fica depois de FOOTFALL")
   eq(option.value(), "CARD", "FIRST PERSON default e CARD")
   check(option.step(game, 1), "step de FIRST PERSON informa mudanca")
@@ -5390,7 +5396,7 @@ do
   -- These stay off: they change the READING of the shape or of the
   -- movement in a way nobody has judged yet.
   for _, chave in ipairs({ "FRONT SHAPE", "TOP DOME", "STEP WEIGHT", "SWAY",
-                           "MOTION LAG", "FOOTFALL" }) do
+                           "MOTION LAG", "FOOTFALL", "PART LAG" }) do
     eq(valor[chave], "OFF", "default de " .. chave .. ": OFF")
   end
 end
@@ -5405,8 +5411,8 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 17,
-     "com canal, dezessete rows: STATUS, LIFE, CAMERA FIT e as catorze opcoes")
+  eq(#rows, 18,
+     "com canal, dezoito rows: STATUS, LIFE, CAMERA FIT e as quinze opcoes")
   eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
   eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
@@ -5416,7 +5422,8 @@ do
   -- was the only option in the mod with no MENU coverage: it had
   -- behavior, not a row. And that is how the in-game gate's inventory
   -- went stale without anyone noticing.
-  eq(rows[17].label, "FIRST PERSON", "FIRST PERSON aparece depois de FOOTFALL")
+  eq(rows[17].label, "PART LAG", "PART LAG aparece depois de FOOTFALL")
+  eq(rows[18].label, "FIRST PERSON", "FIRST PERSON aparece depois de PART LAG")
 end
 
 do

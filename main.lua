@@ -348,6 +348,24 @@ local OPTIONS = {
     help = "Squashes the solid on each footfall and stretches it at the top of the step, so the walk cycle's weight transfer reaches the body.",
   },
   {
+    key = "part_lag",
+    label = "PART LAG",
+    -- DECISION: the levels are DELAY, in seconds, between what the feet do and
+    -- what the head does. Not amplitude: the shear is already x' = x + k*y, so
+    -- the head ALREADY moves further than the feet. What a rigid body cannot
+    -- do is arrive LATE, and that is the whole difference between a statue
+    -- that leans and a person whose hair follows.
+    --
+    -- 0.08 and 0.16 seconds. Below about 0.05 nothing is readable at 60fps,
+    -- and past about 0.2 the head stops looking attached.
+    --
+    -- OFF by default, because it is a new visual change and the house rule is
+    -- that those ship off until the community has seen one and approved it.
+    levels = { { "OFF", "off" }, { "LOW", 0.08 }, { "HIGH", 0.16 } },
+    defaultIndex = 1,
+    help = "Delays the upper body behind the lower one, so the head and hair arrive late instead of moving as one rigid piece.",
+  },
+  {
     key = "first_person",
     label = "FIRST PERSON",
     levels = { { "CARD", "card" }, { "SOLID", "solid" } },
@@ -405,7 +423,7 @@ end
 -- Voxel3D.draw. Offering SOLID on a host without that channel would be
 -- offering the spikes back.
 local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
-  footfall = true, first_person = true }
+  footfall = true, part_lag = true, first_person = true }
 
 -- SIDE COLOR sentinel used by bodyTexelInFrame/blinkBodyTexel (further
 -- below) to decide whether the body search comes into play. It stays as
@@ -3247,6 +3265,71 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   -- same way: if the two diverge, the conjugation does not cancel and a
   -- residue is left over.
   local corr = quantizeCorrection(leanCorrection())
+
+  -- PER-PART SECONDARY MOTION (roadmap item 9).
+  --
+  -- What a rigid body cannot do is arrive LATE. The shear already makes the
+  -- head travel further than the feet, because x' = x + k*y; what it cannot
+  -- express is the head still catching up after the feet have stopped.
+  --
+  -- So each instance keeps a short history of its own shear, and each band
+  -- reads a different point in it: the feet read now, the head reads
+  -- `atraso` seconds ago. One draw call per band, each with its own matrix.
+  --
+  -- The history lives on the INSTANCE and not on the mesh, which is the third
+  -- blocker recorded against this feature: the mesh is shared by every
+  -- character using that sheet, so anything per-character has to live beside
+  -- the draw call.
+  local partLag = optionState.part_lag
+  local faixas = meshBands[mesh]
+  if partLag ~= "off" and faixas and #faixas > 1 and mesh.setDrawRange then
+    inst.hist = inst.hist or {}
+    local h = inst.hist
+    h[#h + 1] = { t = now, kx = kx, kz = kz }
+    -- Trim to what the longest delay can possibly need, plus a margin. An
+    -- unbounded history on twenty five characters is a leak that only shows
+    -- up after ten minutes of walking.
+    while #h > 2 and h[1].t < now - (partLag * 2 + 0.5) do table.remove(h, 1) end
+
+    local function shearEm(quando)
+      -- Walk back to the newest sample at or before `quando`. Linear, but the
+      -- list is a couple of dozen entries at 60fps and the walk starts from
+      -- the end, so it stops almost immediately.
+      for i = #h, 1, -1 do
+        if h[i].t <= quando then return h[i].kx, h[i].kz end
+      end
+      return h[1].kx, h[1].kz
+    end
+
+    local ok = true
+    for b = 1, #faixas do
+      local faixa = faixas[b]
+      if faixa.quantos > 0 then
+        -- Band 1 is the head and gets the full delay; the last band is the
+        -- feet and gets none. Linear in between, which is what a chain of
+        -- equal segments settles into anyway.
+        local fracao = (#faixas - b) / (#faixas - 1)
+        local bkx, bkz = shearEm(now - partLag * fracao)
+        if espelhado then bkx = -bkx end
+        local mb = lifeApply(model, s, bkx, bkz, sx, corr)
+        local sb = sunModel and lifeApply(sunModel, s, bkx, 0, sx, corr) or nil
+        if not pcall(mesh.setDrawRange, mesh, faixa.primeiro, faixa.quantos) then
+          ok = false
+          break
+        end
+        originalDraw(mesh, texture, mb, pull, sb)
+      end
+    end
+    -- THE RANGE IS STICKY ON THE MESH OBJECT, and the mesh is shared between
+    -- every instance of this sheet in the frame. Leaving a range set would
+    -- draw the next character as one band of itself. This is the one real
+    -- hazard that survived from the old blocker list.
+    pcall(mesh.setDrawRange, mesh)
+    if ok then return end
+    -- A host whose mesh will not take a draw range falls through to the
+    -- single-matrix path below, which is what every version until now did.
+  end
+
   local novo = lifeApply(model, s, kx, kz, sx, corr)
   -- The shadow receives the SAME scale. Without this the body breathes and
   -- the shadow stays still, and the character detaches from its own
