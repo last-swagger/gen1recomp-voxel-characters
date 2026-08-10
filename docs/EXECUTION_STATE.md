@@ -27,9 +27,19 @@ REGUA OK · in-game 20/16/16/8/6 passed, 0 failed
 BATERIA OK
 ```
 
-Still not run anywhere: `mutantes.sh`. It refuses a dirty tree, and both trees
-were dirty for the whole session (this one by design, the MBP's by the sync).
-It is the one gate in the definition of done that has no result yet.
+**`MUTANTES OK: the suite killed all 5.`** The last gate in the definition of
+done now has a result. Clean base 621 checks; each declared mutation dropped the
+count and died (612, 619, 617, 617, and 585 for the test-file mutant).
+
+**Checkpoint commit, local only: `af6e803`** on `vida-v2`, 26 files, nothing
+pushed, tagged or released. It exists because `mutantes.sh` refuses a dirty
+tree, on purpose, since it mutates `main.lua` and restores from a trap.
+
+Left deliberately uncommitted: `docs/ROADMAP_ONE_SHOT_PROMPT_DRAFT.md`, which
+was already modified before this session began and is Kim's own work. It did not
+need to be committed to unblock anything: `mutantes.sh` only inspects `*.lua`
+(`tools/mutantes.sh:49`), so a modified Markdown file was never in its way. Worth
+knowing before anyone commits somebody else's draft to clean a tree.
 
 ## Workstreams
 
@@ -45,6 +55,7 @@ It is the one gate in the definition of done that has no result yet.
 | T1.5 en-US, slice 2 | this session | `tools/en_us_sweep.lua`, `tools/en_us_scope.txt`, `release.sh`, `release_check.sh`, `so_comentarios.{lua,sh}`, `audio_gate.sh`, `runner/runner.sh` | **landed** | surface 22 lines to 0; 101 deferred lines declared with reasons; 4 broken states proved to fail |
 | T1.5 en-US, slice 3 (`ajusta.lua`) | Codex desktop, verified by this session | `tools/juiz/ajusta.lua`, `tools/en_us_scope.txt` | **landed** | `--autoteste` green; `--estados` TSV intact at 171 rows x 4 cols; sweep surface 0 |
 | item 16 follow-up: life ceiling | this session | `tests/voxel_chars_test.lua` | **landed** | 621/621; ceiling now sweeps 6 life options and reacts to ATTENTION at 3.5 where it did not before |
+| T1.1 lab motion, gate + bridge | this session | `tools/render/host_matrix.lua`, `tests/voxel_chars_test.lua`, `tools/render/main.lua` | **gate landed, preview not wired** | 623/623; identity host rejected at 74% error; REGUA OK on the MBP and renders byte-identical with the channel on and off |
 
 ## Blocked on Kim
 
@@ -490,6 +501,24 @@ ruler got it.
 restored with `git checkout -- .`, and the 18 untracked paths removed from the
 list captured before anything was copied, never with a blanket clean.
 
+## The hook fix was inert for three slices, and committing is what showed it
+
+`tools/hooks/pre-commit` was fixed earlier in this session to summarise a green
+run by the SHAPE `veredito` prints instead of a hardcoded list of four step
+names. The fix was real in the source and **had no effect**, because
+`instala_hooks.sh` installs by `cp` and `.git/hooks/pre-commit` was still the
+copy taken at 13:24, before the edit.
+
+Nothing revealed it until the checkpoint commit actually ran the hook and it
+printed four gates out of nine. Editing the source of an installed copy changes
+nothing until it is reinstalled, and no gate in this repository watches for
+that drift. Fixed by re-running `tools/instala_hooks.sh`; the installed hook now
+reports all nine.
+
+**Worth carrying:** the same shape exists anywhere else this project installs by
+copying. A gate that lives in two places is only as current as the copy that
+runs.
+
 ## Gate deltas: MEASURED, and the answer is split
 
 Run on the MBP on 2026-08-10 with Kim's explicit authorisation, dispatched into
@@ -623,16 +652,96 @@ the full battery or to gates that need LOVE.
 4. **Full battery: done, green, with a baseline.** See "The full battery" above.
    The five new gates disturb neither the ruler nor the in-game gates.
 
-5. **`mutantes.sh` is the one gate with no result**, and it is blocked by
-   nothing but a clean tree: it refuses to run on a dirty one, on purpose,
-   since it mutates `main.lua` and restores from a trap. Everything in this
-   session is uncommitted, so it has had no clean tree to run on. It needs a
-   display as well, for the in-game half of what it verifies.
+5. **`mutantes.sh`: done, 5 of 5 killed**, after the local checkpoint commit
+   `af6e803` cleaned the tree. Every gate in the definition of done now has a
+   result.
 
 6. **Escalating the measured target** from one render to `check.sh` is now
    lower value than it looked. `native-offscreen` renders identically and does
    not hide the window, so there is nothing to gain by hosting the ruler on it
    until a real hiding mechanism exists. Park it behind that.
+
+## T1.1: the gate has teeth, and the roadmap's own gate was wrong
+
+**Built the measuring side first, as the roadmap asks.** Three things landed,
+and the preview itself is deliberately not wired yet.
+
+**1. One definition of the host's matrix.** `tools/render/host_matrix.lua` is
+pure Lua with no love and no harness context, so the offline suite and the
+laboratory read the same construction. It was written out inline in the suite
+before; giving the lab a second copy is how the lab would drift from what the
+suite proves, invisibly, because both would stay self-consistent.
+
+**2. The 4-rung contract now tests the lab's matrix, and rejects a wrong one.**
+The existing conjugation test took the matrix as a parameter, so the same
+measurement runs against the shared synthetic host and against the identity,
+which is what a lab that "just draws it" would effectively use. Measured: the
+identity gives **74% error at rung 15**, far past the 10% ceiling. Breaking
+`host_matrix.forRung` to return identity fails **three** checks: the 4-rung
+contract, the identity check, and the z-drift check at 0.1545 px against a
+0.0160 ceiling.
+
+**3. The bridge, opt-in.** The harness's `Voxel3D` stub had no `draw`, which is
+the real reason the lab is blind to matrix-only options: with no draw channel
+the mod's `probeCapabilities` never installs the wrap, so BREATH, SWAY, MOTION
+LAG, FOOTFALL, ATTENTION and PART LAG do not exist in there at all. Added
+behind `labmotion=1`, because handing every harness mode a draw channel would
+change what the mod installs in every measurement this project trusts.
+
+**Verified on the MBP, and the second check is the one that matters:**
+
+- `REGUA OK` with the change present.
+- The same render with `labmotion=1` and without is **byte-identical**
+  (sha256 `69cc13b1...`), so the channel does not perturb output.
+- **The wrap actually installs**: `LABMOTION: the mod wrapped Voxel3D.draw, the
+  life channel is live`, and silence without the flag. That check exists because
+  the byte-identical render is equally consistent with "installed and inert on a
+  still frame" and with "never installed", and a bridge to nowhere looks exactly
+  like a bridge.
+
+**The roadmap's T1.1 gate was corrected in place**, because implementation
+contradicted it. It asked the lab to reproduce "the world displacement the
+in-game probe measures at all four camera rungs", and no such measurement
+exists: `probe_life.lua` pins the camera to rung 35 and reports an envelope in
+CHANGED SCREEN PIXELS. Its own published numbers give it away, 36 / 246 / 275
+pixels for amplitudes 0.010 / 0.020 / 0.035, which is area-like and not even
+proportional, so not even a unit-free ratio survives the comparison. Comparing
+the lab against the game needs a probe that measures displacement per rung, and
+that is a separate item rather than a precondition.
+
+## The next implementable item
+
+**T1.1 slice 2: wire the preview into the lab.** Everything it needs now exists
+and is proven: the shared matrix, the gate that rejects a wrong one, and a draw
+channel that installs the mod's real wrap without disturbing the ruler.
+
+The shape of the remaining work: the lab calls `Voxel3D.draw` with
+`HostMatrix.forRung(rung)`, reads back what the mod's wrap made of it, and
+applies that matrix when projecting the cell. `drawCell` projects vertices
+itself, so it needs to accept a transform. Using the wrap rather than
+recomputing `lifeApply` is the point: the preview then runs the mod's real
+transform code, not a second copy of the algebra.
+
+**Then T1.2, named anchors and animation events**, which needs a display to
+verify and has the MBP proven as a verification host by two full battery runs
+and a ruler run in this session.
+
+Why T1.2 before T1.1: anchors are read-only geometry derived from a mesh that
+already exists, so the gate is a driver recording positions through a walk cycle
+with `MOTION LAG`, `ATTENTION` and `PART LAG` on, and checking each anchor stays
+within tolerance of the part it names. T1.1's synthetic host matrix has to
+reproduce what the host builds before it can be trusted at all, which is a
+larger claim to establish. T1.2 also feeds T2.3, since an effect has to
+originate from a hand rather than a bounding-box centre.
+
+The shape of the work, in the order this project does things: build the
+measuring driver first, prove it reports a wrong anchor as wrong, and only then
+add the anchors it measures.
+
+**What no amount of autonomous work reaches**, unchanged: K1 to K5 in the table
+above, and hiding the runner's window, which needs a separate macOS user
+session, a Space, or a second display. Those are decisions about credentials,
+taste and machine setup.
 
 ## Commands
 

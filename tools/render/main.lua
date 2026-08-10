@@ -122,6 +122,11 @@ local opts = {
   -- file that will train the judge: that would poison the data with the
   -- test tool itself.
   labfile = "escolhas.txt",
+  -- T1.1: gives the stub a Voxel3D.draw, so the mod installs its draw wrap and
+  -- the matrix-only options exist at all in here. Off by default because it
+  -- changes what the mod installs, and every measurement this project trusts
+  -- was taken without it.
+  labmotion = "",
   -- `labpares=<file>` makes the laboratory offer the pairs the judge
   -- requested, instead of rolling. See labParDoArquivo.
   labpares = "",
@@ -249,6 +254,37 @@ local function makeVoxelHandle(imageData)
           }
         end,
       }
+
+      -- THE DRAW CHANNEL, opt-in (roadmap T1.1).
+      --
+      -- This stub deliberately had no `draw`, and that is why the laboratory
+      -- is blind to every option living in the model matrix: the mod asks
+      -- `probeCapabilities` whether Voxel3D.draw exists, finds it does not,
+      -- and never installs its draw wrap. No wrap, no BREATH, no SWAY, no
+      -- MOTION LAG, no ATTENTION, no PART LAG.
+      --
+      -- OPT-IN ON PURPOSE, and this is the part that protects the ruler.
+      -- Handing every harness mode a draw channel would change what the mod
+      -- installs in EVERY measurement this project trusts, including the IoU
+      -- and provenance numbers the ruler asserts. The lab asks for it; nothing
+      -- else does; and the ruler's output has to come out identical either way,
+      -- which is a claim to verify rather than assume.
+      --
+      -- It records instead of rendering. The caller passes the synthetic host
+      -- matrix from tools/render/host_matrix.lua and reads back what the mod's
+      -- wrap made of it. That way the preview runs the mod's real transform
+      -- code rather than a second copy of the algebra, which is the mistake
+      -- this file already avoids everywhere else.
+      if opts.labmotion == "1" then
+        modules[name].drawCalls = {}
+        modules[name].draw = function(mesh, texture, model, pull, sunModel)
+          local calls = modules["Voxel3D"].drawCalls
+          calls[#calls + 1] = {
+            mesh = mesh, texture = texture, model = model,
+            pull = pull, sunModel = sunModel,
+          }
+        end
+      end
     elseif name == "ImageCache" then
       modules[name] = { get = function() return imageData end }
     elseif name == "SpriteBillboards" then
@@ -360,8 +396,31 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
   -- cells and which dominates the cost when the laboratory builds hundreds
   -- to find out which options touch the geometry. Re-executing is what
   -- matters: every execution returns a fresh mod, with its own state.
+  local Voxel3D = handle.exports.lib.require("Voxel3D")
+  local drawAntes = Voxel3D.draw
   MOD_CHUNK = MOD_CHUNK or assert(loadfile(MAIN_PATH))
   MOD_CHUNK(mod)
+
+  -- T1.1: DID THE WRAP ACTUALLY INSTALL?
+  --
+  -- Asked out loud because the obvious evidence is worthless here. With the
+  -- draw channel added, a still render comes out byte-identical to one without
+  -- it, and that is equally consistent with "the wrap installed and changed
+  -- nothing on a static frame" and with "the wrap never installed at all". A
+  -- bridge to nowhere looks exactly like a bridge.
+  --
+  -- So the stub's own function is remembered before the mod loads, and
+  -- compared after. If the mod replaced it, the draw channel is live and the
+  -- matrix-only options exist in here. If it did not, say so loudly rather
+  -- than let a later preview quietly show nothing.
+  if opts.labmotion == "1" then
+    if Voxel3D.draw and Voxel3D.draw ~= drawAntes then
+      print("LABMOTION: the mod wrapped Voxel3D.draw, the life channel is live")
+    else
+      print("LABMOTION FALHOU: the mod did NOT wrap Voxel3D.draw, so nothing "
+        .. "matrix-based can be previewed. Check probeCapabilities.")
+    end
+  end
   LAB_SCHEMA = mod._schema or LAB_SCHEMA
   if #pedidas > 0 then
     local conhecidas = {}

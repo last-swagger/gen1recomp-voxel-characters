@@ -478,13 +478,29 @@ builders bake `Rx(corr)` into every vertex while the host cancels it, which is
 the exact ground on which the life channel once animated in the camera's axis
 instead of the character's.
 
-**Gate:** the lab's synthetic transform, composed with the rotation baked into
-the vertices, must reproduce the world displacement the in-game probe measures
-for the same option and level, at all four camera rungs, within the probe's own
-floor. Prove it fails: force the lab's matrix to skip the conjugation and
-confirm the comparison rejects it. Until that holds, the lab may preview motion
-with a visible "not measured in game" marker and may not feed the judge with
-motion pairs.
+**Gate, corrected once the probe was actually read.** The original wording asked
+the lab's transform to reproduce "the world displacement the in-game probe
+measures ... at all four camera rungs". No such measurement exists to compare
+against: `probe_life.lua` pins the camera to a single rung (35) and reports an
+ENVELOPE IN CHANGED SCREEN PIXELS, not a displacement. The published numbers
+show it plainly: 36, 246 and 275 pixels for BREATH amplitudes of 0.010, 0.020
+and 0.035, which is not proportional to anything and is area-like rather than
+distance-like. Not even a unit-free ratio survives that.
+
+So the gate is what can honestly be measured:
+
+1. The lab's synthetic transform, composed with the rotation baked into the
+   vertices, reproduces the promised world displacement **at all four camera
+   rungs**, using the offline chain the suite already proves.
+2. **The same check rejects a wrong matrix.** Feeding it the identity, which is
+   what a lab that "just draws it" would effectively use, must fail.
+3. The matrix the lab reads is **the same object** the suite proves, not a copy.
+4. The opt-in draw channel that makes any of this possible **must not change
+   the ruler**, verified by running it, and by a render byte-compared with the
+   flag on and off.
+
+Comparing against the game itself needs a probe that measures displacement per
+rung, which is a separate item and not a precondition for the lab.
 
 ### T1.2 Named anchors and animation events
 

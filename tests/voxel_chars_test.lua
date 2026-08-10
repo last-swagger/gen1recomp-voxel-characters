@@ -6556,19 +6556,20 @@ end
 --
 -- Measured at the standard rung (35): 33% of what was promised, plus
 -- 0.075 px of drift.
-local function rotX(t)
-  local c, s = math.cos(t), math.sin(t)
-  return { 1, 0, 0, 0,
-           0, c, -s, 0,
-           0, s,  c, 0,
-           0, 0,  0, 1 }
-end
-
-local function aplicaMatriz(m, x, y, z)
-  return m[1]*x + m[2]*y + m[3]*z + m[4],
-         m[5]*x + m[6]*y + m[7]*z + m[8],
-         m[9]*x + m[10]*y + m[11]*z + m[12]
-end
+-- FROM THE SHARED MODULE, not from a copy here (roadmap T1.1).
+--
+-- This construction used to be written out in this file. The laboratory needs
+-- the same synthetic host matrix to preview the matrix-only options, and a
+-- second copy of it is the copy that goes stale: the lab would drift from what
+-- the suite proves, and the drift would be invisible, because both would still
+-- look self-consistent. One definition, two readers.
+--
+-- The suite reaching into tools/ is unusual and deliberate. The alternative is
+-- the lab reaching into tests/, which is worse, or two copies, which is the
+-- thing being avoided.
+local HostMatrix = dofile("mods/voxel_characters/tools/render/host_matrix.lua")
+local rotX = HostMatrix.rotX
+local aplicaMatriz = HostMatrix.apply
 
 do
   local pixels = {}
@@ -6584,22 +6585,24 @@ do
   -- controls. This is the same discipline the in-game probe already
   -- uses, and the first version of this test did not: it failed the
   -- correct fix.
-  local function subidaDaCabeca(rungDeg, amp)
+  -- `hostFn` is what makes this the T1.1 gate as well as the conjugation one:
+  -- the matrix under test is supplied, so the SAME measurement can be run
+  -- against the shared synthetic host the laboratory uses and against a wrong
+  -- one, and the two answers compared.
+  local function subidaDaCabeca(rungDeg, amp, hostFn)
     local angulo = math.rad(rungDeg)
-    local corr = math.pi / 2 - angulo
+    local corr = HostMatrix.correction(rungDeg)
     local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
       angulo, nil, nil, nil, nil, true)
     loadWith(makeMod(handle, soEsta({ breath = amp })))
     local mesh = modules.SpriteBillboards.mesh(
       { image = "sheet.png", frames = 1 }, 0)
-    local host = rotX(angulo - math.pi / 2)
+    local host = (hostFn or HostMatrix.forRung)(rungDeg)
 
     -- The head in CHARACTER coordinates, carried into mesh space by the
     -- same Rx(corr) the builder applies.
     local cx, cy, cz = 0, 16, 0
-    local mx = cx
-    local my = cy * math.cos(corr) - cz * math.sin(corr)
-    local mz = cy * math.sin(corr) + cz * math.cos(corr)
+    local mx, my, mz = HostMatrix.toMeshSpace(corr, cx, cy, cz)
     local _, y0, z0 = aplicaMatriz(host, mx, my, mz)
 
     local topoY, topoZ = 0, 0
@@ -6633,6 +6636,42 @@ do
     "BREATH sobe a cabeca o mesmo em todos os degraus de camera "
     .. "(pior erro %.0f%% no rung %s, teto 10%%)", pior * 100,
     tostring(piorRung)))
+
+  -- T1.1: THE SAME MEASUREMENT, WITH A WRONG SYNTHETIC HOST.
+  --
+  -- The check above passes with the shared matrix. On its own that does not
+  -- prove the check can tell a wrong matrix from a right one, and the whole
+  -- risk of giving the laboratory a synthetic host is that a fabricated matrix
+  -- shows a lie confidently. So the obvious wrong answer is measured too: the
+  -- identity, which is what a lab that "just draws it" would effectively use.
+  --
+  -- With identity the displacement is read in MESH space instead of world, so
+  -- it comes out scaled by the camera angle: large at one rung, small at
+  -- another. That rung dependence is the signature of operating in the wrong
+  -- space, and it is exactly what the contract above forbids.
+  local piorErrado, piorErradoRung = 0, nil
+  for _, rung in ipairs(HostMatrix.RUNGS) do
+    local dy = subidaDaCabeca(rung, AMP, function() return rotX(0) end)
+    local erro = math.abs(dy - PROMETIDO) / PROMETIDO
+    if erro > piorErrado then piorErrado, piorErradoRung = erro, rung end
+  end
+  check(piorErrado > 0.10, string.format(
+    "T1.1: the 4-rung contract REJECTS a wrong synthetic host "
+    .. "(identity gives %.0f%% error at rung %s, and the gate needs to see it)",
+    piorErrado * 100, tostring(piorErradoRung)))
+
+  -- And the shared matrix is the one the laboratory will read, not a copy of
+  -- it. If these ever stop being the same object, the lab drifts from what is
+  -- proved here and nothing else would notice.
+  do
+    local a = HostMatrix.forRung(35)
+    local b = rotX(math.rad(35) - math.pi / 2)
+    local igual = true
+    for i = 1, 16 do
+      if math.abs(a[i] - b[i]) > 1e-12 then igual = false break end
+    end
+    check(igual, "T1.1: HostMatrix.forRung is the host matrix the suite proves")
+  end
 
   -- And the axis has to be CLEAN: scaling on y cannot push the body
   -- forward or backward. Drift on z is the symptom of operating in the
