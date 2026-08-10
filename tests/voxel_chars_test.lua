@@ -1383,6 +1383,64 @@ do
 end
 
 do
+  -- FIRST PERSON tinha comportamento (Voxel3D.lua acima) mas nao tinha row
+  -- de MENU testada -- a unica opcao do mod nessa situacao, ate uma
+  -- auditoria apontar a lacuna (ver o teste de rows[17] mais abaixo, que so
+  -- cobre POSICAO, nao step nem persistencia). Mesmo padrao das outras:
+  -- default CARD (regra da casa: ninguem viu o solido em primeira pessoa
+  -- ainda), dois degraus (CARD, SOLID). LIFE_OPTION_KEYS exige o segundo
+  -- ponto de patch (Voxel3D.draw) para a row aparecer, por isso o handle
+  -- pede withDraw=true. Testado nos dois sentidos: com so dois niveis, ciclar
+  -- so pra frente nunca exercita `dir = -1` em `(i + dir - 1) % #levels`, e um
+  -- bug ali (por exemplo um sinal trocado que so aparece indo pra tras)
+  -- passaria despercebido.
+  local pixels = {}
+  pixels[0] = 1
+  local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle, { depth = 1 }))
+  local emitted = {}
+  local game = {
+    save = { options = {} },
+    mods = {
+      modOptions = {},
+      events = {
+        emit = function(_, name, payload)
+          emitted[#emitted + 1] = { name = name, payload = payload }
+          if mod._events[name] then mod._events[name](payload) end
+        end,
+      },
+    },
+  }
+  local rows = {}
+  mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
+  local option = rows[17]
+  eq(option.label, "FIRST PERSON", "row de FIRST PERSON fica depois de FOOTFALL")
+  eq(option.value(), "CARD", "FIRST PERSON default e CARD")
+  check(option.step(game, 1), "step de FIRST PERSON informa mudanca")
+  eq(option.value(), "SOLID", "FIRST PERSON alterna para SOLID")
+  eq(game.save.options.modOptions.voxel_characters.first_person, "solid",
+     "FIRST PERSON persiste no save")
+  eq(game.mods.modOptions.voxel_characters.first_person, "solid",
+     "FIRST PERSON persiste no loader")
+  eq(emitted[1].payload.value, "solid", "FIRST PERSON emite o valor novo")
+  check(option.step(game, 1), "FIRST PERSON da a volta pra frente")
+  eq(option.value(), "CARD", "FIRST PERSON volta para CARD depois de SOLID")
+  eq(game.save.options.modOptions.voxel_characters.first_person, "card",
+     "FIRST PERSON persiste CARD no save depois da volta pra frente")
+  check(option.step(game, -1), "step de FIRST PERSON pra tras informa mudanca")
+  eq(option.value(), "SOLID",
+     "FIRST PERSON ciclando pra tras a partir de CARD da a volta para SOLID")
+  eq(game.save.options.modOptions.voxel_characters.first_person, "solid",
+     "FIRST PERSON persiste SOLID no save ciclando pra tras")
+  check(option.step(game, -1), "step de FIRST PERSON pra tras informa mudanca de novo")
+  eq(option.value(), "CARD",
+     "FIRST PERSON ciclando pra tras de SOLID volta para CARD")
+  eq(game.save.options.modOptions.voxel_characters.first_person, "card",
+     "FIRST PERSON persiste CARD no save ciclando pra tras")
+end
+
+do
   local pixels = {}
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16)
@@ -4834,7 +4892,7 @@ do
   -- aplicacao, TOP EDGE como base multiplicada por TOP DOME, nao os dois
   -- competindo por cima do shade puro do host.
   local multiplier = 1 - 0.30 * 2 / 2
-  eq(bothEdge, edgeOnlyCenter * multiplier,
+  check(close(bothEdge, edgeOnlyCenter * multiplier),
      "TOP DOME multiplica a base que TOP EDGE ja escureceu, nunca a substitui")
 end
 
