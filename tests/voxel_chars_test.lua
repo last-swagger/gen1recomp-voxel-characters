@@ -3065,6 +3065,11 @@ do
     check(allUvAt(sideWalk, sideWalkEye, (5 * cellW + 5.5) / sheetW, 8.5 / cellH),
           "piscar agora acontece no frame 5 quando a marca de perfil transfere")
   end)
+  -- Prova que a medicao existiu antes de comparar: os dois lados so
+  -- recebem valor dentro de um withLoveTime, e `nil == nil` satisfaz o
+  -- eq sem que nada tenha sido medido.
+  check(backOpen ~= nil and backClosed ~= nil,
+        "houve medicao dos dois lados para: " .. "piscar continua nao acontecendo no frame 1")
   eq(backOpen, backClosed, "piscar continua nao acontecendo no frame 1")
 end
 
@@ -3084,6 +3089,13 @@ do
   withLoveTime(closedTime, function()
     closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 2))
   end)
+  -- Prova que a medicao existiu antes de comparar: os dois lados so
+  -- recebem valor dentro de um withLoveTime, e `nil == nil` satisfaz o
+  -- eq sem que nada tenha sido medido.
+  check(openSig ~= nil and closedSig ~= nil,
+        "houve medicao dos dois lados para: " .. "folha sem entrada lateral nao pisca de perfil")
+  check(openSig ~= nil and closedSig ~= nil,
+        "houve medicao dos dois lados para: " .. "folha sem entrada lateral nao pisca de perfil")
   eq(openSig, closedSig, "folha sem entrada lateral nao pisca de perfil")
 end
 
@@ -3102,6 +3114,13 @@ do
   withLoveTime(closedTime, function()
     closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
   end)
+  -- Prova que a medicao existiu antes de comparar: os dois lados so
+  -- recebem valor dentro de um withLoveTime, e `nil == nil` satisfaz o
+  -- eq sem que nada tenha sido medido.
+  check(openSig ~= nil and closedSig ~= nil,
+        "houve medicao dos dois lados para: " .. "folha cujo olho nao acha corpo em 4 pixels nao pisca")
+  check(openSig ~= nil and closedSig ~= nil,
+        "houve medicao dos dois lados para: " .. "folha cujo olho nao acha corpo em 4 pixels nao pisca")
   eq(openSig, closedSig, "folha cujo olho nao acha corpo em 4 pixels nao pisca")
 end
 
@@ -3120,6 +3139,8 @@ do
   withLoveTime(closedTime, function()
     closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 0))
   end)
+  check(openSig ~= nil and closedSig ~= nil,
+        "houve medicao dos dois lados para: " .. "BLINK desligado nao muda nenhum UV")
   eq(openSig, closedSig, "BLINK desligado nao muda nenhum UV")
 end
 
@@ -3138,6 +3159,8 @@ do
   withLoveTime(closedTime, function()
     closedMesh = modules.SpriteBillboards.mesh(def, 0)
   end)
+  check(openMesh ~= nil and closedMesh ~= nil,
+        "houve medicao dos dois lados para: " .. "o cacheKey nao muda com o estado de piscada")
   eq(openMesh, closedMesh, "o cacheKey nao muda com o estado de piscada")
   eq(modules.Voxel3D.created, 1,
      "estado de piscada troca UV sem criar outra malha")
@@ -3201,6 +3224,13 @@ do
   withLoveTime(closedTime, function()
     closedSig = uvSignature(modules.SpriteBillboards.mesh(def, 3))
   end)
+  -- Prova que a medicao existiu antes de comparar: os dois lados so
+  -- recebem valor dentro de um withLoveTime, e `nil == nil` satisfaz o
+  -- eq sem que nada tenha sido medido.
+  check(openSig ~= nil and closedSig ~= nil,
+        "houve medicao dos dois lados para: " .. "a pose andando nao pisca quando o olho nao transfere")
+  check(openSig ~= nil and closedSig ~= nil,
+        "houve medicao dos dois lados para: " .. "a pose andando nao pisca quando o olho nao transfere")
   eq(openSig, closedSig, "a pose andando nao pisca quando o olho nao transfere")
 end
 
@@ -3563,6 +3593,26 @@ do
   end)
   check(frontOpen ~= frontClosed, "lorelei pisca de frente andando (frame 3)")
   check(sideOpen ~= sideClosed, "lorelei pisca de perfil andando (frame 5)")
+
+  -- FALTA LOCALIZAR, e a tentativa de hoje virou um achado em vez de um teste.
+  --
+  -- As duas checagens acima comparam a assinatura da malha INTEIRA, entao elas
+  -- passariam com a UV do olho fechado apontando para qualquer texel errado.
+  -- E esta e a unica folha de ARTE REAL no teste do piscar, e a que guarda a
+  -- regressao da v1.4.1: fechar o olho em cima de pele.
+  --
+  -- Tentei localizar o quad do olho pela UV que ele amostra aberto, usando a
+  -- mesma formula que os testes sinteticos usam e que passa neles:
+  --   u = (frame * cellW + lx + 0.5) / sheetW,  v = (ly + 0.5) / cellH
+  -- Com EYE_MARKS de lorelei (5,7) (6,7) (9,7) (10,7) e frame 3, nenhum quad
+  -- casou. Fui ver as UVs que a malha REALMENTE tem e todas caem em u de 0.026
+  -- a 0.05, ou seja coluna 2 a 5 do frame ZERO, quando o pedido foi o frame 3.
+  --
+  -- Isso e maior que este teste e nao vou fechar no chute: ou a malha do frame
+  -- 3 esta sendo servida com a UV do frame 0 (defeito), ou a folha sintetica
+  -- desta secao e montada de um jeito que eu nao entendi ainda (teste). As
+  -- duas possibilidades pedem medicao, e reprovar a suite com um teste que eu
+  -- nao sei explicar seria trocar um buraco por um alarme falso.
 end
 
 do

@@ -455,3 +455,22 @@ guaranteed present below blend 0.9, because that is the case the whole feature
 exists for, so the control belongs there rather than at full blend where the
 host hides it. A gate that fails half the time for reasons unrelated to the code
 trains people to rerun it until it is green, which is worse than no gate.
+
+### 25. The blink test on real art does not localise, and the attempt found something
+
+Every blink check on real art compares whole-mesh UV signatures: it asks whether
+any UV moved, not whether the EYE's UV moved. It would pass with the closed eye
+sampling any wrong texel, and `lorelei` is the sheet that guards the v1.4.1
+regression, which was closing the eye over skin.
+
+Trying to localise it turned up something bigger. Locating the eye quad by the
+UV it samples when open, with the same formula the synthetic tests use and pass
+with, matched nothing. Reading the mesh's actual UVs, every one falls in
+u = 0.026 to 0.05, which is columns 2 to 5 of frame ZERO, while the mesh was
+requested for frame 3.
+
+**What changes:** either the frame-3 mesh is being served with frame-0 UVs,
+which is a defect in something shipped, or that section's synthetic sheet is
+built in a way I have not understood, which is a defect in the test. Both need
+measurement. The test was left as it was rather than shipped red, because
+failing the suite with a check I cannot explain trades a hole for a false alarm.
