@@ -70,13 +70,36 @@ echo
 echo "== a bateria, la"
 ssh "$DESTINO" 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; cd ~/Projects/gen1recomp
   L=mods/voxel_characters
-  # os dois drivers de pixel chamam o binario direto, entao ele precisa de nome
-  # aqui tambem; run.sh e clip.sh resolvem sozinhos por tools_bin.sh.
   . $L/tools/tools_bin.sh
-  printf "%-24s %s\n" "suite offline" "$(luajit $L/tests/voxel_chars_test.lua 2>&1 | tail -1)"
-  printf "%-24s %s\n" "regua"         "$(bash $L/tools/render/check.sh 2>&1 | tail -1)"
-  printf "%-24s %s\n" "empacotamento" "$(python3 tools/modkit.py validate $L 2>&1 | tail -1)"
-  printf "%-24s %s\n" "pixel"         "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/probe_life.lua "$LOVE" . 2>&1 | grep -E "^\[vida\] VEREDITO" | tail -1)"
-  printf "%-24s %s\n" "menu"          "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/menu.lua "$LOVE" . 2>&1 | grep -E "^\[menu\] VEREDITO" | tail -1)"
-  printf "%-24s %s\n" "fotos"         "$(bash $L/tools/ingame/run.sh /tmp/vc-sala 2>&1 | tail -1)"
-  printf "%-24s %s\n" "release"       "$(bash $L/tools/release_check.sh 2>&1 | grep -E "^RELEASE" | tail -1)"'
+  FALHOU=0
+  # REPORTAR NAO E GATAR, e a versao anterior so reportava: cada linha era um
+  # printf com o resultado de um grep, e o status do script era o do ultimo ssh.
+  # Pior, quando uma sonda morre ANTES do resumo o grep sai vazio, e coluna
+  # vazia le como "nada a relatar" em vez de "falhou". As duas sondas tem saida
+  # antecipada que pula o resumo inteiro.
+  linha() {  # $1 rotulo, $2 saida, $3 padrao que significa OK
+    local r="$2"
+    if [ -z "$r" ]; then
+      printf "%-24s SEM SAIDA (a ferramenta morreu antes de concluir)\n" "$1"
+      FALHOU=1
+      return
+    fi
+    printf "%-24s %s\n" "$1" "$r"
+    case "$r" in *$3*) ;; *) FALHOU=1;; esac
+  }
+
+  linha "suite offline" "$(luajit $L/tests/voxel_chars_test.lua 2>&1 | tail -1)" "checks passed"
+  linha "linter de assercao" "$(luajit $L/tools/lint_asserts.lua 2>&1 | tail -1)" "nenhuma"
+  linha "folga de locais" "$(bash $L/tools/folga_locais.sh 2>&1 | tail -1)" "OK"
+  linha "regua" "$(bash $L/tools/render/check.sh 2>&1 | tail -1)" "REGUA OK"
+  linha "empacotamento" "$(python3 tools/modkit.py validate $L 2>&1 | tail -1)" "ok"
+  linha "pixel da vida" "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/probe_life.lua "$LOVE" . 2>&1 | grep -E "^\[vida\] VEREDITO" | tail -1)" "CHEGA NA TELA"
+  linha "menu" "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/menu.lua "$LOVE" . 2>&1 | grep -E "^\[menu\] VEREDITO" | tail -1)" "O JOGADOR ESPERA"
+  linha "primeira pessoa" "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/probe_fp.lua "$LOVE" . 2>&1 | grep -E "^\[fp\] VEREDITO" | tail -1)" "SOBREVIVE"
+  linha "posicao" "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/probe_draw.lua "$LOVE" . 2>&1 | grep -E "VEREDITO" | tail -1)" "CHEGA LIMPA"
+  linha "fotos" "$(bash $L/tools/ingame/run.sh /tmp/vc-sala 2>&1 | tail -1)" "GATE OK"
+  linha "release" "$(bash $L/tools/release_check.sh 2>&1 | grep -E "^RELEASE" | tail -1)" "RELEASE OK"
+
+  echo ""
+  if [ "$FALHOU" -eq 0 ]; then echo "SALA OK"; else echo "SALA COM FALHA: ler acima"; fi
+  exit $FALHOU'
