@@ -1,20 +1,21 @@
 #!/bin/bash
-# Gate in-game do Voxel Characters: roda o jogo de verdade, dirige por script e
-# fotografa. Complementa o harness offline (tools/render/), que e rapido e mede
-# geometria mas carrega o mod com o host MOCKADO, entao nunca mostra o sol real,
-# o personagem contra o mundo, a escala de tela real, nem movimento.
+# In-game gate for Voxel Characters: runs the real game, drives it by script
+# and photographs it. Complements the offline harness (tools/render/), which
+# is fast and measures geometry but loads the mod with the host MOCKED, so it
+# never shows the real sun, the character against the world, the real screen
+# scale, or movement.
 #
-# Uso:
-#   tools/ingame/run.sh <pasta-de-saida> [chave=valor da opcao do mod]
+# Usage:
+#   tools/ingame/run.sh <output-folder> [key=value of the mod option]
 #
-# Exemplo de A/B:
+# A/B example:
 #   tools/ingame/run.sh /tmp/ab/off front_shape=off
 #   tools/ingame/run.sh /tmp/ab/med front_shape=0.17
 #
-# Variaveis: VC_VERSION (red|blue|yellow), VC_MAP, VC_X, VC_Y, VC_FOTOS,
-#            VC_DRIVER (outro driver), LOVE_BIN.
+# Variables: VC_VERSION (red|blue|yellow), VC_MAP, VC_X, VC_Y, VC_FOTOS,
+#            VC_DRIVER (another driver), LOVE_BIN.
 #
-# CADA TRAVA AQUI VEIO DE ERRO PAGO. Nao remova nenhuma sem ler.
+# EVERY LOCK HERE CAME FROM A PAID ERROR. Do not remove any without reading it.
 
 set -u
 REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
@@ -26,8 +27,8 @@ DRIVER="${VC_DRIVER:-$REPO/mods/voxel_characters/tools/ingame/driver.lua}"
 SAIDA="${1:?uso: run.sh <pasta-de-saida> [chave=valor]}"
 OPCAO="${2:-}"
 
-# ARMADILHA 1: um processo anterior ainda vivo faz o proximo nascer sem
-# conseguir nada. Matar NAO e instantaneo; esperar morrer de verdade.
+# TRAP 1: a previous process still alive makes the next one born unable to
+# get anything. Killing is NOT instant; wait for it to actually die.
 vc_trava_pega "run.sh" || exit 1
 pkill -x love 2>/dev/null
 for _ in $(seq 1 20); do
@@ -35,21 +36,23 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 
-# ARMADILHA 2, A QUE CUSTOU MAIS CARO: escolher a VERSAO certa.
+# TRAP 2, THE ONE THAT COST THE MOST: choosing the right VERSION.
 #
-# POKEPORT_GAME e POKEPORT_SLOT (que este script exportava antes) sao letra
-# morta sob POKEPORT_DRIVER: eles so sao lidos em LaunchOptions.resolve
-# (main.lua:359), depois do `if scripted then ... return end` de main.lua:313.
-# A versao que boota vem de POKEPORT_VERSION (main.lua:304), default "red".
+# POKEPORT_GAME and POKEPORT_SLOT (which this script used to export) are dead
+# letter under POKEPORT_DRIVER: they are only read in LaunchOptions.resolve
+# (main.lua:359), after the `if scripted then ... return end` of main.lua:313.
+# The version that boots comes from POKEPORT_VERSION (main.lua:304), default
+# "red".
 #
-# E "red" so esta pronto quando a arvore de fontes tem TODOS os arquivos de
-# RomImporter.REQUIRED_FILES (RomImporter.lua:52-68, 165-172, 250). Nesta
-# maquina faltam dois, entao o boot scriptado caia no importador e ficava
-# esperando alguem arrastar um ROM: o driver nem chegava a ser criado, e o
-# sintoma era ZERO fotos com log VAZIO, que parece "travou no launcher" e nao
-# e. blue/yellow ficam prontos pelo cache no diretorio de save.
+# And "red" is only ready when the source tree has ALL of
+# RomImporter.REQUIRED_FILES (RomImporter.lua:52-68, 165-172, 250). On this
+# machine two are missing, so the scripted boot fell into the importer and sat
+# waiting for someone to drag in a ROM: the driver never even got created, and
+# the symptom was ZERO photos with an EMPTY log, which looks like "stuck at
+# the launcher" and is not. blue/yellow are ready via the cache in the save
+# directory.
 #
-# Entao: detectar em vez de supor, e dizer em voz alta qual versao vai bootar.
+# So: detect instead of assume, and say out loud which version is going to boot.
 versao_pronta() {
   case "$1" in
     red)
@@ -75,9 +78,9 @@ versao_pronta() {
 if [ -n "${VC_VERSION:-}" ]; then
   VERSAO="$VC_VERSION"
   versao_pronta "$VERSAO" || {
-    echo "VC_VERSION=$VERSAO nao esta pronta nesta maquina (sem cache e sem"
-    echo "arvore de fontes completa). O jogo cairia no importador e o driver"
-    echo "nunca seria criado."
+    echo "VC_VERSION=$VERSAO is not ready on this machine (no cache and no"
+    echo "complete source tree). The game would fall into the importer and the"
+    echo "driver would never be created."
     exit 1
   }
 else
@@ -86,14 +89,14 @@ else
     if versao_pronta "$v"; then VERSAO="$v"; break; fi
   done
   [ -n "$VERSAO" ] || {
-    echo "nenhuma versao pronta: nem cache em $SAVE nem arvore de fontes completa"
+    echo "no version ready: neither cache in $SAVE nor complete source tree"
     exit 1
   }
 fi
-echo "versao: $VERSAO"
+echo "version: $VERSAO"
 
-# O marcador so afeta o caminho --game / POKEPORT_GAME, que nao e o nosso.
-# Apagar continua sendo barato e evita surpresa se alguem rodar sem driver.
+# The marker only affects the --game / POKEPORT_GAME path, which is not ours.
+# Deleting it stays cheap and avoids a surprise if someone runs without a driver.
 rm -f "$MARCADOR" 2>/dev/null
 
 rm -rf "$SAIDA" && mkdir -p "$SAIDA"
@@ -101,23 +104,25 @@ find "$SAVE" -maxdepth 1 -name 'vc_*.png' -delete 2>/dev/null
 LOG="$SAIDA/run.log"
 
 cd "$REPO" || exit 1
-# ARMADILHA 3: o caminho do driver precisa existir. main.lua:233 faz
-# assert(loadfile(driverPath)), e um caminho errado derruba o boot em silencio.
-[ -f "$DRIVER" ] || { echo "driver nao encontrado: $DRIVER"; exit 1; }
+# TRAP 3: the driver path needs to exist. main.lua:233 does
+# assert(loadfile(driverPath)), and a wrong path silently kills the boot.
+[ -f "$DRIVER" ] || { echo "driver not found: $DRIVER"; exit 1; }
 
 VC_OPT="$OPCAO" POKEPORT_VERSION="$VERSAO" POKEPORT_DRIVER="$DRIVER" \
   "$LOVE" . > "$LOG" 2>&1 &
 PID=$!
 
-# ARMADILHA 4: o log costumava sair VAZIO, porque sem TTY o stdout do LOVE fica
-# em buffer de BLOCO e um processo que nao sai nunca esvazia. Log vazio nao
-# distingue "nao aconteceu nada" de "nao terminou", e eu ja tirei a conclusao
-# errada disso. O driver agora chama io.stdout:setvbuf("line"), entao o log e
-# confiavel AO VIVO e a espera pode olhar o processo em vez de contar arquivo.
+# TRAP 4: the log used to come out EMPTY, because without a TTY the LOVE
+# stdout goes into BLOCK buffering and a process that never exits never
+# flushes. An empty log does not distinguish "nothing happened" from "did not
+# finish", and I already drew the wrong conclusion from that. The driver now
+# calls io.stdout:setvbuf("line"), so the log is reliable LIVE and the wait
+# can watch the process instead of counting files.
 #
-# E o numero esperado vem do PROPRIO driver ("fim, N fotos"), nao de uma
-# constante aqui: quando eu tirei uma foto do driver, a constante 12 continuou
-# la e o gate reprovou um run que tinha ido bem ate o fim.
+# And the expected number comes from the driver ITSELF ("fim, N fotos"), not
+# from a constant here: when I removed a photo from the driver, the constant
+# 12 stayed put and the gate failed a run that had gone fine all the way to
+# the end.
 LIMITE="${VC_TIMEOUT:-180}"
 for _ in $(seq 1 "$LIMITE"); do
   pgrep -x love >/dev/null 2>&1 || break
@@ -133,8 +138,8 @@ if [ -z "$ESPERADAS" ]; then
   ESPERADAS=$(grep -oE 'fim, [0-9]+ fotos' "$LOG" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
 fi
 if [ -z "$ESPERADAS" ]; then
-  echo "GATE FALHOU: o driver nunca chegou ao fim"
-  echo "  log em $LOG ($(wc -l < "$LOG" | tr -d ' ') linhas), versao $VERSAO"
+  echo "GATE FALHOU: the driver never reached the end"
+  echo "  log at $LOG ($(wc -l < "$LOG" | tr -d ' ') lines), version $VERSAO"
   grep -E 'preso_fora_do_mundo|opcao_sem_efeito|driver error' "$LOG" 2>/dev/null | head -3
   exit 1
 fi
@@ -143,49 +148,51 @@ N=$(find "$SAVE" -maxdepth 1 -name 'vc_*.png' 2>/dev/null | wc -l | tr -d ' ')
 if [ "$N" -ge "$ESPERADAS" ]; then
   find "$SAVE" -maxdepth 1 -name 'vc_*.png' -exec cp {} "$SAIDA"/ \; 2>/dev/null
   find "$SAVE" -maxdepth 1 -name 'vc_*.png' -delete 2>/dev/null
-  # O CONTROLE, e sem ele "GATE OK" so dizia que o jogo abriu. Contar arquivo
-  # nao mede nada do mod: desligar o mod inteiro produzia o mesmo numero de
-  # fotos e o mesmo verde.
+  # THE CONTROL, and without it "GATE OK" only said the game opened. Counting
+  # files does not measure anything about the mod: turning off the whole mod
+  # produced the same number of photos and the same green.
   #
-  # O limiar vem do PISO medido na mesma corrida, e nao de uma fracao escolhida.
-  # Com o mod neutralizado de proposito, a diferenca deu 175 de 87552 contra um
-  # limiar fixo de 175: passou raspando por acaso.
+  # The threshold comes from the FLOOR measured in the same run, not from a
+  # chosen fraction. With the mod deliberately neutralized, the difference
+  # came out 175 of 87552 against a fixed threshold of 175: it passed by a
+  # hair, by chance.
   CTRL=$(grep -oE 'controle piso [0-9-]+, mod ligado contra desligado [0-9-]+, de [0-9]+' "$LOG" | tail -1)
   PISO=$(echo "$CTRL" | sed -nE 's/.*piso (-?[0-9]+).*/\1/p')
   DIF=$(echo "$CTRL" | sed -nE 's/.*desligado (-?[0-9]+).*/\1/p')
   TOT=$(echo "$CTRL" | sed -nE 's/.*de ([0-9]+)$/\1/p')
   if [ -z "${DIF:-}" ] || [ -z "${TOT:-}" ] || [ -z "${PISO:-}" ]; then
-    echo "GATE FALHOU: o driver nao mediu o controle"
+    echo "GATE FALHOU: the driver did not measure the control"
     exit 1
   fi
   if [ "$PISO" -lt 0 ] || [ "$DIF" -lt 0 ]; then
-    echo "GATE FALHOU: alguma captura do controle nao saiu"
+    echo "GATE FALHOU: some capture of the control did not come out"
     exit 1
   fi
   MIN=$((PISO * 3 + 200))
   if [ "$DIF" -lt "$MIN" ]; then
-    echo "GATE FALHOU: com o mod ligado a tela nao difere o bastante de com ele"
-    echo "  desligado: $DIF contra piso $PISO (minimo $MIN, de $TOT amostras)."
-    echo "  Ou nao ha personagem nosso nesta cena, ou o mod nao faz nada."
+    echo "GATE FALHOU: with the mod on, the screen does not differ enough from"
+    echo "  it off: $DIF against floor $PISO (minimum $MIN, of $TOT samples)."
+    echo "  Either there is no character of ours in this scene, or the mod does nothing."
     exit 1
   fi
-  echo "GATE OK: $N fotos em $SAIDA, controle $DIF contra piso $PISO"
+  echo "GATE OK: $N photos in $SAIDA, control $DIF against floor $PISO"
   if [ -n "$OPCAO" ]; then
-    # ARMADILHA 5: escrever a opcao no save sem EMITIR o evento nao muda nada,
-    # porque a malha ja esta cacheada. Eu produzi um A/B com imagens byte a byte
-    # identicas e quase apresentei como comparacao. O driver agora aborta nesse
-    # caso; aqui a gente confere que ele nao abortou.
+    # TRAP 5: writing the option to the save without EMITTING the event
+    # changes nothing, because the mesh is already cached. I produced an A/B
+    # with images identical byte for byte and nearly presented it as a
+    # comparison. The driver now aborts in that case; here we check that it
+    # did not abort.
     if grep -q "evento emitido" "$LOG" 2>/dev/null; then
-      echo "  opcao aplicada: $OPCAO"
+      echo "  option applied: $OPCAO"
     else
-      echo "  AVISO: a opcao $OPCAO NAO foi aplicada; nao use estas fotos para A/B"
+      echo "  WARNING: option $OPCAO was NOT applied; do not use these photos for A/B"
       exit 2
     fi
   fi
   exit 0
 fi
 
-echo "GATE FALHOU: $N fotos (esperava $ESPERADAS)"
-echo "  log em $LOG ($(wc -l < "$LOG" | tr -d ' ') linhas)"
-echo "  versao usada: $VERSAO"
+echo "GATE FALHOU: $N photos (expected $ESPERADAS)"
+echo "  log at $LOG ($(wc -l < "$LOG" | tr -d ' ') lines)"
+echo "  version used: $VERSAO"
 exit 1

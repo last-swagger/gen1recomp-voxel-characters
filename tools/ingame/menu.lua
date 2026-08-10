@@ -352,7 +352,7 @@ return function(game)
     local base = medeNoMundo()
     if abrirOpcoes() and porBreath("STRONG") == "STRONG" then
       local ligado = medeNoMundo()
-      nota("pixels que mudam em 46 quadros: %d com BREATH OFF, %d com STRONG",
+      nota("maior mudanca num periodo inteiro: %d com BREATH OFF, %d com STRONG",
         base, ligado)
       m8ok = base >= 0 and ligado > base + 40
       detalheM8 = string.format("OFF %d, STRONG %d", base, ligado)
