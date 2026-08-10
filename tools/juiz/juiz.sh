@@ -16,7 +16,7 @@
 # tempo do Kim e o insumo caro aqui.
 set -u
 AQUI="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$AQUI/../../.." && pwd)"
+REPO="$(cd "$AQUI/../../../.." && pwd)"
 . "$AQUI/../tools_bin.sh"
 SAVE="$HOME/Library/Application Support/LOVE/render"
 
