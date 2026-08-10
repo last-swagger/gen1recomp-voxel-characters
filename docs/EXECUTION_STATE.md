@@ -52,7 +52,27 @@ Everything else in the roadmap is executable without him.
 | G | Adversarial review | subagent + codex | **findings fixed** 6c1d4db | 2 blocking, both reproduced, both fixed |
 | H | 24. Menu gate was flaky | this session | **landed** b5438b1 | failed 3 of 5, now 4 of 4 with 2-4x margin |
 | I | 4. Trailer: time of day | this session | verifying | day vs night measured at 14 dB PSNR |
-| J | 2. en-US, `tools/` | MBP | dispatched | ruler must stay identical; it edits the ruler |
+| J | 2. en-US, `tools/` | MBP | **nearly done** | ruler output identical after translating the ruler itself |
+| K | 16. MOTION LAG direction | subagent | **landed** e6e7913 | the surviving mutant now dies; 603 -> 607 |
+| L | 24. First-person gate | this session | **landed** ee70241 | discarded on blends but not on its own floor |
+| M | 21.1 release.sh | this session | **landed** bb49937 | rehearsed end to end; refuses without a changelog section |
+
+## Three gates were intermittent, and the battery is what exposed all three
+
+None of them had ever been caught, because each was run by hand, and a human
+who sees a red re-runs it. A green rerun ends the investigation.
+
+| Gate | Failure rate | Cause | Fix |
+|---|---|---|---|
+| menu M8 | 3 of 5 | measured PHASE: two photographs a fixed 46 frames apart, so the number depended on where in the breathing cycle they landed | sweep a full period, keep the largest difference |
+| probe_fp P4 | 2 of 4 | used a sample whose own control floor was half the frame, so the signal was that movement plus the option | discard a sample whose floor exceeds 5% |
+| (both) | | thresholds were NOT lowered in either case | the number was never the problem |
+
+**And in both cases the fix was verified by measuring again, four runs each,
+not by running it once and seeing green.** probe_fp's discard was additionally
+proved by forcing its limit to -1 and confirming every sample is dropped with
+the right message: a branch nothing exercises looks exactly like one that
+works.
 
 ## Roadmap items closed or advanced, 2026-08-10
 

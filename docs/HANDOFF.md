@@ -6,10 +6,21 @@ everything. Written for a session that starts with none of today's context.
 ## State in one paragraph
 
 **v1.6.0 is released and installable from inside the game.** Branch `vida-v2`
-carries 56 unreleased commits on top of it. Most of today was not features: an
-adversarial audit by four agents found roughly forty checks that passed for
-reasons unrelated to what they claimed, and fixing those exposed a real defect
-in shipped behaviour. Nothing on the branch is pushed.
+carries the unreleased work on top of it, none of it pushed. Almost none of it
+is features. It is the tooling, the tests and the project's own language, plus
+the defects that tooling found: an axis defect in shipped behaviour, three
+gates that were passing or failing for reasons unrelated to the code, a hole in
+the test suite, and three separate false results in a gate I wrote this
+morning.
+
+**Start with `docs/EXECUTION_STATE.md`**, which tracks what landed, what is in
+flight, and what is blocked on Kim. This file is the orientation; that one is
+the state.
+
+**One command runs everything: `bash tools/bateria.sh`.** It exists because the
+battery was seven commands in an order that mattered, and the first time it ran
+as one command it immediately found a gate that had been failing half the time
+for months without anyone noticing.
 
 ## Run everything
 
@@ -18,7 +29,16 @@ relative path from the wrong directory makes LOVE open a window that waits for a
 key, which from a script is a ten minute timeout with an empty log.
 
 ```
-luajit mods/voxel_characters/tests/voxel_chars_test.lua     603 checks, the maths
+bash mods/voxel_characters/tools/bateria.sh                 ALL OF IT, in order
+bash mods/voxel_characters/tools/bateria.sh --rapido        the half with no game
+bash mods/voxel_characters/tools/mutantes.sh                are the checks checking?
+bash mods/voxel_characters/tools/instala_hooks.sh           pre-commit runs the fast half
+```
+
+The pieces it runs, if one of them needs to be run alone:
+
+```
+luajit mods/voxel_characters/tests/voxel_chars_test.lua     607 checks, the maths
 luajit mods/voxel_characters/tools/lint_asserts.lua         checks that do not check
 bash mods/voxel_characters/tools/folga_locais.sh            LuaJIT local headroom
 bash mods/voxel_characters/tools/render/check.sh            the ruler checks itself
@@ -40,7 +60,8 @@ bash mods/voxel_characters/tools/sala_de_teste.sh <host>    the whole battery, r
 bash mods/voxel_characters/tools/juiz/rodada.sh 30          one round of the judge
 ```
 
-Green today: 603/603, ruler OK with 15 checks, every in-game gate passing.
+Green today: 607/607, ruler OK with 19 checks, every in-game gate passing,
+all 5 mutants killed.
 `release_check.sh` is RED on purpose, see below.
 
 The core repo's own suite is red with 18 pre-existing failures, verified against
@@ -75,6 +96,28 @@ Fixed by conjugating. No gate caught it because every life test asserted on the
 MATRIX and none composed it with the rotation baked into the vertex. That test
 exists now and measures world displacement at all four rungs.
 
+## The rule this repository keeps re-learning, now with four instances in a day
+
+**A gate is not verification until it has been run against input that should
+fail.** Every one of these looked correct, was reviewed, and was wrong:
+
+- The comment-only gate had **three** separate defects. A bare CR let a comment
+  swallow the next line of code and two different files compared equal. A path
+  spelling the docs themselves used exited 0 without comparing a byte. And
+  comparing line k to line k assumed a translation preserves line count, so it
+  reported 2697 changed lines on a correct translation.
+- The menu gate measured phase instead of amplitude and failed 3 runs in 5.
+- The first-person gate used samples whose own control floor was half the frame.
+- A card check compared canvas height while believing it compared annotations.
+
+The second of those is the one to internalise: **a gate that cries wolf on
+correct input is more dangerous than one that misses**, because it gets waived
+by the second day and then it is not there at all.
+
+And the three tools that found these: mutation testing (`tools/mutantes.sh`),
+running the whole battery at once, and asking a different model family to
+attack a specific file. All three found something the author had not.
+
 ## Two questions the measurements answered, and one they sharpened
 
 **The host grid is not ours to add.** Measured: the grid changes 54700 samples
@@ -90,13 +133,20 @@ appears nowhere in this repository, and the shadow pass draws
 `SpriteBillboards.shadowQuad`, the flat card, never our mesh. That fiction
 blocked per-part motion for two sessions.
 
-**First person sharpened rather than closed.** Head on, depth is invisible: the
-SLAB silhouette is exactly the flat card at every depth. The cost appears only
-at an angle (at yaw 30: art 94.7, 85.7, 78.5, 65.2 percent for depths 1, 3, 5,
-10). But the host yaws first-person cards to face the eye, so a settled
-first-person view is head-on. **So what does FIRST PERSON: SOLID buy at full
-blend?** The probe measures at 0.58, mid-transition. Nobody has measured 1.0
-with a character guaranteed in frame.
+**First person: ANSWERED, and the answer is "nothing at full blend".** Head on,
+depth is invisible: the SLAB silhouette is exactly the flat card at every depth.
+The cost appears only at an angle (at yaw 30: art 94.7, 85.7, 78.5, 65.2 percent
+for depths 1, 3, 5, 10), and the host yaws first-person cards to face the eye,
+so a settled first-person view is head-on.
+
+`probe_fp` now sweeps eight blends, and the shape reproduces byte for byte
+across four runs: the effect grows to a peak of 5206 samples (5.9% of frame) at
+blend 0.74 and is **exactly zero** by 0.83, where the host hides the player's
+own card. **So FIRST PERSON: SOLID is worth exactly its transition**, and the
+release notes have to say that rather than imply a solid you can walk around.
+It is still worth having: at the peak, 5.9% of the frame is the player's own
+body, which used to collapse to a flat card precisely when the camera was
+closest to it.
 
 ## The explainer card, and what measuring it closed
 
