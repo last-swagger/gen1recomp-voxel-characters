@@ -437,3 +437,21 @@ nothing, whatever the option says. That is the same shape as the floor the life
 probe measures with its own procedure, and the same shape as the judge's
 "features cegas" report: a comparison is only evidence when something else
 establishes the scale.
+
+### 24. The first-person gate depends on luck and knows it
+
+`probe_fp.lua` sweeps all four facings, measures the mod on against off, and
+keeps the facing where a character is actually on screen. That was built to stop
+zero from meaning two opposite things, and it works: on a run where nobody is in
+frame it refuses the verdict instead of reporting a pass.
+
+The problem is how often that happens. Measured across runs of the same
+command: once it found a facing with 531 differing samples, once all four
+facings returned 0. The probe teleports into a Pokemon centre and hopes an NPC
+is in the camera's cone, and where the NPCs are is not something it controls.
+
+**What changes:** the gate stops depending on the room. The player's OWN card is
+guaranteed present below blend 0.9, because that is the case the whole feature
+exists for, so the control belongs there rather than at full blend where the
+host hides it. A gate that fails half the time for reasons unrelated to the code
+trains people to rerun it until it is green, which is worse than no gate.
