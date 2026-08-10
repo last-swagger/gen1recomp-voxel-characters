@@ -1,0 +1,26 @@
+# Mutants the suite is expected to kill.
+#
+# Format, four fields separated by ` | `:
+#   file | exact text to replace | replacement | what this mutant represents
+#
+# The text has to be UNIQUE in the file. `mutantes.sh` refuses a pattern that
+# matches zero or more than one line, because a mutation applied somewhere you
+# did not mean is a false result in whichever direction is worse.
+#
+# A SURVIVING mutant is the finding. It means the suite runs over that line
+# without asserting anything about it, which is the exact failure this project
+# has shipped twice: 465 checks passing over a body sheared 45 degrees, and six
+# checks that counted nothing because a predicate was used as an assertion.
+#
+# Only pick lines whose defect would be VISIBLE to a player. A mutant that
+# nothing should catch teaches nothing and trains people to ignore the report.
+
+main.lua | local a12, a13 = kx * c, kx * n | local a12, a13 = kx * n, kx * c | The axis fix: swapping cos and sin puts the life channel back in mesh space, which is the defect that shipped in v1.6.0 and moved BREATH to 33% of its advertised rise at the default camera rung.
+
+main.lua | local a22 = s * c * c + n * n - kz * n * c | local a22 = s * c * c + n * n + kz * n * c | Sign of the MOTION LAG term in the conjugated matrix. Inverting it makes the body lag the wrong way, which reads as leaning into the step instead of trailing it.
+
+main.lua | local FP_RAIO = 14 | local FP_RAIO = 0 | First person's safety radius. At zero the shader pull is forwarded unclamped, so a vertex six world units from the eye lands behind it and the player's own body turns inside out.
+
+main.lua | local FP_FOLGA = 2 | local FP_FOLGA = -12 | The slack on top of the radius. Negative slack re-opens the same failure more quietly, which is the version a bounds test with no magnitude would miss.
+
+tests/voxel_chars_test.lua | local function close(a, b, tol) | local function close(a, b, tol) if true then return true end | The assertion linter's own subject. A predicate that always returns true is exactly what six checks were doing when the count went from 552 to 558, and the suite has to notice its own helper going blind.

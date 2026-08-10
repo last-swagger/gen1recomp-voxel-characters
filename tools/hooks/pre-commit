@@ -1,0 +1,39 @@
+#!/bin/bash
+# Pre-commit hook for the voxel_characters mod. Installed by tools/instala_hooks.sh.
+#
+# Runs the FAST half of the battery: the offline suite, the assertion linter,
+# chunk-local headroom and packaging. Four seconds, no LOVE, no game.
+#
+# It deliberately does NOT run the ruler or the in-game gates. Those need LOVE,
+# LOVE is exclusive per machine, and a hook that fights a running measurement
+# for the lock is a hook people disable. The slow half belongs in
+# `bash tools/bateria.sh` before a release, not in front of every commit.
+#
+# What this catches is the class that has actually hurt: chunk locals crossing
+# LuaJIT's ceiling, which is a COMPILE error that takes the whole mod down for
+# every player, and it lands on whichever commit crosses the line rather than
+# on the one that caused the growth.
+#
+# Escape hatch: `git commit --no-verify`. It exists because a hook with no way
+# out gets uninstalled the first time someone needs to commit a work in
+# progress, and then it protects nothing.
+AQUI="$(cd "$(dirname "$0")" && pwd)"
+MOD="$(cd "$AQUI/../.." 2>/dev/null && pwd)"
+[ -f "$MOD/tools/bateria.sh" ] || MOD="$(cd "$AQUI/../../.." && pwd)/mods/voxel_characters"
+
+if [ ! -f "$MOD/tools/bateria.sh" ]; then
+  echo "pre-commit: nao achei bateria.sh, deixando passar"
+  exit 0
+fi
+
+SAIDA=$(bash "$MOD/tools/bateria.sh" --rapido 2>&1)
+if [ $? -eq 0 ]; then
+  echo "$SAIDA" | grep -E '^\s+(suite|lint|folga|modkit)' | sed 's/^/  /'
+  exit 0
+fi
+
+echo "$SAIDA"
+echo
+echo "COMMIT BLOQUEADO pela bateria rapida."
+echo "  Se for de proposito (trabalho em andamento): git commit --no-verify"
+exit 1
