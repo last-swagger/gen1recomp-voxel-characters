@@ -92,6 +92,11 @@ local opts = {
   -- ferramenta de teste.
   labfile = "escolhas.txt",
   labpick = "",
+  -- `features=<arquivo>` le uma linha por variante (folha TAB chave:valor,...)
+  -- e imprime uma linha TSV de features por variante. E a metade cara do
+  -- juiz: exige LOVE, sprite de verdade e o mod carregado. A metade barata,
+  -- que ajusta o modelo, roda em luajit puro em tools/juiz.
+  features = "",
 }
 
 -- O schema que o proprio mod registra, capturado na ultima construcao. O
@@ -983,6 +988,7 @@ function love.load(argv)
     return love.event.quit(ok and 0 or 1)
   end
   if opts.lab == "1" then return love.labsetup() end
+  if opts.features ~= "" then return love.features() end
   -- Antes de qualquer malha ser construida: estes parametros mudam geometria.
   if opts.shade == "host" then SHADE_OVERRIDE = HOST_SHADE end
   if tonumber(opts.aostrength) then setAoStrength(tonumber(opts.aostrength)) end
@@ -1596,6 +1602,136 @@ local function computeMetrics(screen)
   end
   colour:release()
   depth:release()
+end
+
+--------------------------------------------------------------------------
+-- FEATURES  (features=<arquivo>)
+--------------------------------------------------------------------------
+-- As grandezas que o juiz enxerga. Elas saem da MALHA e nao de um quadro
+-- renderizado, o que e uma escolha e nao uma economia: medir na malha e
+-- deterministico, nao depende de camera nem de relogio, e roda em milissegundos
+-- por variante, entao trinta escolhas viram sessenta variantes em segundos e
+-- da para reajustar o modelo sempre que a lista de features mudar.
+--
+-- A lista comeca pelas grandezas que este projeto ja mediu e que ja
+-- explicaram alguma coisa:
+--
+--   fracao de topo   a lei que matou quatro tentativas de profundidade
+--                    variavel: topo nao carrega arte e esta camera olha para
+--                    ele. Se a preferencia do Kim ignorar isto, a lei vale
+--                    menos do que a gente pensa, e isso e resultado
+--   fracao de arte   frente e verso sao as unicas faces que o artista
+--                    desenhou (IS_ART); o resto e superficie inventada
+--   quads            custo e complexidade da forma
+--   profundidade     o quanto o corpo sai do plano do sprite
+--   tons             FRONT SHAPE e TOP DOME nao mexem em vertice, so em
+--                    shade, entao sem estatistica de shade eles seriam
+--                    invisiveis para o modelo
+--
+-- Nao ha art% de PIXEL aqui, que e a metrica com que este projeto sempre
+-- julgou. Ela precisa do render de proveniencia, que precisa de grade e de
+-- leitura de tela. Fica para a segunda passada, e ate la o baseline do juiz e
+-- "a melhor feature sozinha", que e um adversario mais honesto do que parece:
+-- se o modelo ajustado nao ganha de UMA coluna, ele nao aprendeu nada.
+local FEATURE_NOMES = {
+  "quads", "frente", "verso", "lado", "topo", "baixo",
+  "arte", "profundidade", "shade_media", "shade_desvio", "shade_niveis",
+}
+
+local function featuresDaMalha(mesh, kinds)
+  local f = {}
+  for _, n in ipairs(FEATURE_NOMES) do f[n] = 0 end
+  if not (mesh and mesh.verts and #mesh.verts > 0) then return f end
+  local quads = math.floor(#mesh.verts / 4)
+  f.quads = quads
+  local conta = {}
+  for _, k in ipairs(kinds or {}) do conta[k] = (conta[k] or 0) + 1 end
+  local function frac(k) return quads > 0 and (conta[k] or 0) / quads or 0 end
+  f.frente, f.verso = frac("front"), frac("back")
+  f.lado = frac("side") + frac("side_e") + frac("side_w")
+  f.topo, f.baixo = frac("top"), frac("bottom")
+  f.arte = f.frente + f.verso
+  local minZ, maxZ = math.huge, -math.huge
+  local soma, n, tons = 0, 0, {}
+  for i = 1, #mesh.verts do
+    local v = mesh.verts[i]
+    if v[3] < minZ then minZ = v[3] end
+    if v[3] > maxZ then maxZ = v[3] end
+    soma, n = soma + v[6], n + 1
+    tons[math.floor(v[6] * 100 + 0.5)] = true
+  end
+  f.profundidade = (maxZ > -math.huge) and (maxZ - minZ) or 0
+  f.shade_media = n > 0 and soma / n or 0
+  local var = 0
+  for i = 1, #mesh.verts do
+    local d = mesh.verts[i][6] - f.shade_media
+    var = var + d * d
+  end
+  f.shade_desvio = n > 0 and math.sqrt(var / n) or 0
+  local c = 0
+  for _ in pairs(tons) do c = c + 1 end
+  f.shade_niveis = c
+  return f
+end
+
+function love.features()
+  -- Saida em linha e nao em bloco. Sem isto, um run interrompido no meio
+  -- entrega um arquivo truncado NO MEIO DE UMA LINHA, e um leitor cuidadoso
+  -- ainda pode ler as linhas inteiras que sobraram como se fossem o resultado.
+  -- Aconteceu: o trailer.sh faz `pkill -x love` e matou uma extracao que
+  -- rodava em paralelo, e o que ficou no arquivo parecia uma medicao curta em
+  -- vez de uma medicao interrompida.
+  io.stdout:setvbuf("line")
+  local entrada = assert(io.open(opts.features, "r"),
+    "nao consegui abrir " .. opts.features)
+  local cab = { "folha", "estado" }
+  for _, n in ipairs(FEATURE_NOMES) do cab[#cab + 1] = n end
+  print("#" .. table.concat(cab, "\t"))
+  local linhas = 0
+  for linha in entrada:lines() do
+    local folha, estado = linha:match("^(%S+)\t(.*)$")
+    if folha then
+      local path = SPRITE_DIR .. folha .. ".png"
+      local ok, data = pcall(loadImageData, path)
+      if not ok then
+        io.stderr:write("sem folha: " .. path .. "\n")
+      else
+        local sw, sh = data:getDimensions()
+        local def = { image = path, frames = math.max(1, math.floor(sh / 16)) }
+        local valores = {}
+        for par in estado:gmatch("[^,]+") do
+          local k, v = par:match("^%s*([%w_]+)%s*:%s*(.-)%s*$")
+          if k then valores[k] = tonumber(v) or v end
+        end
+        opts.opt = estado
+        local shape = valores.shape or "slab"
+        local depth = tonumber(valores.depth) or 3
+        -- Relogio congelado: a piscada mexe UV e mudaria a assinatura de shade
+        -- conforme a hora em que este comando rodou. Feature tem que ser
+        -- funcao do estado, nao do momento.
+        local relogio = love.timer.getTime
+        love.timer.getTime = function() return 0 end
+        local mesh = buildGeometry(data, def, 0, shape, depth,
+                                   valores.side_color or "body")
+        love.timer.getTime = relogio
+        local kinds
+        if mesh then
+          local role = (shape == "carved" or shape == "carved_plus") and 0 or 0
+          kinds = classifyMesh(mesh, role)
+        end
+        local f = featuresDaMalha(mesh, kinds)
+        local saida = { folha, estado }
+        for _, n in ipairs(FEATURE_NOMES) do
+          saida[#saida + 1] = string.format("%.6f", f[n])
+        end
+        print(table.concat(saida, "\t"))
+        linhas = linhas + 1
+      end
+    end
+  end
+  entrada:close()
+  io.stderr:write(string.format("features de %d variantes\n", linhas))
+  love.event.quit()
 end
 
 --------------------------------------------------------------------------

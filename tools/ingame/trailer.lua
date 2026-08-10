@@ -77,27 +77,35 @@ return function(game)
   -- O ROTEIRO. Editar aqui e editar o trailer.
   local PLANOS = {
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "plano",
-      seg = 4, legenda = "Pokemon Red, como ele sempre foi" },
+      seg = 4, legenda = "Pokemon Red, exactly as it has always been" },
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "medio",
-      seg = 5, legenda = "O Dramatic Shape deita o mundo" },
+      seg = 5, legenda = "Dramatic Shape tips the world over" },
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "alto",
-      seg = 5, legenda = "Voxel Characters da corpo a quem anda nele" },
+      seg = 5, legenda = "Voxel Characters gives a body to whoever walks in it" },
     { mapa = "VIRIDIAN_CITY", x = 17, y = 17, dir = "down", degrau = "alto",
-      anda = true, seg = 6, legenda = "Uma cidade inteira, sem card plano" },
+      anda = true, seg = 6, legenda = "A whole city, and not one flat card" },
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "up", degrau = "medio",
       seg = 5, opcoes = { breath = 0.035 },
-      legenda = "Eles respiram, cada um no seu ritmo" },
+      legenda = "They breathe, each at their own pace" },
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "up", degrau = "empe",
-      seg = 4, opcoes = { blink = "on" }, legenda = "E piscam" },
+      seg = 4, opcoes = { blink = "on" }, legenda = "And they blink" },
     { mapa = "ROUTE_1", x = 10, y = 20, dir = "down", degrau = "alto",
       anda = true, seg = 6, opcoes = { footfall = 0.7, lag = 0.6 },
-      legenda = "O passo tem peso, e o corpo demora a acompanhar" },
+      legenda = "The step carries weight, and the body takes a moment to follow" },
     { mapa = "VIRIDIAN_CITY", x = 17, y = 17, dir = "down", degrau = "empe",
       seg = 4, opcoes = { front_shape = 0.17, top_dome = 0.15 },
-      legenda = "Sombreamento que sugere volume sem inventar geometria" },
+      legenda = "Shading that suggests volume without inventing geometry" },
+    -- PRIMEIRA PESSOA EM PAR, e nao num plano so. O Kim assistiu e disse que
+    -- nao viu diferenca, e ele estava certo: um plano sozinho mostra o
+    -- resultado sem mostrar o que mudou, e em primeira pessoa a diferenca e
+    -- justamente a espessura, que so existe por comparacao. Mesmo lugar,
+    -- mesma direcao, mesmo degrau, so a opcao muda entre os dois.
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "right",
-      degrau = "primeira", seg = 6, opcoes = { first_person = "solid" },
-      legenda = "E agora tambem em primeira pessoa" },
+      degrau = "primeira", seg = 4, opcoes = { first_person = "card" },
+      legenda = "In first person we used to fall back to the flat card" },
+    { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "right",
+      degrau = "primeira", seg = 5, opcoes = { first_person = "solid" },
+      legenda = "Now the body stays" },
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "alto",
       seg = 4, legenda = "Voxel Characters" },
   }
@@ -140,6 +148,33 @@ return function(game)
   end
 
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
+
+  -- ANDAR SEM BATER NA PAREDE.
+  --
+  -- O Kim assistiu e reparou: nos planos em que o personagem anda, ele chega
+  -- na parede e continua empurrando, e isso le como amador porque le como
+  -- alguem esquecendo o controle apertado. A causa era boba: o plano segurava
+  -- uma direcao pelo tempo todo sem nunca perguntar se dava para seguir.
+  --
+  -- Agora pergunta, e pergunta ao mesmo juiz que o resto do harness usa
+  -- (Pouso.recusa, que consulta o motor sobre limite, colisao, placa, porta e
+  -- NPC). Quando a proxima celula recusa, a direcao inverte. O resultado e um
+  -- vai e vem dentro do espaco que existe, que e o que um trailer quer de
+  -- qualquer forma: movimento continuo, sem parede.
+  local OPOSTO = { up = "down", down = "up", left = "right", right = "left" }
+  local DELTA = { up = { 0, -1 }, down = { 0, 1 },
+                  left = { -1, 0 }, right = { 1, 0 } }
+
+  local function podeSeguir(dir)
+    local ow = game.overworld
+    if not (ow and ow.map and ow.player) then return true end
+    local d = DELTA[dir]
+    if not d then return true end
+    local cx = (ow.player.cellX or 0) + d[1]
+    local cy = (ow.player.cellY or 0) + d[2]
+    return Pouso.recusa(ow.map, ow, cx, cy) == nil
+  end
+
   local n = 0
   local cortes = {}
 
@@ -157,6 +192,7 @@ return function(game)
 
     local quadros = p.seg * FPS
     local inicio = n + 1
+    local andando = p.dir
     legenda = p.legenda
     for i = 1, quadros do
       -- A legenda entra e sai dentro do plano. Aparecer de uma vez junto com o
@@ -164,9 +200,15 @@ return function(game)
       local t = i / quadros
       legendaAlpha = math.min(1, math.min(t, 1 - t) * 6)
       if p.anda then
-        local dir = p.dir == "down" and "down" or p.dir
-        table.insert(game.input.pressQueue, dir)
-        game.input.state[dir] = true
+        -- So inverte quando a celula seguinte recusa E o personagem ja esta
+        -- parado nela; perguntar no meio de um passo devolveria a celula de
+        -- onde ele saiu e a direcao ficaria trocando a cada quadro.
+        if not podeSeguir(andando) then
+          game.input.state[andando] = false
+          andando = OPOSTO[andando] or andando
+        end
+        table.insert(game.input.pressQueue, andando)
+        game.input.state[andando] = true
       end
       n = n + 1
       love.graphics.captureScreenshot(string.format("vc_trailer_%05d.png", n))

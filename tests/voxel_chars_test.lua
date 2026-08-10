@@ -6135,4 +6135,58 @@ do
         "em SOLID a row de STATUS nao diz FIRST PERSON, porque o card nao saiu")
 end
 
+-- ==========================================================================
+-- WHAT IS ALIVE
+-- ==========================================================================
+-- Pikon reported the town map on the rival's table swaying. Kim's rule: people
+-- and Pokemon move, objects hold still. The mod carries a list of OBJECTS, not
+-- of characters, so anything it has never heard of is treated as alive; that
+-- is what keeps another mod's Pokemon sprites breathing.
+--
+-- These checks pin both directions, because a rule tested on one side only
+-- passes when the rule is "nothing ever moves".
+
+do
+  local pixels = {}
+  pixels[0] = 1
+
+  -- Sways or not, decided by the sheet the mesh came from. Returns whether the
+  -- original draw got a NEW matrix, which is what the life channel does.
+  local function mexe(folha)
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, soEsta({ sway = 0.7, breath = 0.035 })))
+    local mesh = modules.SpriteBillboards.mesh(
+      { image = folha .. ".png", frames = 1 }, 0)
+    local model = lifeModel(32, 48, false)
+    modules.Voxel3D.draw(mesh, "tex", model, 6, nil)
+    local call = modules.Voxel3D.drawCalls[1]
+    return call and call.model ~= model
+  end
+
+  -- The seven objects measured as one-frame sheets that are furniture.
+  for _, folha in ipairs({ "boulder", "clipboard", "fossil", "old_amber",
+                           "paper", "poke_ball", "pokedex" }) do
+    check(mexe(folha) == false,
+          folha .. " nao mexe: objeto parado nao respira nem balanca")
+  end
+
+  -- The two one-frame sheets that are alive and merely still. A sleeping
+  -- Snorlax that breathes is the reading we want, and it is the case a
+  -- frame-count rule would have got wrong.
+  for _, folha in ipairs({ "snorlax", "gambler_asleep" }) do
+    check(mexe(folha) == true,
+          folha .. " mexe: esta parado porque esta dormindo, nao porque e movel")
+  end
+
+  -- Characters, and the default for anything unknown. The unknown case is the
+  -- one that protects other mods: overworld_wild_spawns registers hundreds of
+  -- Pokemon sheets this mod has never seen, and a Pokemon should breathe.
+  for _, folha in ipairs({ "red", "nurse", "oak",
+                           "uma_folha_que_nunca_existiu" }) do
+    check(mexe(folha) == true,
+          folha .. " mexe: personagem, ou desconhecido, que e tratado como vivo")
+  end
+end
+
 T.finish("voxel_chars_test")

@@ -2801,6 +2801,45 @@ local function fpPullSeguro(model, pull)
   return math.min(pull, teto)
 end
 
+-- WHAT MAY BREATHE, SWAY, LAG AND SQUASH.
+--
+-- Reported by Pikon: the town map lying on the table in the rival's house
+-- sways. He is right that it should not, and right about the rule too, which
+-- Kim confirmed: people and Pokemon move, objects do not. A swaying map reads
+-- as a bug even to someone who cannot name what is wrong, because maps on
+-- tables do not breathe.
+--
+-- THE LIST IS OF OBJECTS, NOT OF CHARACTERS, and that direction is the whole
+-- design. Measuring every sheet's frame count (its height over 16, see
+-- RomExtractor.lua:481) splits them almost along the line we want: 58 sheets
+-- have 3 or 6 frames and are all characters, 9 have one frame. But two of
+-- those nine are alive and merely still, `snorlax` and `gambler_asleep`, and a
+-- sleeping Snorlax that breathes is exactly the reading we want.
+--
+-- So the rule is not "animate what walks", it is "hold still what is furniture",
+-- and anything unknown is treated as alive. That default is the one that
+-- survives other mods: overworld_wild_spawns registers hundreds of Pokemon
+-- sprites we have never seen, and a Pokemon should breathe. A list of
+-- characters would freeze them all; a list of objects lets them through.
+--
+-- The names come from the ROM and cannot grow, and the offline suite asserts
+-- the classification over the real sheet names, so a wrong entry fails a test
+-- instead of sitting in a table nobody rereads.
+--
+-- Note what this does NOT explain, because the difference matters: Pikon also
+-- noticed the pokeballs on Oak's table do not sway. That is not this rule at
+-- work. Those pokeballs are map art, not object events, so they never reach
+-- SpriteBillboards.mesh and were never ours to animate.
+local STILL_OBJECTS = {
+  boulder = true, clipboard = true, fossil = true, old_amber = true,
+  paper = true, poke_ball = true, pokedex = true,
+}
+
+local function lifeAlive(info)
+  if not info then return false end
+  return not STILL_OBJECTS[info.base]
+end
+
 local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   local info = ourMeshes[mesh]
   if not info or type(model) ~= "table" then
@@ -2821,6 +2860,12 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   local footfall = optionState.footfall
   if breath == "off" and sway == "off" and lag == "off"
     and footfall == "off" then
+    return originalDraw(mesh, texture, model, pull, sunModel)
+  end
+  -- After the first-person pull clamp on purpose: that one is about not
+  -- drawing garbage and applies to everything we draw, including objects.
+  -- This one is about what is alive.
+  if not lifeAlive(info) then
     return originalDraw(mesh, texture, model, pull, sunModel)
   end
 
@@ -2965,7 +3010,8 @@ local function voxelMesh(def, frame)
     -- acerto de cache alocaria uma tabela por personagem por quadro sem trocar
     -- nada dentro dela.
     if ourMeshes[mesh] == nil then
-      ourMeshes[mesh] = { base = baseName, frame = frame }
+      ourMeshes[mesh] = { base = baseName, frame = frame,
+                          frames = (def and def.frames) or 1 }
     end
     return mesh
   end

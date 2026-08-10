@@ -1,0 +1,338 @@
+-- O JUIZ: transforma as escolhas do Kim num modelo que ordena variantes.
+--
+-- POR QUE ELE PRECISA EXISTIR. Este projeto mediu, e nao supos, que um
+-- redesenho por IA satisfaz TODA restricao numerica que a gente tem e ainda
+-- entrega arte pior. Entao nenhum gerador pode ser treinado contra as reguas
+-- que a gente ja possui: falta uma regua nova, e a unica fonte dela e alguem
+-- escolhendo entre dois.
+--
+-- O QUE ELE E. Regressao logistica sobre a DIFERENCA de features entre os dois
+-- lados de cada par, que e a forma Bradley-Terry escrita do jeito mais simples
+-- possivel. Com dezenas de escolhas, um modelo linear sobre uma duzia de
+-- colunas e a capacidade certa; rede neural com cem exemplos decora.
+--
+-- O GATE QUE DECIDE SE ELE E JUIZ OU ENFEITE. Vinte por cento das escolhas
+-- ficam de fora do ajuste, e o modelo tem que acertar essas melhor do que a
+-- MELHOR COLUNA SOZINHA. Se nao ganha de uma coluna, ele nao aprendeu nada,
+-- so decorou as features que eu escolhi. Este numero e a coisa mais importante
+-- que este arquivo imprime.
+--
+-- Uso:
+--   luajit ajusta.lua --estados <escolhas.txt>            lista as variantes
+--   luajit ajusta.lua --ajusta <escolhas.txt> <features.tsv>
+--   luajit ajusta.lua --autoteste                         prova a maquinaria
+
+local M = {}
+
+------------------------------------------------------------------ util
+
+local function dividir(s, sep)
+  local out = {}
+  for p in tostring(s):gmatch("[^" .. sep .. "]+") do out[#out + 1] = p end
+  return out
+end
+
+-- "depth=3 side_color=body" vira "depth:3,side_color:body", que e o formato
+-- que o extrator de features aceita. Chave ordenada, para o mesmo estado
+-- produzir sempre a mesma string e a deduplicacao funcionar.
+local function estadoCanonico(texto)
+  local pares = {}
+  for k, v in tostring(texto):gmatch("([%w_]+)=([^%s]+)") do
+    pares[#pares + 1] = { k = k, v = v }
+  end
+  table.sort(pares, function(a, b) return a.k < b.k end)
+  local partes = {}
+  for _, p in ipairs(pares) do partes[#partes + 1] = p.k .. ":" .. p.v end
+  return table.concat(partes, ",")
+end
+
+local function lerEscolhas(caminho)
+  local f = assert(io.open(caminho, "r"), "nao consegui abrir " .. caminho)
+  local escolhas, pulos = {}, 0
+  for linha in f:lines() do
+    local folha = linha:match("folha=(%S+)")
+    local escolha = linha:match("escolha=(%S+)")
+    local opcao = linha:match("opcao=(%S+)")
+    local a, b = linha:match("|%s*A:%s*(.-)%s*|%s*B:%s*(.*)$")
+    if folha and escolha and a and b then
+      if escolha == "pulo" then
+        pulos = pulos + 1
+      elseif escolha == "A" or escolha == "B" then
+        escolhas[#escolhas + 1] = {
+          folha = folha, opcao = opcao, escolha = escolha,
+          a = estadoCanonico(a), b = estadoCanonico(b),
+        }
+      end
+    end
+  end
+  f:close()
+  return escolhas, pulos
+end
+
+local function lerFeatures(caminho)
+  local f = assert(io.open(caminho, "r"), "nao consegui abrir " .. caminho)
+  local nomes, mapa = nil, {}
+  for linha in f:lines() do
+    local campos = {}
+    for c in (linha .. "\t"):gmatch("(.-)\t") do campos[#campos + 1] = c end
+    if linha:sub(1, 1) == "#" then
+      nomes = {}
+      for i = 3, #campos do nomes[#nomes + 1] = campos[i] end
+    elseif nomes and #campos >= 2 then
+      local v = {}
+      for i = 3, #campos do v[#v + 1] = tonumber(campos[i]) or 0 end
+      mapa[campos[1] .. "\t" .. campos[2]] = v
+    end
+  end
+  f:close()
+  return nomes, mapa
+end
+
+------------------------------------------------------------------ modelo
+
+-- z-score por coluna, calculado SO no treino. Padronizar usando o conjunto
+-- inteiro vazaria informacao do teste para dentro do ajuste, e a acuracia
+-- fora da amostra deixaria de significar o que ela promete.
+local function padroniza(X, indices)
+  local d = #X[1]
+  local media, desvio = {}, {}
+  for j = 1, d do
+    local s, n = 0, 0
+    for _, i in ipairs(indices) do s = s + X[i][j]; n = n + 1 end
+    media[j] = n > 0 and s / n or 0
+    local v = 0
+    for _, i in ipairs(indices) do
+      local e = X[i][j] - media[j]; v = v + e * e
+    end
+    desvio[j] = n > 0 and math.sqrt(v / n) or 0
+    if desvio[j] < 1e-9 then desvio[j] = 1 end
+  end
+  return media, desvio
+end
+
+local function aplica(x, media, desvio)
+  local out = {}
+  for j = 1, #x do out[j] = (x[j] - media[j]) / desvio[j] end
+  return out
+end
+
+local function sigmoide(z)
+  if z >= 0 then return 1 / (1 + math.exp(-z)) end
+  local e = math.exp(z)
+  return e / (1 + e)
+end
+
+local function treina(X, y, indices, passos, taxa, l2)
+  local d = #X[1]
+  local w = {}
+  for j = 1, d do w[j] = 0 end
+  for _ = 1, (passos or 4000) do
+    local g = {}
+    for j = 1, d do g[j] = 0 end
+    for _, i in ipairs(indices) do
+      local z = 0
+      for j = 1, d do z = z + w[j] * X[i][j] end
+      local err = sigmoide(z) - y[i]
+      for j = 1, d do g[j] = g[j] + err * X[i][j] end
+    end
+    local n = math.max(1, #indices)
+    for j = 1, d do
+      w[j] = w[j] - (taxa or 0.3) * (g[j] / n + (l2 or 0.01) * w[j])
+    end
+  end
+  return w
+end
+
+local function acerta(X, y, indices, w)
+  local ok = 0
+  for _, i in ipairs(indices) do
+    local z = 0
+    for j = 1, #w do z = z + w[j] * X[i][j] end
+    local prev = z >= 0 and 1 or 0
+    if prev == y[i] then ok = ok + 1 end
+  end
+  return #indices > 0 and ok / #indices or 0
+end
+
+-- O ADVERSARIO: cada coluna sozinha, com o sinal escolhido NO TREINO. Bater
+-- isso e o minimo para o modelo ter aprendido alguma combinacao em vez de so
+-- reproduzir a coluna mais forte.
+local function melhorColuna(X, y, treinoIdx, testeIdx, nomes)
+  local melhor = { nome = "nenhuma", treino = 0, teste = 0 }
+  for j = 1, #X[1] do
+    for _, sinal in ipairs({ 1, -1 }) do
+      local w = {}
+      for k = 1, #X[1] do w[k] = 0 end
+      w[j] = sinal
+      local t = acerta(X, y, treinoIdx, w)
+      if t > melhor.treino then
+        melhor = { nome = (nomes and nomes[j] or ("col" .. j)) ..
+                     (sinal < 0 and " (negativa)" or ""),
+                   treino = t, teste = acerta(X, y, testeIdx, w) }
+      end
+    end
+  end
+  return melhor
+end
+
+-- Divisao deterministica: um em cada cinco vai para o teste, pela ORDEM em
+-- que a escolha foi feita. Sem sorteio de proposito, para o numero impresso
+-- ser o mesmo em duas execucoes e uma piora nao poder ser confundida com azar.
+local function divide(n)
+  local treino, teste = {}, {}
+  for i = 1, n do
+    if i % 5 == 0 then teste[#teste + 1] = i else treino[#treino + 1] = i end
+  end
+  return treino, teste
+end
+
+function M.ajusta(X, y, nomes)
+  local n = #X
+  local treinoIdx, testeIdx = divide(n)
+  local media, desvio = padroniza(X, treinoIdx)
+  local Z = {}
+  for i = 1, n do Z[i] = aplica(X[i], media, desvio) end
+  local w = treina(Z, y, treinoIdx)
+  local base = melhorColuna(Z, y, treinoIdx, testeIdx, nomes)
+  return {
+    n = n, treino = #treinoIdx, teste = #testeIdx,
+    w = w, media = media, desvio = desvio,
+    acTreino = acerta(Z, y, treinoIdx, w),
+    acTeste = acerta(Z, y, testeIdx, w),
+    base = base,
+  }
+end
+
+------------------------------------------------------------------ comandos
+
+local function comandoEstados(caminho)
+  local escolhas = lerEscolhas(caminho)
+  local vistos, saida = {}, {}
+  for _, e in ipairs(escolhas) do
+    for _, chave in ipairs({ e.folha .. "\t" .. e.a, e.folha .. "\t" .. e.b }) do
+      if not vistos[chave] then
+        vistos[chave] = true
+        saida[#saida + 1] = chave
+      end
+    end
+  end
+  for _, l in ipairs(saida) do print(l) end
+  io.stderr:write(string.format("%d escolhas, %d variantes unicas\n",
+    #escolhas, #saida))
+end
+
+local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
+  local escolhas, pulos = lerEscolhas(caminhoEscolhas)
+  local nomes, mapa = lerFeatures(caminhoFeatures)
+  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
+
+  local X, y, faltando = {}, {}, 0
+  for _, e in ipairs(escolhas) do
+    local fa = mapa[e.folha .. "\t" .. e.a]
+    local fb = mapa[e.folha .. "\t" .. e.b]
+    if fa and fb then
+      local dif = {}
+      for j = 1, #fa do dif[j] = fa[j] - fb[j] end
+      X[#X + 1] = dif
+      y[#y + 1] = (e.escolha == "A") and 1 or 0
+    else
+      faltando = faltando + 1
+    end
+  end
+
+  print(string.format("escolhas usadas   %d", #X))
+  print(string.format("pulos             %d  (\"nao vejo diferenca\")", pulos))
+  if faltando > 0 then
+    print(string.format("sem features      %d  (rode o extrator de novo)", faltando))
+  end
+  if #X < 20 then
+    print("")
+    print("POUCO DADO. Com menos de 20 escolhas o numero fora da amostra")
+    print("oscila mais do que a diferenca que ele deveria medir. O ajuste sai")
+    print("abaixo, mas nao decida nada com ele.")
+  end
+  if #X < 5 then return end
+
+  local r = M.ajusta(X, y, nomes)
+  print("")
+  print(string.format("treino %d, teste %d (um em cada cinco, pela ordem)",
+    r.treino, r.teste))
+  print("")
+  print("pesos, na escala padronizada (positivo puxa para o lado A):")
+  local ordem = {}
+  for j = 1, #r.w do ordem[j] = j end
+  table.sort(ordem, function(a, b) return math.abs(r.w[a]) > math.abs(r.w[b]) end)
+  for _, j in ipairs(ordem) do
+    print(string.format("  %-14s %+7.3f", nomes[j] or ("col" .. j), r.w[j]))
+  end
+  print("")
+  print(string.format("acuracia no treino          %.1f%%", r.acTreino * 100))
+  print(string.format("acuracia FORA da amostra    %.1f%%", r.acTeste * 100))
+  print(string.format("melhor coluna sozinha       %.1f%% fora (%s)",
+    r.base.teste * 100, r.base.nome))
+  print("")
+  if r.acTeste > r.base.teste then
+    print("O MODELO GANHA DA MELHOR COLUNA SOZINHA: ele aprendeu uma")
+    print("combinacao, e nao so a feature mais forte.")
+  else
+    print("O MODELO NAO GANHA DE UMA COLUNA SOZINHA. Isso nao e juiz ainda.")
+    print("Duas causas, e elas pedem coisas opostas: ou faltam escolhas, ou o")
+    print("que decide a preferencia nao esta em nenhuma feature desta lista.")
+  end
+end
+
+-- A MAQUINARIA PROVADA ANTES DE GASTAR O TEMPO DO KIM.
+--
+-- Trinta escolhas humanas sao caras. Se o ajuste tiver um defeito, o custo
+-- aparece depois delas. Entao o autoteste gera escolhas SINTETICAS a partir de
+-- uma regra conhecida e confere que o modelo a recupera. Se ele nao recupera
+-- uma regra que existe de verdade, nao adianta alimenta-lo com dado real.
+local function comandoAutoteste()
+  math.randomseed(20260809)
+  local nomes = { "topo", "arte", "quads", "ruido1", "ruido2" }
+  -- A regra: quem tem MENOS topo e MAIS arte ganha. Os outros tres nao contam.
+  local verdade = { -2.0, 1.5, 0, 0, 0 }
+  local X, y = {}, {}
+  for _ = 1, 200 do
+    local dif = {}
+    for j = 1, #nomes do dif[j] = (math.random() - 0.5) * 2 end
+    local z = 0
+    for j = 1, #nomes do z = z + verdade[j] * dif[j] end
+    X[#X + 1] = dif
+    y[#y + 1] = (z + (math.random() - 0.5) * 0.4) > 0 and 1 or 0
+  end
+  local r = M.ajusta(X, y, nomes)
+  print("autoteste do juiz, 200 escolhas sinteticas")
+  print("  regra usada para gerar: topo -2.0, arte +1.5, o resto zero")
+  for j = 1, #nomes do
+    print(string.format("    %-8s peso ajustado %+7.3f", nomes[j], r.w[j]))
+  end
+  print(string.format("  acuracia fora da amostra %.1f%%, melhor coluna %.1f%%",
+    r.acTeste * 100, r.base.teste * 100))
+  local ok = r.w[1] < -0.3 and r.w[2] > 0.2
+    and math.abs(r.w[4]) < math.abs(r.w[1])
+    and math.abs(r.w[5]) < math.abs(r.w[1])
+    and r.acTeste >= 0.8 and r.acTeste > r.base.teste
+  print("")
+  if ok then
+    print("AUTOTESTE OK: o ajuste recupera o sinal de quem manda, deixa o")
+    print("ruido perto de zero, e ganha da melhor coluna sozinha.")
+    os.exit(0)
+  end
+  print("AUTOTESTE FALHOU: a maquinaria nao recupera nem uma regra que existe.")
+  print("Nao alimente com escolhas de verdade ate consertar.")
+  os.exit(1)
+end
+
+local cmd = arg and arg[1]
+if cmd == "--estados" then comandoEstados(assert(arg[2], "falta o escolhas.txt"))
+elseif cmd == "--ajusta" then
+  comandoAjusta(assert(arg[2], "falta o escolhas.txt"),
+                assert(arg[3], "falta o features.tsv"))
+elseif cmd == "--autoteste" then comandoAutoteste()
+else
+  print("uso: ajusta.lua --estados <escolhas.txt>")
+  print("     ajusta.lua --ajusta <escolhas.txt> <features.tsv>")
+  print("     ajusta.lua --autoteste")
+  os.exit(1)
+end
