@@ -6529,4 +6529,114 @@ do
     .. "teto %.4f)", piorZ, tostring(piorZRung), PROMETIDO * 0.10))
 end
 
+-- ==========================================================================
+-- MOTION LAG: DIRECTION, not just magnitude
+-- ==========================================================================
+-- Mutation testing found a hole here: main.lua's lifeApply computes
+-- `a22 = s * c * c + n * n - kz * n * c`. Flip that minus to a plus and the
+-- WHOLE suite above still passes, because every MOTION LAG check up to this
+-- point only asserts the MAGNITUDE of the shear. None of them asks which way
+-- the body leans, so the body could lean INTO the step it is taking instead
+-- of trailing behind it, and nothing would notice.
+--
+-- This is the same family of defect as the AXIS block above: BREATH once
+-- sheared the body 45 degrees under a live camera and passed 465 offline
+-- checks plus eight in-game checks, because every one of them asked "did
+-- something change?" and none asked "in which direction, and by how much?"
+--
+-- A test that compares two opposite velocities to EACH OTHER is not enough:
+-- flipping the sign inverts both readings together, so "these two are
+-- opposite" still holds even with the bug. This test is ABSOLUTE instead: it
+-- drives the character to a known, nonzero velocity and asserts that the top
+-- of the body ends up on the side OPPOSITE the direction of travel, the way
+-- a person's torso trails when they start walking (main.lua's lifeAdvance,
+-- "the body lags behind while accelerating").
+--
+-- Needs a camera pitch away from top-down (corr ~= 0): the mutated term is
+-- multiplied by n * c (sin(corr) * cos(corr)), which is zero at a straight
+-- overhead camera, so the sign error is invisible there, same as the AXIS
+-- defect above. Rung 35 is main.lua's own "standard rung" (see the comment
+-- above lifeApply), and checked on paper against the L' formula it is one of
+-- the rungs where the sign error actually FLIPS the sign of the world
+-- displacement, rather than merely shrinking it (rung 75, for example, only
+-- shrinks it, and a sign-only check would miss the defect there).
+do
+  local pixels = {}
+  pixels[0] = 1
+  local rungDeg = 35
+  local angulo = math.rad(rungDeg)
+
+  -- The same rotation the AXIS block's `host` uses for this camera pitch,
+  -- but carrying its own translation this time: MOTION LAG needs real
+  -- position tracking, since main.lua reads px, py straight from model[4]
+  -- and model[12].
+  local function cameraModel(px, py)
+    local m = rotX(angulo - math.pi / 2)
+    m[4] = px
+    m[12] = py + 8
+    return m
+  end
+
+  -- Drives the character with a known velocity: at rest at the origin, then
+  -- moved along z only, well inside LIFE_MATCH_RADIUS (main.lua, 24px) so
+  -- the SAME instance keeps tracking it and lifeAdvance's spring
+  -- (LAG_STIFFNESS / LAG_DAMPING) actually has a velocity to chase. Same
+  -- two-frame shape as lagSunColumn2 above.
+  local function topLagAgainstTravel(dz)
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      angulo, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, soEsta({ lag = 1.2 })))
+    local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+    withLoveTime(0, function()
+      modules.Voxel3D.draw(mesh, "tex", cameraModel(0, 0), "pull", nil)
+    end)
+    local output
+    withLoveTime(0.1, function()
+      modules.Voxel3D.draw(mesh, "tex", cameraModel(0, dz), "pull", nil)
+      output = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+    end)
+
+    -- Top of the body (mesh y = 16) and the base (mesh y = 0), read
+    -- straight out of the matrix the mod handed to Voxel3D.draw: no
+    -- re-deriving character space, just the output matrix, as the task
+    -- describes.
+    local _, _, topZ = aplicaMatriz(output, 0, 16, 0)
+    local _, _, baseZ = aplicaMatriz(output, 0, 0, 0)
+
+    -- The camera pitch alone (no life effect at all) already tilts a
+    -- y = 16 point away from a y = 0 point in world Z, by exactly
+    -- sin(angulo - pi/2) * 16: that is geometry, not motion, and it does
+    -- not depend on which way the character is walking. Subtracting it
+    -- isolates the part MOTION LAG itself is responsible for.
+    local staticTiltZ = math.sin(angulo - math.pi / 2) * 16
+    return (topZ - baseZ) - staticTiltZ
+  end
+
+  -- Moving toward NEGATIVE z (0 -> -6): the travel direction is -1 along
+  -- z, so "against travel" means a POSITIVE lag displacement, and the
+  -- projection onto the travel direction must come out negative.
+  local lagTowardNegZ = topLagAgainstTravel(-6)
+  check(math.abs(lagTowardNegZ) > 0.05, string.format(
+    "MOTION LAG has a real, non-negligible effect on the top of the body "
+    .. "(got %.5f); a near-zero reading would pass the direction check for "
+    .. "the wrong reason", lagTowardNegZ))
+  check(lagTowardNegZ * -1 < 0, string.format(
+    "MOTION LAG: walking toward -z, the top of the body leans AGAINST "
+    .. "travel (displacement %.5f, expected positive, i.e. against -z)",
+    lagTowardNegZ))
+
+  -- Moving toward POSITIVE z (0 -> 6): the travel direction flips to +1,
+  -- and the lag displacement must flip with it (the body always trails,
+  -- whichever way it walks). Each reading is checked against its OWN
+  -- travel direction here, never against the other reading, which is the
+  -- exact comparison the task warns is not enough.
+  local lagTowardPosZ = topLagAgainstTravel(6)
+  check(math.abs(lagTowardPosZ) > 0.05,
+    "MOTION LAG has a real, non-negligible effect walking the other way too")
+  check(lagTowardPosZ * 1 < 0, string.format(
+    "MOTION LAG: walking toward +z, the top of the body leans AGAINST "
+    .. "travel (displacement %.5f, expected negative, i.e. against +z)",
+    lagTowardPosZ))
+end
+
 T.finish("voxel_chars_test")

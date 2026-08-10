@@ -54,6 +54,35 @@ Everything else in the roadmap is executable without him.
 | I | 4. Trailer: time of day | this session | verifying | day vs night measured at 14 dB PSNR |
 | J | 2. en-US, `tools/` | MBP | dispatched | ruler must stay identical; it edits the ruler |
 
+## Roadmap items closed or advanced, 2026-08-10
+
+| Item | Was | Now |
+|---|---|---|
+| 2. en-US | not started, ~3900 lines | `main.lua`, tests, in-game drivers, harness modules done. Remaining: shell scripts and `tools/juiz`, in flight. |
+| 4. Trailer | 6/10, four things missing | Two landed and both cost one line: time of day per shot, camera movement within a shot. Two remain. |
+| 13. Weather | "depends on mods we do not control" | **Closed.** Nothing publishes weather; the host says so in its own changelog. |
+| 14. Mutation testing | "worth a script" | **Built, and its first run found a hole in the suite.** |
+| 18. Battery skill/hook | seven commands to remember | **One command**, plus a pre-commit hook. |
+| 19. Split the harness | 2723 lines, six jobs | **1415 lines**, graded by output equality against a measured floor. |
+| 21.1 release.sh | missing | **Built**, rehearsal by default. Publishing still blocked on the token. |
+| 24. Flaky gates | one known instance | **Second instance found and fixed**; the menu gate was measuring phase. |
+| 26. Explainer card | did not exist | **Built**, four ruler checks, two blocking defects found by review and fixed. |
+
+## What is still open, and why
+
+- **1 and 3 are Kim's**, and nothing here can substitute: thirty A/B picks and a
+  personal access token.
+- **9, 10, 11** are visual changes. They need his eye before they mean
+  anything, and the house rule is that a new visual change ships off by default
+  anyway.
+- **0** is measured and gated at 41 locals of headroom. Not urgent, and the
+  gate will say so the day it becomes urgent.
+- **16** turned out to be mostly covered: there is an absolute safety ceiling
+  that sweeps every life option at maximum and requires no term to exceed 3
+  pixels of world. The remaining hole is that the ceiling test writes those
+  maxima by hand instead of reading them from the mod's own OPTIONS table, so a
+  new, stronger level would not be covered by it.
+
 ## The pattern worth carrying forward
 
 **Every defect found today was found by running something against real input,
