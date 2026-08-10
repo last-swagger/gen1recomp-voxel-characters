@@ -544,7 +544,24 @@ return function(game)
     -- 0.5 que nao tinha nada a ver com a mensagem. Veredito que contradiz o
     -- proprio texto e pior que veredito nenhum.
     local aceitavel = diferenca < ruido or diferenca < 0.5
-    veredito("V8", controleOk and off > 0 and on > 0 and aceitavel and diferenca < 1.5,
+    -- O TETO ABSOLUTO VIROU CHECAGEM DE VALIDADE DO PISO, e a troca veio de
+    -- uma reprovacao que contradizia a propria mensagem: diferenca 2.557 ms,
+    -- piso 7.800 ms, texto dizendo "abaixo do ruido, o custo nao e mensuravel"
+    -- e veredito FALHOU, porque um teto fixo de 1.5 ms disparava por baixo do
+    -- criterio de piso. Dois criterios que podem discordar, e a linha impressa
+    -- so falava de um.
+    --
+    -- Piso de 7.8 ms num orcamento de 16.7 nao e defeito do mod, e maquina
+    -- ocupada: neste caso eu tinha LOVE e ssh rodando ao lado. Com esse ruido a
+    -- medida nao tem PODER, e reprovar seria culpar o codigo pelo ambiente,
+    -- enquanto aprovar seria dizer que mediu. Entao o teto agora pergunta se o
+    -- piso presta, e a mensagem diz qual dos dois falou.
+    local pisoUtil = ruido < 3.0
+    if not pisoUtil then
+      nota("  piso de %.3f ms e alto demais: maquina ocupada, a medida perde "
+           .. "poder. Rode de novo com a maquina quieta.", ruido)
+    end
+    veredito("V8", controleOk and off > 0 and on > 0 and aceitavel and pisoUtil,
       string.format("controle positivo %s (envelope OFF %d, ligado %d); diferenca %.3f ms contra piso de ruido %.3f ms: %s",
         controleOk and "OK" or "FALHOU", controleBase, controleLigado, diferenca, ruido, diferenca < ruido
           and "abaixo do ruido, o custo nao e mensuravel aqui"
