@@ -348,6 +348,33 @@ local OPTIONS = {
     help = "Squashes the solid on each footfall and stretches it at the top of the step, so the walk cycle's weight transfer reaches the body.",
   },
   {
+    key = "attention",
+    label = "ATTENTION",
+    -- DECISION: the levels are LEAN, in world pixels at the head, toward
+    -- whoever is watching. Not a turn.
+    --
+    -- NEVER ROTATE IN Y, and this is the rule the whole option is built
+    -- around. The side faces of a slab carry 0.0% art, because the artist
+    -- drew the character from the front and never from the side. The only
+    -- reason nobody has seen that yet is that this game never turns a
+    -- character. Turning one to "look at" the player would show the invented
+    -- surface and nothing else, which is the opposite of noticing someone.
+    --
+    -- So attention is a LEAN, expressed through the same shear the life
+    -- channel already uses, and the character keeps facing the way the game
+    -- says it faces.
+    --
+    -- 0.5 and 1.0 pixels of head displacement. SWAY at its normal level is
+    -- 0.45, so SUBTLE is about the size of a breath and CLEAR is twice it.
+    -- Anything larger stops reading as attention and starts reading as the
+    -- character falling toward the player.
+    --
+    -- OFF by default: new visual change, house rule.
+    levels = { { "OFF", "off" }, { "SUBTLE", 0.5 }, { "CLEAR", 1.0 } },
+    defaultIndex = 1,
+    help = "Leans a character slightly toward the player when the player is close, without ever turning it.",
+  },
+  {
     key = "part_lag",
     label = "PART LAG",
     -- DECISION: the levels are DELAY, in seconds, between what the feet do and
@@ -423,7 +450,7 @@ end
 -- Voxel3D.draw. Offering SOLID on a host without that channel would be
 -- offering the spikes back.
 local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
-  footfall = true, part_lag = true, first_person = true }
+  footfall = true, attention = true, part_lag = true, first_person = true }
 
 -- SIDE COLOR sentinel used by bodyTexelInFrame/blinkBodyTexel (further
 -- below) to decide whether the body search comes into play. It stays as
@@ -3177,7 +3204,7 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   local lag = optionState.lag
   local footfall = optionState.footfall
   if breath == "off" and sway == "off" and lag == "off"
-    and footfall == "off" then
+    and footfall == "off" and (optionState.attention or "off") == "off" then
     return originalDraw(mesh, texture, model, pull, sunModel)
   end
   -- After the first-person pull clamp on purpose: that one is about not
@@ -3264,6 +3291,47 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   -- The SAME correction the builder baked into the vertex, quantized the
   -- same way: if the two diverge, the conjugation does not cancel and a
   -- residue is left over.
+  -- ATTENTION (roadmap item 10): a character notices the player.
+  --
+  -- HYSTERESIS, and it is the whole difference between attention and
+  -- twitching. With one distance threshold, a player standing exactly on it
+  -- makes every nearby character flick in and out of leaning once per frame.
+  -- Two thresholds, and a character that has noticed you keeps noticing until
+  -- you are meaningfully further away.
+  --
+  -- The lean also EASES rather than snapping, using the same instance clock
+  -- everything else here uses, so noticing takes about a third of a second.
+  local attention = optionState.attention
+  if attention ~= "off" then
+    local eye = Voxel3D and Voxel3D.eye
+    if type(eye) == "table" then
+      local dx = (eye[1] or 0) - (model[4] or 0)
+      local dy = (eye[2] or 0) - (model[8] or 0)
+      local dz = (eye[3] or 0) - (model[12] or 0)
+      local dist = math.sqrt(dx * dx + dy * dy + dz * dz)
+      local PERTO, LONGE = 34, 46
+      local notou = inst.notou
+      if not notou and dist < PERTO then notou = true
+      elseif notou and dist > LONGE then notou = false end
+      inst.notou = notou
+      -- Ease toward 0 or 1 at a fixed rate per second, so the speed of
+      -- noticing does not depend on frame rate.
+      local alvo = notou and 1 or 0
+      local passo = math.min(1, (now - (inst.attT or now)) * 3)
+      inst.att = (inst.att or 0) + (alvo - (inst.att or 0)) * passo
+      inst.attT = now
+      if inst.att > 0.001 then
+        -- Toward the eye in X, expressed as head displacement, then divided
+        -- by the cell height for the same reason SWAY and MOTION LAG are:
+        -- the shear is x' = x + k*y with y up to 16, so k is amp/16. Missing
+        -- that division is the defect that sheared a body 45 degrees and
+        -- passed 465 checks.
+        local dirX = dx > 0 and 1 or -1
+        kx = kx + attention * inst.att * dirX / SHARED.LIFE_CELL
+      end
+    end
+  end
+
   local corr = quantizeCorrection(leanCorrection())
 
   -- PER-PART SECONDARY MOTION (roadmap item 9).

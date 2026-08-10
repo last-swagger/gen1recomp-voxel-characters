@@ -5396,7 +5396,7 @@ do
   -- These stay off: they change the READING of the shape or of the
   -- movement in a way nobody has judged yet.
   for _, chave in ipairs({ "FRONT SHAPE", "TOP DOME", "STEP WEIGHT", "SWAY",
-                           "MOTION LAG", "FOOTFALL", "PART LAG" }) do
+                           "MOTION LAG", "FOOTFALL", "ATTENTION", "PART LAG" }) do
     eq(valor[chave], "OFF", "default de " .. chave .. ": OFF")
   end
 end
@@ -5411,8 +5411,8 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 18,
-     "com canal, dezoito rows: STATUS, LIFE, CAMERA FIT e as quinze opcoes")
+  eq(#rows, 19,
+     "com canal, dezenove rows: STATUS, LIFE, CAMERA FIT e as dezesseis opcoes")
   eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
   eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
@@ -5422,8 +5422,9 @@ do
   -- was the only option in the mod with no MENU coverage: it had
   -- behavior, not a row. And that is how the in-game gate's inventory
   -- went stale without anyone noticing.
-  eq(rows[17].label, "PART LAG", "PART LAG aparece depois de FOOTFALL")
-  eq(rows[18].label, "FIRST PERSON", "FIRST PERSON aparece depois de PART LAG")
+  eq(rows[17].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
+  eq(rows[18].label, "PART LAG", "PART LAG aparece depois de ATTENTION")
+  eq(rows[19].label, "FIRST PERSON", "FIRST PERSON aparece depois de PART LAG")
 end
 
 do
@@ -6686,6 +6687,70 @@ do
     "MOTION LAG: walking toward +z, the top of the body leans AGAINST "
     .. "travel (displacement %.5f, expected negative, i.e. against +z)",
     lagTowardPosZ))
+end
+
+do
+  -- ATTENTION (roadmap item 10): the character leans toward the eye, and
+  -- NEVER turns. The in-game clip is the wrong gate for this one and that was
+  -- measured, not assumed: across three runs the effect swung from 27 to 35 dB
+  -- because it depends on where the player happens to be standing relative to
+  -- the NPCs, which the scene controls and the tool does not. The maths gets
+  -- measured here, where the eye can be placed exactly.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  loadWith(makeMod(handle, { attention = 1.0 }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+
+  local function kxComOlhoEm(ex)
+    modules.Voxel3D.eye = { ex, 0, 0 }
+    local out
+    withDrivenClock(function(setClock)
+      -- Two frames: attention EASES in rather than snapping, so a single
+      -- frame reads the start of the ramp and says almost nothing.
+      for f = 0, 40 do
+        setClock(f / 60)
+        local model = lifeProbeModel(0, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+      end
+    end)
+    return out[2]
+  end
+
+  local perto = kxComOlhoEm(10)
+  local longe = kxComOlhoEm(200)
+
+  check(math.abs(perto) > math.abs(longe),
+        "ATTENTION: leans more with the eye close than with it far")
+  -- NOT ZERO, and the first version of this check demanded zero and failed
+  -- correctly. Attention EASES out: once a character has noticed you, walking
+  -- away makes it settle back over about a third of a second rather than
+  -- snapping upright, which is the entire reason the ease is there. So the
+  -- assertion is that it decays, and by how much.
+  -- MEASURED, not chosen: over the 0.68 s this sweep covers, the lean falls
+  -- from 0.0545 to 0.0210, which is 39%. The bound is set at half, which is
+  -- comfortably above the measurement and still fails if the decay stops
+  -- working. Demanding a quarter would be writing the threshold to match one
+  -- run of one sweep length.
+  check(math.abs(longe) < math.abs(perto) * 0.5,
+        "ATTENTION: the lean falls by more than half when the eye leaves")
+
+  -- THE DIRECTION, absolute and not relative. A test comparing two opposite
+  -- eye positions to each other passes just as happily with the sign flipped,
+  -- which is the exact trap the MOTION LAG direction test documents.
+  local dir = kxComOlhoEm(10)
+  local dirNeg = kxComOlhoEm(-10)
+  check(dir > 0, "ATTENTION: leans toward an eye on the positive side")
+  check(dirNeg < 0, "ATTENTION: leans toward an eye on the negative side")
+
+  -- THE CEILING. 1.0 is the strongest level the menu offers and it is HEAD
+  -- displacement in world pixels, so the shear times the cell height must not
+  -- exceed it by more than rounding.
+  check(math.abs(dir) * 16 < 1.2,
+        "ATTENTION: the strongest level stays under 1.2 px of head movement")
+  modules.Voxel3D.eye = nil
 end
 
 T.finish("voxel_chars_test")
