@@ -203,6 +203,83 @@ return function(game)
     if i % 2 == 0 then foto(string.format("andando%d", i)) end
   end
 
+  -- CONTROLE NEGATIVO: existe personagem NOSSO em alguma dessas fotos?
+  --
+  -- Ate agora este gate dizia GATE OK contando ARQUIVOS. Desligar o mod inteiro
+  -- deixaria ele verde: o driver roda ate o fim, escreve as fotos, e ninguem
+  -- olha um pixel. Um gate assim mede que o jogo abriu, nao que o mod fez algo.
+  --
+  -- O controle e ligar e desligar o mod na MESMA posicao e na MESMA camera e
+  -- comparar. Fotografa os dois estados em disco para quem abrir a pasta poder
+  -- olhar, e imprime o numero para o run.sh poder reprovar.
+  do
+    local function opta(valor)
+      local o = game.save and game.save.options
+      if o then
+        o.modOptions = o.modOptions or {}
+        o.modOptions.voxel_characters = o.modOptions.voxel_characters or {}
+        o.modOptions.voxel_characters.depth = valor
+      end
+      if game.mods and game.mods.modOptions then
+        game.mods.modOptions.voxel_characters =
+          game.mods.modOptions.voxel_characters or {}
+        game.mods.modOptions.voxel_characters.depth = valor
+      end
+      pcall(function()
+        game.mods.events:emit("mod.options_changed",
+          { mod = "voxel_characters", key = "depth", value = valor })
+      end)
+      U.wait(20)
+    end
+
+    local function pega()
+      local pronto
+      love.graphics.captureScreenshot(function(img) pronto = img end)
+      for _ = 1, 120 do
+        coroutine.yield()
+        if pronto then return pronto end
+      end
+      return nil
+    end
+
+    local function difere(a, b)
+      if not (a and b) or a:getWidth() ~= b:getWidth() then return -1, 0 end
+      local d, n = 0, 0
+      for y = 0, a:getHeight() - 1, 3 do
+        for x = 0, a:getWidth() - 1, 3 do
+          n = n + 1
+          local ar, ag, ab = a:getPixel(x, y)
+          local br, bg, bb = b:getPixel(x, y)
+          if math.abs(ar - br) + math.abs(ag - bg) + math.abs(ab - bb) > 0.02 then
+            d = d + 1
+          end
+        end
+      end
+      return d, n
+    end
+
+    -- O PISO SAI DA MESMA CORRIDA. Duas fotos com o mod LIGADO, sem trocar
+    -- nada entre elas, medem o quanto a cena anda sozinha: ciclo de dia, NPC
+    -- perambulando, tudo que nao e o mod.
+    --
+    -- Sem isso o limiar era uma fracao que eu escolhi (um quinhentos avos), e
+    -- ao neutralizar o mod de proposito a medida deu 175 de 87552 contra um
+    -- limiar de exatamente 175: passou raspando, por acaso. Limiar escolhido
+    -- no chute nao separa sinal de ruido, so parece que separa.
+    opta(3)
+    local com1 = pega()
+    U.wait(20)
+    local com2 = pega(); foto("controle_com_mod")
+    opta("off")
+    local sem = pega(); foto("controle_sem_mod")
+    opta(3)
+
+    local piso = difere(com1, com2)
+    local dif, amostras = difere(com1, sem)
+    U.log(string.format("VC driver: controle piso %d, mod ligado contra "
+      .. "desligado %d, de %d amostras", piso, dif, amostras))
+  end
+
   U.log("VC driver: fim, " .. n .. " fotos")
   U.wait(20)
 end

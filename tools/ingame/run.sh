@@ -143,7 +143,33 @@ N=$(find "$SAVE" -maxdepth 1 -name 'vc_*.png' 2>/dev/null | wc -l | tr -d ' ')
 if [ "$N" -ge "$ESPERADAS" ]; then
   find "$SAVE" -maxdepth 1 -name 'vc_*.png' -exec cp {} "$SAIDA"/ \; 2>/dev/null
   find "$SAVE" -maxdepth 1 -name 'vc_*.png' -delete 2>/dev/null
-  echo "GATE OK: $N fotos em $SAIDA"
+  # O CONTROLE, e sem ele "GATE OK" so dizia que o jogo abriu. Contar arquivo
+  # nao mede nada do mod: desligar o mod inteiro produzia o mesmo numero de
+  # fotos e o mesmo verde.
+  #
+  # O limiar vem do PISO medido na mesma corrida, e nao de uma fracao escolhida.
+  # Com o mod neutralizado de proposito, a diferenca deu 175 de 87552 contra um
+  # limiar fixo de 175: passou raspando por acaso.
+  CTRL=$(grep -oE 'controle piso [0-9-]+, mod ligado contra desligado [0-9-]+, de [0-9]+' "$LOG" | tail -1)
+  PISO=$(echo "$CTRL" | sed -nE 's/.*piso (-?[0-9]+).*/\1/p')
+  DIF=$(echo "$CTRL" | sed -nE 's/.*desligado (-?[0-9]+).*/\1/p')
+  TOT=$(echo "$CTRL" | sed -nE 's/.*de ([0-9]+)$/\1/p')
+  if [ -z "${DIF:-}" ] || [ -z "${TOT:-}" ] || [ -z "${PISO:-}" ]; then
+    echo "GATE FALHOU: o driver nao mediu o controle"
+    exit 1
+  fi
+  if [ "$PISO" -lt 0 ] || [ "$DIF" -lt 0 ]; then
+    echo "GATE FALHOU: alguma captura do controle nao saiu"
+    exit 1
+  fi
+  MIN=$((PISO * 3 + 200))
+  if [ "$DIF" -lt "$MIN" ]; then
+    echo "GATE FALHOU: com o mod ligado a tela nao difere o bastante de com ele"
+    echo "  desligado: $DIF contra piso $PISO (minimo $MIN, de $TOT amostras)."
+    echo "  Ou nao ha personagem nosso nesta cena, ou o mod nao faz nada."
+    exit 1
+  fi
+  echo "GATE OK: $N fotos em $SAIDA, controle $DIF contra piso $PISO"
   if [ -n "$OPCAO" ]; then
     # ARMADILHA 5: escrever a opcao no save sem EMITIR o evento nao muda nada,
     # porque a malha ja esta cacheada. Eu produzi um A/B com imagens byte a byte
