@@ -250,3 +250,106 @@ It works and it is well covered, but it is one file doing six jobs. **What
 changes:** splitting it makes each job testable on its own; not splitting it
 makes the next feature harder than the last. Worth doing before item 8 adds a
 seventh.
+
+---
+
+## 20. The generator and critic loop
+
+Kim brought in a method that went around the community: an FPS prompt by Mat
+Shammer that produces a polished game by structuring the work into three
+pillars rather than asking for a better result. Delegation to specialised
+subagents, a rigorous visual critique loop where one agent creates and another
+compares against a reference and demands corrections, and autonomy so the loop
+runs without a person in it.
+
+**Why it fits here better than it fits most projects.** The critique pillar is
+the one everyone copies and the one that usually fails, because a critic with no
+ground truth is just a second opinion with more confidence. This project already
+measured the exact failure it produces: an AI redraw here satisfied every
+numeric constraint we owned and produced worse art. A visual critic would have
+approved it too, for the same reason, unless something outside the loop can tell
+it that it is wrong.
+
+**What we have that closes that hole:** the judge. Kim's pairwise picks are
+ground truth that neither the generator nor the critic can argue with. So the
+loop we should build is Shammer's with one extra edge:
+
+```
+  generator  ->  candidate render  ->  critic agent (visual)  ->  fix
+                        |                     |
+                        +---> numeric gates <-+
+                                    |
+                        judge trained on human picks
+                                    |
+                     calibration: does the critic agree
+                     with Kim on the pairs Kim already judged?
+```
+
+**The calibration step is the whole point and it is cheap.** Before the critic
+is allowed to drive anything, run it on the pairs Kim has already decided and
+measure how often it picks the same side. A critic that agrees 55% of the time
+is a coin flip wearing a lab coat; one that agrees 85% can be trusted to
+pre-filter candidates so Kim only sees the close calls. That number is the
+gate, and it is the same shape as the judge's own out-of-sample gate.
+
+**What changes when this lands:** the iteration loop stops needing a person for
+every step, and Kim moves from picking between two variants to setting the
+direction and reviewing the finalists. That is the shift Shammer's method
+promises, and here it arrives with a way to know whether it is working.
+
+**Delegation, concretely.** The pieces are already separable and match the
+subagent split cleanly: geometry builders, the shading options, the life
+channel, the harness, the in-game gates, the clip and trailer tools, the release
+pipeline. Each is a file or two with its own tests, which is what makes a
+subagent's blast radius survivable.
+
+**Autonomy, with the brake this project earned.** Loops here run against gates
+that can pass for trivial reasons, and this session alone found three: a helper
+that returned a boolean instead of asserting, a pair of variants that were
+identical on screen, and a measurement truncated by another tool. An autonomous
+loop must therefore end each round by re-running the ruler that checks the
+ruler, not just the tests.
+
+---
+
+## 21. Hooks and the release pipeline
+
+Kim's requirement: every release carries images and video, the clips are
+professional, and the tooling supplies the accessories rather than the person.
+
+**What exists:** `clip.sh` films any option side by side with captions drawn by
+the game, `trailer.sh` records a shot list, `release_check.sh` verifies the game
+can install the result and now also checks who signed it and whether the body
+carries media.
+
+**What is missing, in order:**
+
+1. **`release.sh`**: build, sign as the right account, attach the zip plus the
+   GIF and mp4 the clip tool produced, publish, then verify with the game's own
+   parser. One command, and it refuses rather than publishing something the
+   updater cannot see.
+2. **Clip polish**: a lower third with the option name and level, a title card,
+   consistent framing across features, and an output preset that fits Discord's
+   size limit without looking compressed.
+3. **A shot library**: named locations and camera setups the trailer and the
+   clips both draw from, so a feature filmed today matches one filmed in March.
+4. **Automatic assembly**: given a list of features in a release, produce the
+   montage without a person choosing shots.
+
+## 22. What the AI agents working here need
+
+Not a feature, but it decides how fast everything above goes.
+
+- **The memory is in Portuguese and the repo is going to en-US.** The memory can
+  stay Portuguese, it is private, but it must stop being the only place where a
+  hard-won fact lives. Anything an outside contributor would need belongs in the
+  repo.
+- **The traps are recorded but scattered.** Vsync stalls an occluded window,
+  `VoxelState.setLevel` is overwritten every frame by the engine's Pipelines, a
+  pipe closing hides a process that never exits, tools kill each other with
+  `pkill`. Each is documented at the place it bit, which is right, but there is
+  no single page a new agent reads first.
+- **The rule that keeps being forgotten is "run the ruler before trusting a
+  measurement".** It should be a hook, not a habit.
+- **Mutation testing needs to be a command**, not something I remember to do.
+  Both times it ran this session it found something.
