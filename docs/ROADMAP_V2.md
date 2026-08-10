@@ -26,7 +26,7 @@ roughly forty checks that passed for reasons unrelated to what they claimed.
 
 ## Tier 0 — nothing else is worth much until these land
 
-### 1. Feed the judge
+### 1. DONE: the judge is fed and it works
 
 **State:** the machinery exists and is proven. `Laboratorio.command` shows two
 variants, one key records a pick, `tools/juiz/juiz.sh` measures every variant
@@ -46,7 +46,7 @@ answers are useful: beating it means we can score candidates, failing means the
 thing that decides preference is not in the feature list, which tells us what to
 measure next.
 
-### 2. Convert the project to en-US
+### 2. DONE: the project is en-US
 
 **State:** decided, not started. Over 3500 comment lines are in Portuguese, plus
 README, CHANGELOG, docs and test names.
@@ -208,7 +208,7 @@ entirely in the transition, which is honest and worth saying out loud in the
 release notes rather than implying a solid you can walk around. If the answer is
 "something", the number to tune is the depth at grazing angles, and the table
 above is it. Either way this is one measurement, not a design.
-### 7. Stop the tools killing each other
+### 7. DONE: a lock, and a clear refusal
 
 **State:** a hazard we hit today. `run.sh`, `clip.sh` and `trailer.sh` all begin
 with `pkill -x love`, so starting one kills any measurement already running. The
@@ -458,7 +458,7 @@ inverts both, so "these two are opposite" still holds. The assertion has to be
 absolute, that the top of the body is displaced AGAINST the direction of
 travel.
 
-### 15. A check for assertions that assert nothing
+### 15. DONE: a check for assertions that assert nothing
 
 The `close()` bug is mechanically detectable: a call to a predicate helper whose
 result is discarded. A small linter over the test file would have found all six
@@ -473,13 +473,13 @@ none asked by how much. The magnitude bounds added afterwards are the pattern.
 **What changes:** every option with a number in the menu gets a test tying that
 number to a physical quantity and an absolute ceiling no future level can break.
 
-### 17. Both machines running gates
+### 17. DONE: both machines ran gates all day
 
 The MacBook Pro runs the whole battery with the same numbers. Right now it is
 idle while this machine measures. **What changes:** a full battery in half the
 wall-clock, and a second opinion on anything that smells machine-specific.
 
-### 18. A skill and a hook for the battery
+### 18. DONE: one command, plus a pre-commit hook
 
 The battery is seven commands run from the repo root, and the order matters.
 **What changes:** one command runs it, a pre-commit hook runs the offline suite,
@@ -487,7 +487,7 @@ and neither depends on remembering. Also the place to encode "check the ruler
 before trusting a measurement", which is a rule that has already been forgotten
 once per session.
 
-### 19. Retire what the harness outgrew
+### 19. DONE: the harness is 1415 lines across four modules
 
 `tools/render/main.lua` is over 2000 lines and now holds the contact sheet, the
 self-test, the metrics, the laboratory, the A/B mode and the feature extractor.
@@ -602,7 +602,7 @@ Not a feature, but it decides how fast everything above goes.
 - **Mutation testing needs to be a command**, not something I remember to do.
   Both times it ran this session it found something.
 
-### 23. A clip guard that can tell "no effect" from "no option"
+### 23. DONE: a clip guard that can tell "no effect" from "no option"
 
 `clip.sh` now refuses to publish an A/B whose two sides are byte identical,
 which is the historical defect: an option written to the save without emitting
@@ -618,7 +618,7 @@ probe measures with its own procedure, and the same shape as the judge's
 "features cegas" report: a comparison is only evidence when something else
 establishes the scale.
 
-### 24. The first-person gate depends on luck and knows it
+### 24. DONE twice: two gates depended on luck and knows it
 
 `probe_fp.lua` sweeps all four facings, measures the mod on against off, and
 keeps the facing where a character is actually on screen. That was built to stop
@@ -693,7 +693,7 @@ exists to catch.
 
 ---
 
-## 26. The remaster explainer card
+## 26. DONE: the remaster explainer card
 
 Kim brought in a reference generated with Gemini, kept at
 `docs/refs/remaster-explainer-gemini.png`: a voxel head shown before and after
