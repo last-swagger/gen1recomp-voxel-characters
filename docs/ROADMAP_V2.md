@@ -513,7 +513,45 @@ seventh.
 
 ---
 
-## 20. The generator and critic loop
+## 20. BUILT, and the critic does not pass its own gate yet
+
+**Both halves exist.** `gera.sh` proposes combinations of existing options,
+ranks them with the judge and renders the finalists. `calibra.sh` grades a
+critic against pairs Kim already decided, printing the baseline beside the
+agreement.
+
+**Two calibration rounds, and the critic has not beaten the baseline:**
+
+```
+round 1   7 pairs   critic 42.9%   always-B 57.1%   -14.2
+round 2  16 pairs   critic 62.5%   always-B 62.5%     0.0
+```
+
+Round 1's set was broken and the CRITIC is what found that out: one side had
+rendered blank, two pairs had the character cropped out of frame, one differed
+by under 5% brightness. The harness now measures those (`compose mode=conta`)
+and drops such pairs, which is what round 2 ran on.
+
+Round 2 is a clean set and the answer is a tie. With 16 pairs the standard
+error is around 12 points, so a tie is genuinely all that can be said.
+
+**What this means for the loop: the critic cannot drive anything yet, and the
+gate is what says so.** Without this step the loop would already be running,
+filtering candidates with something no better than answering "B" every time.
+
+**What is worth keeping from both rounds is the PROSE, not the number.** On the
+pairs it could see, the critic argued against darkening top faces and against
+stepping shade toward run ends, because they spend off-palette tones on
+invented surface and the sprite's flat read is what deserves protecting. That
+is this project's own position, reached independently, and a number alone would
+have discarded it.
+
+**Next, and it is specific:** the critic sees a rendered PNG with no context. It
+does not know the game's palette, does not know which surfaces are invented,
+and has never been shown a pair Kim decided along with his reason. Any of those
+three is a cheaper next experiment than more pairs.
+
+## 20 (original text). The generator and critic loop
 
 Kim brought in a method that went around the community: an FPS prompt by Mat
 Shammer that produces a polished game by structuring the work into three
