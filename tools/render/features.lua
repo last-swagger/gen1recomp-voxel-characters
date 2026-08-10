@@ -51,6 +51,9 @@ local FEATURE_NOMES = {
   -- the judge's opponent was "the best single column" among columns where
   -- none was the house's ruler.
   "art_px", "cobertura", "luz_media", "tons",
+  -- Added after the judge said mean luminance was carrying the fit almost
+  -- alone: it cannot tell a few strong darks from an evenly dim character.
+  "luz_desvio", "contraste", "escuro_frac", "gradiente",
 }
 
 -- Fraction of PIXEL that came from an art face (front and back), measured the
@@ -104,8 +107,24 @@ local function artePorPixel(row, cell, yawDeg)
   love.graphics.setDepthMode("always", false)
   love.graphics.setCanvas()
 
+  -- TONAL STATISTICS, and there are more of them than there used to be
+  -- because the judge said so.
+  --
+  -- Fitted on Kim's 106 real choices with the composition features corrected
+  -- to area, cross validated over five folds: the model scored 73.6% and the
+  -- best SINGLE column scored 70.6%, and that column was `luz_media` in four
+  -- of the five folds. Fourteen other features were adding three points
+  -- against six points of spread.
+  --
+  -- So what decides these choices is TONAL, and mean luminance is a blunt
+  -- instrument for it: it cannot tell a character with a few strong darks from
+  -- one that is evenly dim. Everything below comes out of the SAME sweep that
+  -- already ran, so the cost is arithmetic rather than another render.
   local cor = colour:newImageData()
   local soma, n, tons = 0, 0, {}
+  local vals = {}
+  local somaGrad, nGrad = 0, 0
+  local escuros = 0
   for y = 0, cell - 1 do
     for x = 0, cell - 1 do
       local r, g, b, a = cor:getPixel(x, y)
@@ -113,15 +132,44 @@ local function artePorPixel(row, cell, yawDeg)
         local l = 0.299 * r + 0.587 * g + 0.114 * b
         soma, n = soma + l, n + 1
         tons[math.floor(l * 32 + 0.5)] = true
+        vals[#vals + 1] = l
+        if l < 0.2 then escuros = escuros + 1 end
+        -- LOCAL gradient: how much the tone moves between neighbours. This is
+        -- what separates "stepped into bands" from "flat", which is exactly
+        -- what FRONT SHAPE and TOP DOME do and what no existing column saw.
+        if x + 1 < cell then
+          local r2, g2, b2, a2 = cor:getPixel(x + 1, y)
+          if a2 >= 0.5 then
+            local l2 = 0.299 * r2 + 0.587 * g2 + 0.114 * b2
+            somaGrad, nGrad = somaGrad + math.abs(l2 - l), nGrad + 1
+          end
+        end
       end
     end
   end
   local distintos = 0
   for _ in pairs(tons) do distintos = distintos + 1 end
 
+  local media = n > 0 and soma / n or 0
+  local varia = 0
+  for _, l in ipairs(vals) do varia = varia + (l - media) ^ 2 end
+  local desvio = n > 0 and math.sqrt(varia / n) or 0
+
+  -- Percentiles rather than min and max: one stray bright pixel from the
+  -- outline should not define the range, and in this art there is always one.
+  table.sort(vals)
+  local function pct(p)
+    if #vals == 0 then return 0 end
+    local i = math.max(1, math.min(#vals, math.floor(#vals * p + 0.5)))
+    return vals[i]
+  end
+  local p10, p90 = pct(0.10), pct(0.90)
+
   colour:release(); depth:release()
   return (total > 0 and arte / total or 0), total / (cell * cell),
-         (n > 0 and soma / n or 0), distintos
+         media, distintos,
+         desvio, p90 - p10, (n > 0 and escuros / n or 0),
+         (nGrad > 0 and somaGrad / nGrad or 0)
 end
 
 local function featuresDaMalha(mesh, kinds)
@@ -284,7 +332,7 @@ function love.features()
         local f = featuresDaMalha(mesh, kinds)
         local texture = love.graphics.newImage(data)
         texture:setFilter("nearest", "nearest")
-        local okArte, px, cob, luz, tons = pcall(artePorPixel, {
+        local okArte, px, cob, luz, tons, lde, ctr, esc, grd = pcall(artePorPixel, {
           sprite = folha, frame = quadro, shape = shape, mesh = mesh,
           texture = texture, cellW = sw, cellH = sh / def.frames,
           kinds = kinds, role = 0, pitch = math.rad(90 - FEATURE_RUNG),
@@ -293,6 +341,10 @@ function love.features()
         f.cobertura = okArte and cob or 0
         f.luz_media = okArte and luz or 0
         f.tons = okArte and tons or 0
+        f.luz_desvio = okArte and lde or 0
+        f.contraste = okArte and ctr or 0
+        f.escuro_frac = okArte and esc or 0
+        f.gradiente = okArte and grd or 0
         if not okArte then
           io.stderr:write("SEM RENDER: " .. folha .. "  " .. tostring(px) .. "\n")
         end

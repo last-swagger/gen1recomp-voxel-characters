@@ -620,23 +620,77 @@ local function comandoRanking(caminhoFeatures, caminhoModelo, quantos)
                             estado = estado, z = z }
   end
   if #linhas == 0 then print("nenhum candidato"); os.exit(1) end
-  table.sort(linhas, function(a, b) return a.z > b.z end)
+  -- WITHIN A SHEET, AND HEAD TO HEAD. Two corrections, both of them cases of
+  -- a number that reads like a finding and is not one.
+  --
+  -- Sorting every candidate together put `seel` with SLAB at the top and
+  -- `lance` with CARVED at the bottom. Those are different CHARACTERS, and the
+  -- model was never shown a comparison between two characters: every choice it
+  -- learned from was two variants of the SAME sheet, which is how rodada.sh
+  -- builds pairs. A score gap across sheets is extrapolation past everything
+  -- it was taught.
+  --
+  -- Then counting how often a setting appears among winners made every key
+  -- look like a tie, because the candidate space is mostly SLAB, so slab is
+  -- the commonest value among winners AND among losers. The comparison has to
+  -- happen INSIDE the pair, where the character and every other setting are
+  -- held constant by construction.
+  local porFolha = {}
+  for _, l in ipairs(linhas) do
+    porFolha[l.folha] = porFolha[l.folha] or {}
+    table.insert(porFolha[l.folha], l)
+  end
+  local nomesFolha = {}
+  for f in pairs(porFolha) do nomesFolha[#nomesFolha + 1] = f end
+  table.sort(nomesFolha)
 
-  local n = math.min(tonumber(quantos) or 10, math.floor(#linhas / 2))
-  local function bloco(rotulo, de, ate, passo)
-    io.stderr:write("\n== " .. rotulo .. "\n")
-    for i = de, ate, passo do
-      local l = linhas[i]
-      io.stderr:write(string.format("  %+7.3f  %-16s %s\n", l.z, l.folha,
-        l.estado:gsub("blink:on,breath:0.01,first_person:card,footfall:off,lag:off,sway:off,", "")))
-      print(l.folha .. "\t" .. l.frame .. "\t" .. l.clock .. "\t" .. l.estado
-            .. "\t" .. string.format("%.6f", l.z))
+  local duelo, total, mostradas = {}, 0, 0
+  local n = tonumber(quantos) or 5
+  io.stderr:write("\n== O MELHOR E O PIOR DENTRO DE CADA FOLHA\n")
+  for _, f in ipairs(nomesFolha) do
+    local lista = porFolha[f]
+    table.sort(lista, function(a, b) return a.z > b.z end)
+    if #lista >= 2 then
+      total = total + 1
+      local topo, fundo = lista[1], lista[#lista]
+      if mostradas < n then
+        io.stderr:write(string.format(
+          "  %-16s melhor %+7.2f   pior %+7.2f   (%d variantes)\n",
+          f, topo.z, fundo.z, #lista))
+        mostradas = mostradas + 1
+      end
+      local vt, vf = {}, {}
+      for k, v in topo.estado:gmatch("([%w_]+):([^,]+)") do vt[k] = v end
+      for k, v in fundo.estado:gmatch("([%w_]+):([^,]+)") do vf[k] = v end
+      for k, v in pairs(vt) do
+        if vf[k] and vf[k] ~= v then
+          duelo[k] = duelo[k] or {}
+          local par = v .. " > " .. vf[k]
+          duelo[k][par] = (duelo[k][par] or 0) + 1
+        end
+      end
+      print(f .. "\t" .. topo.frame .. "\t" .. topo.clock .. "\t"
+            .. topo.estado .. "\t" .. string.format("%.6f", topo.z))
     end
   end
-  bloco("O QUE O MODELO ACHA QUE VOCE PREFERE", 1, n, 1)
-  bloco("O QUE ELE ACHA QUE VOCE REJEITA", #linhas, #linhas - n + 1, -1)
-  io.stderr:write(string.format("\n%d candidatos, faixa de score %.3f a %.3f\n",
-    #linhas, linhas[#linhas].z, linhas[1].z))
+
+  local chaves = {}
+  for k in pairs(duelo) do chaves[#chaves + 1] = k end
+  table.sort(chaves)
+  io.stderr:write(string.format(
+    "\n== CONFRONTO DIRETO: o melhor contra o pior, em %d folhas\n\n", total))
+  if #chaves == 0 then
+    io.stderr:write("  o melhor e o pior nunca diferem numa opcao sozinha\n")
+  end
+  for _, k in ipairs(chaves) do
+    local pares = {}
+    for par, c in pairs(duelo[k]) do pares[#pares + 1] = { par = par, c = c } end
+    table.sort(pares, function(a, b) return a.c > b.c end)
+    for i = 1, math.min(2, #pares) do
+      io.stderr:write(string.format("  %-14s %-26s %2d folhas\n",
+        i == 1 and k or "", pares[i].par, pares[i].c))
+    end
+  end
 end
 
 local cmd = arg and arg[1]
