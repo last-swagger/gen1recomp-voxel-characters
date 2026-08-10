@@ -1731,6 +1731,20 @@ function love.features()
   end
   entrada:close()
   io.stderr:write(string.format("features de %d variantes\n", linhas))
+  -- SAIR DE VERDADE, e este e o motivo de tres linhas em vez de uma.
+  --
+  -- love.event.quit() sozinho nao basta: ele so agenda a saida, e o quadro
+  -- seguinte ainda chama love.draw, que aqui explode em state.bg (nil, porque
+  -- o modo features nunca monta a cena). Erro em love.draw abre a tela de erro
+  -- do LOVE, que espera uma tecla PARA SEMPRE.
+  --
+  -- E o pior: isso passou despercebido porque o primeiro teste deste modo
+  -- terminava em `| head`, e o head fechando o cano matava o processo com
+  -- SIGPIPE. A ferramenta parecia sair sozinha. Quem chamou sem cano ficou
+  -- pendurado. Ja e a segunda vez neste projeto que um processo que nao
+  -- termina se disfarca de processo que terminou.
+  love.draw = function() end
+  love.update = function() love.event.quit() end
   love.event.quit()
 end
 
