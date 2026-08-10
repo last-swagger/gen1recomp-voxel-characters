@@ -6,6 +6,71 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
+## [Unreleased]
+
+Nothing here changes what a player sees. This entry is tooling, tests and the
+project's own language, plus one defect in shipped behaviour that the tooling
+found.
+
+### Fixed
+
+- **The life channel animated in the camera's axis instead of the character's.**
+  The mesh builders bake `Rx(corr)` into every vertex and the host cancels it,
+  so post-multiplying our transform landed it in mesh space, tilted by the
+  camera pitch. With `BREATH: SUBTLE`, which ships ON, the head rose 33% of its
+  advertised amount at the default camera rung, 7% at the lowest and 93% at the
+  highest, plus up to 0.079 px of fore and aft drift nobody asked for.
+  `MOTION LAG` was worse: its `kz` term came out 82% vertical at the default
+  rung, so "inertia" was largely bobbing. Fixed by conjugating the transform.
+
+  No gate caught this because every life test asserted on the MATRIX and none
+  composed it with the rotation baked into the vertices. That test exists now
+  and measures world displacement at all four camera rungs.
+
+### Added, for whoever works on this
+
+- **`tools/bateria.sh` runs the whole battery in one command**, in the order
+  that makes a failure mean something, with `--rapido` for the half that needs
+  no game. A pre-commit hook runs the fast half. Its first full run found a
+  gate that had been failing intermittently for reasons unrelated to the code.
+
+- **`tools/mutantes.sh` runs declared mutations and reports which ones the
+  suite fails to kill.** Its first run found a real hole: flipping the sign of
+  the `MOTION LAG` term changes nothing that any of 603 checks look at, so the
+  suite verified the magnitude of the lag and nothing about its direction.
+
+- **`tools/render/card.sh` builds a before and after explainer image** with
+  numbered callouts, from a recipe file. The before half can be rendered from a
+  released tag, so a comparison in a release note is a measurement rather than
+  an illustration. It refuses two halves that are pixel identical.
+
+- **`tools/release.sh` builds and checks a release, and rehearses by default.**
+  It exists because every release from 1.0.0 to 1.6.0 was invisible to the
+  in-game updater: `modkit pack` produces a `.modpkg`, and the updater only
+  considers an attachment whose name ends in `.zip`, discarding the whole
+  release when it finds none. Thanks to **absol**, who hit the same thing in
+  his fork and pointed at it.
+
+- **`tools/so_comentarios.lua` proves a diff touched only comments**, by
+  stripping them and comparing the code underneath.
+
+### Changed
+
+- **The trailer pins a time of day per shot, and moves the camera within a
+  shot.** It was not reproducible before: the host's default follows the
+  machine's wall clock, so the same shot list filmed morning and evening gave
+  different footage.
+
+- **The repository is en-US.** Roughly 3900 comment lines across `main.lua`,
+  the test suite and the in-game gates were rewritten from Portuguese, with a
+  mechanical gate proving no line of code moved with them. The project exists
+  because of outside reports and pull requests, and a language barrier costs
+  exactly the most valuable input it has.
+
+- **The render harness was split** from one 2723 line file into modules, graded
+  by output equality against a floor measured beforehand rather than by how
+  tidy the result looks.
+
 ## [1.6.0] - 2026-08-09
 
 ### Added

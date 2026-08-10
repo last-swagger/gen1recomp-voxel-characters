@@ -23,4 +23,4 @@ main.lua | local FP_RAIO = 14 | local FP_RAIO = 0 | First person's safety radius
 
 main.lua | local FP_FOLGA = 2 | local FP_FOLGA = -12 | The slack on top of the radius. Negative slack re-opens the same failure more quietly, which is the version a bounds test with no magnitude would miss.
 
-tests/voxel_chars_test.lua | local function close(a, b, tol) | local function close(a, b, tol) if true then return true end | The assertion linter's own subject. A predicate that always returns true is exactly what six checks were doing when the count went from 552 to 558, and the suite has to notice its own helper going blind.
+tests/voxel_chars_test.lua | local function close(a, b) | local function close(a, b, tol) if true then return true end | The assertion linter's own subject. A predicate that always returns true is exactly what six checks were doing when the count went from 552 to 558, and the suite has to notice its own helper going blind.

@@ -86,13 +86,33 @@ wall pushing, first person shown as a before and after pair).
 
 **What changes:** it becomes the artefact that carries every release and every
 Discord post, which is the difference between a feature existing and a feature
-being seen. Concretely still missing: camera movement inside a shot instead of a
-static frame, variety in time of day, a shot that holds on one face long enough
-to read the blink, and a recorded mod set that excludes other people's mods so
-nothing on screen is theirs.
+being seen.
+
+**Two of the four missing things landed on 2026-08-10, and both were one call.**
+
+**Time of day**, unblocked by item 13's investigation. Every shot now pins its
+hour and the hour is restored afterwards, because `setIndex` writes to the
+save. It also fixed something nobody had noticed: the host's default is `sync`,
+which follows the wall clock, so **the trailer was not reproducible** and the
+same shot list filmed morning and evening gave different footage. Any
+comparison between two recordings was partly measuring the hour. Proved rather
+than assumed: the full list filmed as day against the same list as night
+measures 14 dB PSNR.
+
+**Camera movement inside a shot.** `Pipelines.setLevel` takes an integer rung
+and floors it, which reads like a jump. It is not: the host TWEENS.
+`VoxelState` keeps `Voxel.angle = from + (goal - from) * ease(t)` and eases
+toward the goal every frame, so setting a rung mid shot hands the camera a
+destination rather than a position. `degrauFim` in a shot is now the whole
+feature. The opening shot tips the world over WITHIN the shot instead of
+between two cuts, which is what the caption was already claiming.
+
+**Still missing:** a shot that holds on one face long enough to read the blink,
+and a recorded mod set that excludes other people's mods so nothing on screen
+is theirs.
 
 **Cost:** low per improvement, and each one is a line in the shot list rather
-than code.
+than code. That has now been true twice, which is worth trusting.
 
 ### 5. RESOLVED BY MEASUREMENT: the grid is not ours to add
 
@@ -376,15 +396,42 @@ design to invent.
 
 These are not features, and skipping them is how the features above go wrong.
 
-### 14. Mutation testing as a habit
+### 14. DONE, and its first run found a hole
 
 Twice in one session a suite passed while asserting nothing real. `close()`
 returns a boolean and I passed it a message as if it were an assertion, so six
 checks ran and counted nothing; the count went from 552 to 558 when they were
 repaired. The habit that caught it is cheap: break the thing on purpose and
-confirm the suite notices. **What changes:** green stops being taken on faith.
-Worth a script that mutates a named line, runs the suite and reports how many
-checks died.
+confirm the suite notices.
+
+**Built** as `tools/mutantes.sh` plus a declared list in `tools/mutantes.txt`.
+It refuses a dirty tree, requires each pattern to match exactly one line,
+restores from a trap so an interrupted run cannot leave the mod mutated, and
+measures its baseline from the same run rather than from a number written in a
+document.
+
+**The first real run found a hole in the suite immediately**, which is the
+strongest possible argument for the tool existing:
+
+```
+main.lua | a22 = s*c*c + n*n - kz*n*c  ->  + kz*n*c     SURVIVED, 603/603
+```
+
+Flipping the sign of the MOTION LAG term in the conjugated matrix changes
+nothing that any of 603 checks look at. **The suite verifies the magnitude of
+the lag and nothing about its direction**, so the body could lean INTO the step
+instead of trailing behind it and the suite would stay green.
+
+That is the same family as the defect that already shipped here: MOTION LAG
+once sheared the body 45 degrees and passed 465 offline and eight in-game
+checks, because every one asked whether something changed and none asked in
+which direction.
+
+Note the trap in writing the fix, because it is subtle: a test comparing two
+opposite directions to each other does NOT catch this. Flipping the sign
+inverts both, so "these two are opposite" still holds. The assertion has to be
+absolute, that the top of the body is displaced AGAINST the direction of
+travel.
 
 ### 15. A check for assertions that assert nothing
 

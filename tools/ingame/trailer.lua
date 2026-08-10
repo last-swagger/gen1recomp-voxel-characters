@@ -129,12 +129,13 @@ return function(game)
   local PLANOS = {
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "plano",
       seg = 4, legenda = "Pokemon Red, exactly as it has always been" },
-    { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "medio",
-      seg = 5, legenda = "Dramatic Shape tips the world over" },
+    { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "plano",
+      degrauFim = "medio", seg = 5,
+      legenda = "Dramatic Shape tips the world over" },
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "alto",
       seg = 5, legenda = "Voxel Characters gives a body to whoever walks in it" },
     { mapa = "VIRIDIAN_CITY", x = 17, y = 17, dir = "down", degrau = "alto",
-      anda = true, seg = 6, hora = "dusk",
+      degrauFim = "empe", anda = true, seg = 6, hora = "dusk",
       legenda = "A whole city, and not one flat card" },
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "up", degrau = "medio",
       seg = 5, opcoes = { breath = 0.035 },
@@ -258,11 +259,28 @@ return function(game)
     local inicio = n + 1
     local andando = p.dir
     legenda = p.legenda
+
+    -- CAMERA MOVEMENT INSIDE A SHOT, when the shot asks for it.
+    --
+    -- `Pipelines.setLevel` takes an integer rung and floors it, so at first
+    -- glance changing it mid shot should produce a jump. It does not: the host
+    -- TWEENS. VoxelState keeps `Voxel.angle = from + (goal - from) * ease(t)`
+    -- and update() eases toward the goal every frame, so setting a new rung is
+    -- handing the camera a destination, not a new position.
+    --
+    -- So `degrauFim` costs one call and gets the thing item 4 listed as
+    -- missing: a shot that moves instead of a shot that is a still frame.
+    -- It fires a quarter of the way in, so the shot arrives settled, moves,
+    -- and settles again before the cut.
+    local moverEm = p.degrauFim and math.floor(quadros * 0.25) or nil
     for i = 1, quadros do
       -- The caption fades in and out within the shot. Appearing all at once together with the
       -- cut makes the eye read both things at the same time and read neither.
       local t = i / quadros
       legendaAlpha = math.min(1, math.min(t, 1 - t) * 6)
+      if moverEm and i == moverEm then
+        pcall(Pipelines.setLevel, "voxel", DEGRAU[p.degrauFim] or 4)
+      end
       if p.anda then
         -- Only reverses when the next cell refuses AND the character is already
         -- stopped in it; asking mid step would return the cell it
