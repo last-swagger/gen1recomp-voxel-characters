@@ -233,6 +233,70 @@ R=$(echo "$LAB2" | grep -c "pares pedidos pelo juiz")
 say "o laboratorio consome os pares do juiz"     "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
 [ "$R" = "1" ] || FAIL=1
 
+# 9. O CARD explicativo: a figura antes/depois que vai para release note e
+#    Discord. Uma figura publicada e afirmacao publica, entao ela e checada
+#    como medicao, nao como enfeite.
+COMPOSE="$HOME/Library/Application Support/LOVE/compose"
+CARDS=mods/voxel_characters/tools/render/cards
+rm -f "$COMPOSE/chk_card1.png" "$COMPOSE/chk_card2.png" "$COMPOSE/chk_sem.png"
+
+bash $H/card.sh $CARDS/shading.card chk_card1.png > /dev/null 2>&1
+say "o card sai da receita" \
+    "$([ -f "$COMPOSE/chk_card1.png" ] && echo ok || echo FALHOU)"
+[ -f "$COMPOSE/chk_card1.png" ] || FAIL=1
+
+# 9b. PISO. Construir o mesmo card duas vezes tem que dar o mesmo arquivo. Sem
+#     isso, qualquer comparacao entre cards mede o ruido do desenho em vez do
+#     que mudou, e as duas checagens abaixo nao querem dizer nada.
+bash $H/card.sh $CARDS/shading.card chk_card2.png > /dev/null 2>&1
+if [ -f "$COMPOSE/chk_card1.png" ] && [ -f "$COMPOSE/chk_card2.png" ]; then
+  cmp -s "$COMPOSE/chk_card1.png" "$COMPOSE/chk_card2.png" && IGUAL=ok || IGUAL=FALHOU
+else
+  IGUAL=FALHOU
+fi
+say "o mesmo card duas vezes da o mesmo arquivo" "$IGUAL"
+[ "$IGUAL" = "ok" ] || FAIL=1
+
+# 9c. A COORDENADA da anotacao chega ao desenho.
+#
+#     A primeira versao deste check comparava um card com quatro pontos contra
+#     um card sem nenhum, e passava com o desenho dos callouts INTEIRAMENTE
+#     desligado: sem pontos o card tem outra altura, entao ele comparava
+#     tamanho de canvas e nunca a anotacao. Pego por mutacao, que e como esse
+#     tipo de check oco tem sido pego neste projeto.
+#
+#     Agora os dois cards tem o MESMO texto e o MESMO numero de pontos, e so a
+#     coordenada muda. Layout identico por construcao, entao a unica coisa que
+#     pode diferir e a linha e o alvo. Se o tether parar de ser desenhado, os
+#     dois arquivos ficam iguais e este check cai.
+SAVE_R="$HOME/Library/Application Support/LOVE/render"
+for par in "0.20,0.20 chk_p1.png" "0.80,0.80 chk_p2.png"; do
+  set -- $par
+  $LOVE $H/compose mode=card out=$2 \
+    "before=A||$SAVE_R/card_antes.png" "after=B||$SAVE_R/card_depois.png" \
+    "point=$1|SAME TITLE|Same sentence, so the block height is identical." \
+    > /dev/null 2>&1
+done
+if [ -f "$COMPOSE/chk_p1.png" ] && [ -f "$COMPOSE/chk_p2.png" ]; then
+  cmp -s "$COMPOSE/chk_p1.png" "$COMPOSE/chk_p2.png" && ANOT=FALHOU || ANOT=ok
+else
+  ANOT=FALHOU
+fi
+say "a coordenada da anotacao chega ao desenho" "$ANOT"
+[ "$ANOT" = "ok" ] || FAIL=1
+
+# 9d. A RECUSA dispara. Duas metades identicas anunciam por escrito uma
+#     mudanca que nao aconteceu, que e o defeito que o clipe ja teve. Checa o
+#     codigo de saida: a primeira versao desta recusa imprimia a mensagem e
+#     saia com ZERO, e quem lesse o codigo de saida via sucesso.
+$LOVE $H/compose mode=card out=chk_recusa.png \
+  "before=A||$SAVE_R/card_antes.png" "after=B||$SAVE_R/card_antes.png" \
+  > /dev/null 2>&1
+RC=$?
+say "card recusa metades identicas" \
+    "$([ "$RC" -ne 0 ] && echo "ok, saiu $RC" || echo "FALHOU, saiu 0")"
+[ "$RC" -ne 0 ] || FAIL=1
+
 echo
 [ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: nao confie em medicao ate consertar"
 exit $FAIL

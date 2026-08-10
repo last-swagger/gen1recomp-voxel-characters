@@ -1,0 +1,29 @@
+# The shading options, as one picture.
+#
+# Both halves are the CURRENT build with different options, not two versions,
+# because these four options all exist today and the question a player has is
+# what turning them on does. For a release card use `before_tag=` instead, so
+# the before half is the version that actually shipped.
+#
+# Build:  bash mods/voxel_characters/tools/render/card.sh \
+#           mods/voxel_characters/tools/render/cards/shading.card shading.png
+
+title=Voxel Characters: shading that suggests volume
+sprite=red
+frame=0
+rung=35
+yaw=0
+cell=320
+
+before_label=BEFORE
+before_sub=flat slab, every shading option off
+before_opt=front_shape:off,top_dome:off,ground_shade:off,top_edge:off
+
+after_label=AFTER
+after_sub=FRONT SHAPE MED, TOP DOME LOW, GROUND SHADE, TOP EDGE
+after_opt=front_shape:0.17,top_dome:0.15,ground_shade:on,top_edge:on
+
+point=0.50,0.10|TOP DOME|The top face steps into pixel aligned tones toward each run's edge, so the cap reads as domed instead of flat. No vertex moves, so the silhouette is untouched.
+point=0.26,0.52|FRONT SHAPE|The front face is stepped into three tones toward the edge of each horizontal run. False roundness with no gradient and no new geometry.
+point=0.74,0.22|TOP EDGE|Exposed top faces are darkened, which removes the bright cap that used to appear above a dark outline.
+point=0.50,0.95|GROUND SHADE|The host's own contact shade on the lowest six pixels, so the body sits on the floor instead of hovering over it.

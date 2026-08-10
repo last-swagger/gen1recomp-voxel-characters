@@ -10,9 +10,11 @@ unglamorous on purpose.
 
 **Updated 2026-08-10.** Items 5 and 6 were answered by measurement rather than
 built, item 8 is done, and item 0 was added after an external review named a
-risk this document had missed. Where an item's plan turned out to be wrong, the
-wrong version is kept next to the correction: this file is read to decide what
-to build, and a plan that quietly changes teaches nothing.
+risk this document had missed. Item 26 was added from a reference Kim brought
+in, and it is the first roadmap item that arrived already built. Where an
+item's plan turned out to be wrong, the wrong version is kept next to the
+correction: this file is read to decide what to build, and a plan that quietly
+changes teaches nothing.
 
 **Done since this file was written:** the judge's whole loop (items 1 and 8's
 machinery, waiting only on picks), the axis defect in the life channel, an
@@ -452,6 +454,9 @@ carries media.
    GIF and mp4 the clip tool produced, publish, then verify with the game's own
    parser. One command, and it refuses rather than publishing something the
    updater cannot see.
+1b. **The explainer card is done**, see item 26. `card.sh` builds a before and
+   after with numbered callouts from a recipe, and the before half can be
+   rendered from a released tag rather than illustrated.
 2. **Clip polish**: a lower third with the option name and level, a title card,
    consistent framing across features, and an output preset that fits Discord's
    size limit without looking compressed.
@@ -535,3 +540,109 @@ eye quad has no single UV.
 closes and requires it to be a handful rather than all of them. Making the blink
 touch every vertex makes it fail with "22 of 22", which is the mutation it
 exists to catch.
+
+---
+
+## 26. The remaster explainer card
+
+Kim brought in a reference generated with Gemini, kept at
+`docs/refs/remaster-explainer-gemini.png`: a voxel head shown before and after
+a "remaster", with five numbered callouts down the side, each one tied by a
+line to the place in the picture where it happens.
+
+There are two separate things in that image and they are worth very different
+amounts, so they are separated here.
+
+### 26a. The FORMAT, which we adopted and built
+
+**Done.** `tools/render/compose` gained a `mode=card`, and
+`tools/render/card.sh` builds one from a recipe file:
+
+```
+bash mods/voxel_characters/tools/render/card.sh \
+  mods/voxel_characters/tools/render/cards/shading.card shading.png
+```
+
+The recipe is data and the shell only executes it, the same split the trailer
+uses, so a card published in a release note is reproducible from something in
+the repository rather than from a command somebody typed once.
+
+**What changes:** a release note stops saying "improved shading" and starts
+showing where to look. This is the accessory item 21 asked for and the first
+one that is finished.
+
+**Four things it does that the reference cannot**, and they are the reason
+this was worth building rather than generating:
+
+- **The before half can come from a released tag.** `before_tag=v1.5.0` runs
+  the harness against that version's `main.lua` through `VOXEL_CHARS_MAIN`, so
+  a release comparison is a measurement rather than an illustration of what we
+  remember the old build looking like. A picture in a release note is a public
+  claim.
+- **It refuses two halves that are pixel identical**, exiting non-zero. That is
+  the defect the clip tool already shipped once: an option written to the save
+  without emitting the event, so the mesh never rebuilt and both sides were the
+  same image. A card is a stronger claim than a clip because it names the
+  changes in writing, so it refuses instead of warning.
+- **It crops both halves to the union of their content boxes**, never to each
+  one's own, because cropping them separately re-centres them and the before
+  and after appear to jump.
+- **The ruler checks it**, with four checks including a floor: the same card
+  built twice has to be the same file, or comparing cards measures drawing
+  noise instead of content.
+
+**One of those four checks was hollow when written**, and mutation testing
+caught it the same hour. It compared a card with four callouts against a card
+with none, and passed with callout drawing entirely disabled: with no callouts
+the card is a different height, so it was comparing canvas size. It now
+compares two cards with identical text and only the coordinate changed, which
+cannot differ for any reason except the tether being drawn.
+
+### 26b. The CONTENT, point by point, against what this mod actually is
+
+The five key changes in the reference are a description of a generic voxel
+remaster. Measured against this project, **two are already shipped, one is open
+and worth doing, and two would move our central metric the wrong way.**
+
+**Point 3, bevelled edges: we have it, and as shade rather than geometry.**
+`FRONT SHAPE` steps the front face into three pixel-aligned tones toward the
+edge of each horizontal run and `TOP DOME` does the same for the cap. The
+reference chamfers real geometry; we cannot, and the reason is measured rather
+than stylistic. The ruler asserts IoU 1.000 between the SLAB silhouette and the
+original flat card across five sprites and six frames, because this game's
+camera looks at the artist's front face. A real bevel moves vertices and breaks
+that contract on the first frame. Our options are built so that strength scales
+the shade multiplier and never a vertex position, which is why any strength
+above zero produces identical geometry.
+
+**Point 4, colour gradation: we have it**, and the option's own help text is
+"false roundness without a gradient" for the same reason. Hue is preserved
+because the tone steps are multipliers on the artist's own texel.
+
+**Point 2, lighting and ambient occlusion: partly, and this is the open one.**
+`GROUND SHADE` is contact occlusion against the floor. What we do not have is
+occlusion between neighbouring voxels, so a concave corner is as bright as a
+convex one, and our shading is a function of position within a run rather than
+of a light direction. **This is the point worth taking from the reference**,
+and it is the cheapest of the three remaining because it modulates the artist's
+colour instead of replacing it.
+
+**Point 1, finer textures simulating materials: no, and it is the one that
+would hurt.** This project judges itself by the share of on-screen pixels that
+are the original artist's work, currently 73.4%. Procedural roughness is
+invented pixel by definition, so it moves the number in the wrong direction
+while replacing Game Boy palette colours with material simulation. That is not
+a remaster of this art, it is a different art.
+
+**Point 5, higher render resolution: no, and the host's author already argued
+this.** The comment beside `Voxel3D.seams(false)` says the world should read as
+built out of voxels and the people walking in it should read as drawn.
+Supersampling only the characters makes them the one sharp thing in a soft
+scene, which is the same mistake in the opposite direction.
+
+**What changes if 26b's open point lands:** neighbour occlusion is the single
+effect doing most of the work in the reference's "after" image, and it is the
+one we can add without spending art share. It needs the builders to know which
+neighbouring cells are filled, which they already compute for cap emission
+(`main.lua:1662`, `:1669`), so the information is there and only the shading
+term is missing.
