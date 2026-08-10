@@ -10,6 +10,7 @@
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
+  dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   io.stdout:setvbuf("line")
   -- Sem isto o laco anda a menos de um quadro por segundo com a janela
   -- ocluida, e gravar 200 quadros levaria minutos. Ver tools/ingame/driver.lua.

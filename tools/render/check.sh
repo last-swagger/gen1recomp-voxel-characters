@@ -26,7 +26,13 @@ medido() {
 # 1. Convencoes internas: eixos, formas de setVertex, contagem de frames.
 OUT=$($LOVE $H selftest=1 2>&1 | grep "autoteste")
 say "autoteste de convencoes" "$OUT"
-echo "$OUT" | grep -qE "([0-9]+)/\1$" || FAIL=1
+# Compara os DOIS numeros de verdade, em vez de casar um padrao com
+# retrovisor. `grep -qE "([0-9]+)/\1$"` aceitava "12/2", porque o grupo casa o
+# "2" final de "12", e aceitava "0/0", que e um autoteste sem nenhum caso.
+# Retrovisor em ERE tambem e indefinido em POSIX e explode sob ugrep.
+PASSOU=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1)
+DE=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f2)
+[ -n "${PASSOU:-}" ] && [ -n "${DE:-}" ] && [ "$PASSOU" = "$DE" ] && [ "$DE" -gt 0 ] || FAIL=1
 
 # 2. Conformidade: de frente, a pitch zero, o SLAB tem que ser identico ao card
 #    original. Isto pega sinal de profundidade invertido, pivo errado, eixo Y

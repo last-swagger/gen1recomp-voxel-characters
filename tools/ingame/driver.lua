@@ -15,6 +15,7 @@
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
+  dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   local n = 0
 
   -- Sem TTY o stdout do LOVE fica em buffer de BLOCO e um processo que nao sai
@@ -128,8 +129,31 @@ return function(game)
           "mod.options_changed",
           { mod = "voxel_characters", key = chave, value = valor })
       end
+      -- LER DE VOLTA, e nao confiar no emit. `pcall(emit)` devolve verdadeiro
+      -- quando o barramento aceitou a mensagem, INCLUSIVE quando nao ha
+      -- ouvinte nenhum, ou seja quando o voxel_characters nem esta carregado.
+      -- Esta guarda existe para impedir um A/B com dois lados identicos, e do
+      -- jeito que estava ela atestava que a mensagem saiu, nao que ela chegou.
+      --
+      -- A row de STATUS le o estado do PROPRIO mod, entao ela e a resposta de
+      -- quem recebeu. Sem ela, nada aqui distingue "aplicado" de "ignorado".
+      local chegou, status = false, nil
+      local rows = {}
+      local okRows = pcall(function()
+        game.mods.hooks:run("ui.options.rows", {}, rows)
+      end)
+      if okRows then
+        for _, r in ipairs(rows) do
+          if r.id and tostring(r.id):find(chave, 1, true) and r.value then
+            local okv, v = pcall(r.value, {})
+            if okv then chegou, status = true, tostring(v) end
+          end
+        end
+      end
       U.log("VC driver: opcao " .. chave .. "=" .. valor ..
-        (emitiu and " (evento emitido)" or " (FALHOU o evento: A/B nao vale)"))
+        (emitiu and " (evento emitido)" or " (FALHOU o evento: A/B nao vale)")
+        .. (chegou and (" (o mod le: " .. tostring(status) .. ")")
+            or " (NAO CONSEGUI LER DE VOLTA do mod)"))
       if not emitiu then
         U.log("VC driver: ABORTANDO, um A/B sem efeito e pior que nenhum")
         foto("opcao_sem_efeito")

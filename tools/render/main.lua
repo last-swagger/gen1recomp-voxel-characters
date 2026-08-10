@@ -16,6 +16,26 @@
 
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
+-- ERRO VAI PARA O STDOUT E MATA O PROCESSO, em vez de abrir janela e esperar.
+--
+-- Por padrao o LOVE trata erro abrindo uma tela azul com a mensagem e ESPERANDO
+-- TECLA. De dentro de um script isso e indistinguivel de trabalho pesado: a
+-- ferramenta so morre no timeout, com log vazio, e a causa fica escrita numa
+-- janela que ninguem esta olhando. Aconteceu tres vezes numa sessao.
+--
+-- Tentei antes resolver FOTOGRAFANDO a tela para ler a mensagem. Foi pior: numa
+-- maquina de trabalho a foto pega o que estiver na frente, e pegou conversa
+-- pessoal duas vezes. As imagens foram apagadas e a ideia foi abandonada. A
+-- mensagem tem que sair por onde o script ja le, que e o stdout.
+function love.errorhandler(msg)
+  msg = tostring(msg)
+  io.stdout:write("ERRO DE LOVE: " .. msg .. "\n")
+  io.stdout:write(debug.traceback("", 2) .. "\n")
+  io.stdout:flush()
+  os.exit(1)
+end
+love.errhand = love.errorhandler   -- LOVE 0.x/11.x usam nomes diferentes
+
 local ROOT = "./"
 -- Por padrao mede o mod da arvore de trabalho, mas aceita apontar para outro
 -- arquivo por VOXEL_CHARS_MAIN. Isso existe para poder renderizar o ANTES de
@@ -1687,7 +1707,7 @@ function love.features()
   local cab = { "folha", "frame", "clock", "estado" }
   for _, n in ipairs(FEATURE_NOMES) do cab[#cab + 1] = n end
   print("#" .. table.concat(cab, "\t"))
-  local linhas = 0
+  local linhas, falhas = 0, 0
   for linha in entrada:lines() do
     -- Quatro colunas: folha, quadro, relogio, estado. As duas do meio existem
     -- porque medir a feature numa condicao diferente daquela em que a pessoa
@@ -1730,6 +1750,17 @@ function love.features()
           local role = (shape == "carved" or shape == "carved_plus") and 0 or 0
           kinds = classifyMesh(mesh, role)
         end
+        -- MALHA QUE NAO CONSTRUIU NAO VIRA LINHA DE ZEROS.
+        --
+        -- featuresDaMalha devolve tudo zero quando a malha e nil, e a linha
+        -- saia igual as outras. Do lado do juiz isso e indistinguivel de uma
+        -- variante medida em zero, e entra no ajuste como se fosse dado. E a
+        -- unica conferencia de completude do juiz.sh e contagem de linhas, que
+        -- uma linha de zeros satisfaz.
+        if not mesh then
+          io.stderr:write("SEM MALHA: " .. folha .. "\t" .. estado .. "\n")
+          falhas = falhas + 1
+        else
         local f = featuresDaMalha(mesh, kinds)
         -- O QUADRO PEDIDO, nao o quadro usado. A folha pode ter menos frames
         -- do que o pedido e ai ele e reduzido por modulo; imprimir o reduzido
@@ -1742,11 +1773,12 @@ function love.features()
         end
         print(table.concat(saida, "\t"))
         linhas = linhas + 1
+        end
       end
     end
   end
   entrada:close()
-  io.stderr:write(string.format("features de %d variantes\n", linhas))
+  io.stderr:write(string.format("features de %d variantes, %d sem malha\n", linhas, falhas))
   -- SAIR DE VERDADE, e este e o motivo de tres linhas em vez de uma.
   --
   -- love.event.quit() sozinho nao basta: ele so agenda a saida, e o quadro

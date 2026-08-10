@@ -32,6 +32,7 @@
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
+  dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   io.stdout:setvbuf("line")
   if love.window and love.window.setVSync then pcall(love.window.setVSync, 0) end
 

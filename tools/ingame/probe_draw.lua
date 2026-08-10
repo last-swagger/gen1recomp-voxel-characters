@@ -22,6 +22,7 @@
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
+  dofile("mods/voxel_characters/tools/ingame/erro.lua")()
 
   -- O DEFEITO QUE ME CUSTOU MAIS TEMPO NESTA FERRAMENTA: sem TTY, o stdout do
   -- LOVE fica em buffer de BLOCO, e um processo que nao sai nunca esvazia. Log
