@@ -41,32 +41,32 @@ veredito() {  # $1 = nome, $2 = codigo de saida
 
 cd "$RAIZ" || exit 1
 
-passo "1. offline: a matematica"
+passo "1. offline: the maths"
 "$LUAJIT" "$MOD/tests/voxel_chars_test.lua" 2>&1 | tail -1
 veredito "suite" "${PIPESTATUS[0]}"
 
-passo "2. checagens que nao checam nada"
+passo "2. checks that check nothing"
 "$LUAJIT" "$MOD/tools/lint_asserts.lua" 2>&1 | tail -1
-veredito "lint de assercoes" "${PIPESTATUS[0]}"
+veredito "lint of assertions" "${PIPESTATUS[0]}"
 
-passo "3. folga de locais do chunk (erro de COMPILACAO se estourar)"
+passo "3. chunk-local headroom (COMPILE error if exceeded)"
 bash "$MOD/tools/folga_locais.sh" 2>&1 | tail -2
 veredito "folga_locais" "${PIPESTATUS[0]}"
 
-passo "4. empacotamento: o jogo aceita o mod?"
+passo "4. packaging: does the game accept the mod?"
 python3 "$RAIZ/tools/modkit.py" validate "$MOD" 2>&1 | tail -1
 veredito "modkit" "${PIPESTATUS[0]}"
 
 if [ "$MODO" = "--rapido" ]; then
-  PULADOS="a regua e os gates in-game"
+  PULADOS="the ruler and the in-game gates"
 else
-  passo "5. A REGUA, antes de confiar em qualquer medicao"
+  passo "5. THE RULER, before trusting any measurement"
   bash "$MOD/tools/render/check.sh" 2>&1 | tail -2
   veredito "check.sh" "${PIPESTATUS[0]}"
 fi
 
 if [ "$MODO" = "tudo" ]; then
-  passo "6. gates in-game (lento, precisa do jogo)"
+  passo "6. in-game gates (slow, needs the game)"
   # THE VERDICT IS COUNTED FROM BOTH SIDES, and that is the whole design of
   # this step. Every driver prints one `NAME PASSOU` or `NAME FALHOU` per
   # check. Grepping for a success word alone passes a run where the game never
@@ -83,21 +83,21 @@ if [ "$MODO" = "tudo" ]; then
     NFALHOU=$(printf '%s' "$SAIDA" | grep -cE '\b(FALHOU|FAILED)\b')
     NPASSOU=$(printf '%s' "$SAIDA" | grep -cE '\b(PASSOU|PASSED)\b')
     if [ "$NPASSOU" -eq 0 ]; then
-      printf "   %-44s SEM VEREDITO (o driver nao mediu nada)\n" "$d"
+      printf "   %-44s NO VERDICT (the driver measured nothing)\n" "$d"
       printf '%s' "$SAIDA" | tail -2 | sed 's/^/       /'
       FALHOU=1
     else
       [ "$NFALHOU" -eq 0 ] && R=0 || R=1
-      printf "     %d passou, %d falhou\n" "$NPASSOU" "$NFALHOU"
+      printf "     %d passed, %d failed\n" "$NPASSOU" "$NFALHOU"
       veredito "$d" "$R"
     fi
   done
 elif [ "$MODO" = "--sem-jogo" ]; then
-  PULADOS="os gates in-game"
+  PULADOS="the in-game gates"
 fi
 
 printf "\n"
-[ -n "$PULADOS" ] && echo "PULADO de proposito: $PULADOS"
+[ -n "$PULADOS" ] && echo "SKIPPED on purpose: $PULADOS"
 if [ $FALHOU -eq 0 ]; then
   echo "BATERIA OK"
 else

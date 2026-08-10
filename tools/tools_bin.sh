@@ -1,20 +1,21 @@
-# Resolve os binarios externos das ferramentas, ou morre dizendo por que.
+# Resolves the tools' external binaries, or dies saying why.
 #
-# Existe porque tres ferramentas tinham /opt/homebrew/bin/love escrito na mao,
-# que e o caminho do Homebrew de UMA maquina. Noutra maquina o caminho nao
-# existe, e ai vem o defeito de verdade: `$($LOVE ... | grep ...)` com $LOVE
-# ausente devolve string VAZIA, e checagem que compara duas saidas passa
-# comparando vazio com vazio. A regua ficava verde sem ter medido nada.
+# Exists because three tools had /opt/homebrew/bin/love hand-written in,
+# which is the Homebrew path of ONE machine. On another machine the path
+# does not exist, and then comes the real defect: `$($LOVE ... | grep ...)`
+# with $LOVE absent returns an EMPTY string, and a check that compares two
+# outputs passes by comparing empty with empty. The ruler went green without
+# having measured anything.
 #
-# Vale para qualquer maquina: shell nao interativo do ssh nao carrega o perfil,
-# entao /opt/homebrew/bin e /usr/local/bin costumam estar fora do PATH mesmo
-# quando o binario esta instalado.
+# Applies to any machine: ssh's non-interactive shell does not load the
+# profile, so /opt/homebrew/bin and /usr/local/bin are often outside PATH
+# even when the binary is installed.
 #
-# Uso:  . "$(cd "$(dirname "$0")/.." && pwd)/tools_bin.sh"
-#       $LOVE     sempre definido, ou o script ja saiu com erro
-#       $FFMPEG   definido se existir, VAZIO se nao (quem precisa e que cobra)
+# Usage:  . "$(cd "$(dirname "$0")/.." && pwd)/tools_bin.sh"
+#       $LOVE     always set, or the script already exited with an error
+#       $FFMPEG   set if it exists, EMPTY if not (whoever needs it checks)
 
-acha() {  # $1 = nome no PATH, resto = caminhos absolutos candidatos
+acha() {  # $1 = name on PATH, rest = candidate absolute paths
   local nome="$1"; shift
   local c
   for c in "$(command -v "$nome" 2>/dev/null)" "$@"; do
@@ -29,10 +30,10 @@ LOVE=$(acha love \
         "$HOME/Applications/love.app/Contents/MacOS/love" \
         "/opt/homebrew/bin/love" \
         "/usr/local/bin/love") || {
-  echo "ERRO: nao achei o binario do LOVE." >&2
-  echo "  procurei em: PATH, \$LOVE_BIN, /Applications/love.app," >&2
-  echo "               ~/Applications/love.app, /opt/homebrew, /usr/local" >&2
-  echo "  conserto: instale o LOVE 11.5 ou aponte LOVE_BIN=/caminho/para/love" >&2
+  echo "ERROR: could not find the LOVE binary." >&2
+  echo "  searched: PATH, \$LOVE_BIN, /Applications/love.app," >&2
+  echo "            ~/Applications/love.app, /opt/homebrew, /usr/local" >&2
+  echo "  fix: install LOVE 11.5 or point LOVE_BIN=/path/to/love" >&2
   exit 1
 }
 export LOVE
@@ -40,32 +41,32 @@ export LOVE
 FFMPEG=$(acha ffmpeg "${FFMPEG_BIN:-}" "/opt/homebrew/bin/ffmpeg" "/usr/local/bin/ffmpeg") || FFMPEG=""
 export FFMPEG
 
-# TRAVA DO LOVE. Uma ferramenta de cada vez.
+# THE LOVE LOCK. One tool at a time.
 #
-# run.sh, clip.sh e trailer.sh comecam com `pkill -x love`, porque um LOVE
-# anterior vivo faz o proximo nascer sem conseguir nada. O efeito colateral e
-# que iniciar uma ferramenta MATA qualquer medicao em andamento, e a saida
-# truncada le como medicao curta em vez de medicao interrompida. Aconteceu: o
-# trailer matou uma extracao de features no meio e o arquivo parcial parecia
-# resultado.
+# run.sh, clip.sh and trailer.sh start with `pkill -x love`, because a
+# previous LOVE still alive makes the next one start without getting
+# anything. The side effect is that starting a tool KILLS any measurement in
+# progress, and the truncated output reads as a short measurement instead of
+# an interrupted one. It happened: the trailer killed a feature extraction
+# halfway through and the partial file looked like a result.
 #
-# PROVADO, e nao so escrito: (1) a segunda ferramenta recusa e diz quem esta
-# segurando; (2) a trava e SOLTA quando a ferramenta falha, nao so quando ela
-# termina bem, porque o trap cobre EXIT INT TERM e nao apenas a saida limpa.
-# O segundo caso e o que decide se a trava e usavel: uma que fica presa depois
-# de um erro ensina a pessoa a apagar trava por reflexo, e ai ela apaga a de
-# uma medicao viva tambem.
+# PROVEN, not just written down: (1) the second tool refuses and says who is
+# holding it; (2) the lock is RELEASED when the tool fails, not only when it
+# exits cleanly, because the trap covers EXIT INT TERM and not just the clean
+# exit. The second case is what decides whether the lock is usable: one that
+# stays stuck after an error teaches the person to delete the lock by reflex,
+# and then they delete the one from a live measurement too.
 #
-# ARMADILHA DE SHELL, paga: em zsh um `trap ... EXIT` posto DENTRO de uma
-# funcao dispara quando a FUNCAO retorna, nao quando o script sai. Estas
-# ferramentas tem shebang bash, mas um teste escrito no shell interativo (zsh)
-# mostrou a trava sumindo sozinha e por um minuto pareceu que ela nao
-# funcionava.
+# SHELL TRAP, paid for: in zsh a `trap ... EXIT` placed INSIDE a function
+# fires when the FUNCTION returns, not when the script exits. These tools
+# have a bash shebang, but a test written in the interactive shell (zsh)
+# showed the lock disappearing on its own and for a minute it looked like it
+# was not working.
 #
-# A trava e um diretorio, porque mkdir e atomico em qualquer sistema de
-# arquivos. Guarda o PID para poder detectar dono morto: sem isso, uma
-# ferramenta que caiu deixa a trava para sempre e o proximo tem que apagar na
-# mao, o que ensina a pessoa a apagar a trava por reflexo.
+# The lock is a directory, because mkdir is atomic on any filesystem. It
+# stores the PID so a dead owner can be detected: without that, a tool that
+# crashed leaves the lock forever and the next one has to delete it by hand,
+# which teaches the person to delete the lock by reflex.
 VC_TRAVA="${VC_TRAVA:-/tmp/vc-love.lock}"
 
 vc_trava_pega() {
@@ -79,14 +80,14 @@ vc_trava_pega() {
   dono=$(cat "$VC_TRAVA/dono" 2>/dev/null || echo "?")
   pid=${dono%% *}
   if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
-    echo "trava orfa de $dono, recuperando"
+    echo "orphan lock from $dono, recovering"
     rm -rf "$VC_TRAVA"
     vc_trava_pega "$quem"
     return $?
   fi
-  echo "OUTRA FERRAMENTA ESTA USANDO O LOVE: $dono"
-  echo "  Espere ela acabar. Iniciar agora mataria a medicao dela e a saida"
-  echo "  truncada pareceria um resultado curto."
+  echo "ANOTHER TOOL IS USING LOVE: $dono"
+  echo "  Wait for it to finish. Starting now would kill its measurement and"
+  echo "  the truncated output would look like a short result."
   return 1
 }
 

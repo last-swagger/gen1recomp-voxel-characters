@@ -1,26 +1,28 @@
 #!/bin/bash
-# Roda o LOVE SEMPRE da raiz do repo, com o binario resolvido.
+# Runs LOVE ALWAYS from the repo root, with the binary resolved.
 #
-# POR QUE ISTO EXISTE. Chamar `love mods/voxel_characters/tools/render` de
-# dentro do diretorio do mod produz
-# `mods/voxel_characters/mods/voxel_characters/tools/render`, que nao existe. O
-# LOVE entao abre uma janela dizendo "Cannot load game at path" e ESPERA tecla:
-# do lado do script, dez minutos de timeout com log vazio. Aconteceu duas vezes.
+# WHY THIS EXISTS. Calling `love mods/voxel_characters/tools/render` from
+# inside the mod's directory produces
+# `mods/voxel_characters/mods/voxel_characters/tools/render`, which does not
+# exist. LOVE then opens a window saying "Cannot load game at path" and WAITS
+# for a key: on the script's side, a ten-minute timeout with an empty log.
+# Happened twice.
 #
-# E o `love.errorhandler` que este repo instala NAO cobre este caso, porque o
-# erro acontece no boot do LOVE, antes de qualquer arquivo nosso carregar. Ou
-# seja: a unica defesa possivel e nao deixar o caminho errado sair daqui.
+# And the `love.errorhandler` this repo installs does NOT cover this case,
+# because the error happens during LOVE's boot, before any of our files load.
+# In other words: the only possible defence is to never let the wrong path
+# leave here.
 #
-# Uso:  bash mods/voxel_characters/tools/love.sh <alvo> [args...]
+# Usage:  bash mods/voxel_characters/tools/love.sh <target> [args...]
 set -u
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$AQUI/../../.." && pwd)"
 . "$AQUI/tools_bin.sh"
-ALVO="${1:?uso: love.sh <caminho-do-jogo> [args]}"
+ALVO="${1:?usage: love.sh <path-to-game> [args]}"
 shift
 [ -d "$REPO/$ALVO" ] || [ -f "$REPO/$ALVO/main.lua" ] || {
-  echo "nao existe $REPO/$ALVO"
-  echo "  (caminho e sempre relativo a RAIZ do repo, nunca ao seu cwd)"
+  echo "$REPO/$ALVO does not exist"
+  echo "  (path is always relative to the repo ROOT, never to your cwd)"
   exit 1
 }
 cd "$REPO" || exit 1

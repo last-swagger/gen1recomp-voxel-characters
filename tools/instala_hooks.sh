@@ -17,9 +17,9 @@ MOD="$(cd "$AQUI/.." && pwd)"
 DESTINO="$MOD/.git/hooks"
 
 if [ ! -d "$MOD/.git" ]; then
-  echo "ERRO: $MOD nao e um repositorio git."
-  echo "  Lembre que este mod e um repo ANINHADO, com remote proprio: o .git"
-  echo "  dele fica aqui, nao na raiz do gen1recomp."
+  echo "ERROR: $MOD is not a git repository."
+  echo "  Remember this mod is a NESTED repo, with its own remote: its .git"
+  echo "  lives here, not at the gen1recomp root."
   exit 1
 fi
 mkdir -p "$DESTINO"
@@ -27,7 +27,7 @@ mkdir -p "$DESTINO"
 if [ "${1:-}" = "--remove" ]; then
   for h in "$AQUI/hooks"/*; do
     n=$(basename "$h")
-    [ -f "$DESTINO/$n" ] && rm -f "$DESTINO/$n" && echo "removido: $n"
+    [ -f "$DESTINO/$n" ] && rm -f "$DESTINO/$n" && echo "removed: $n"
   done
   exit 0
 fi
@@ -36,14 +36,14 @@ for h in "$AQUI/hooks"/*; do
   n=$(basename "$h")
   cp "$h" "$DESTINO/$n"
   chmod +x "$DESTINO/$n"
-  echo "instalado: $n"
+  echo "installed: $n"
 done
 
 echo
-echo "teste rapido do hook:"
+echo "quick hook test:"
 if bash "$DESTINO/pre-commit" > /dev/null 2>&1; then
-  echo "  o hook roda e aprova a arvore atual"
+  echo "  the hook runs and approves the current tree"
 else
-  echo "  o hook roda e REPROVA a arvore atual (a bateria rapida esta vermelha)"
+  echo "  the hook runs and REJECTS the current tree (the quick battery is red)"
 fi
-echo "escape: git commit --no-verify"
+echo "escape hatch: git commit --no-verify"

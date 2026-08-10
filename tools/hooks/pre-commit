@@ -22,7 +22,7 @@ MOD="$(cd "$AQUI/../.." 2>/dev/null && pwd)"
 [ -f "$MOD/tools/bateria.sh" ] || MOD="$(cd "$AQUI/../../.." && pwd)/mods/voxel_characters"
 
 if [ ! -f "$MOD/tools/bateria.sh" ]; then
-  echo "pre-commit: nao achei bateria.sh, deixando passar"
+  echo "pre-commit: could not find bateria.sh, letting it through"
   exit 0
 fi
 
@@ -34,6 +34,6 @@ fi
 
 echo "$SAIDA"
 echo
-echo "COMMIT BLOQUEADO pela bateria rapida."
-echo "  Se for de proposito (trabalho em andamento): git commit --no-verify"
+echo "COMMIT BLOCKED by the quick battery."
+echo "  If this is on purpose (work in progress): git commit --no-verify"
 exit 1

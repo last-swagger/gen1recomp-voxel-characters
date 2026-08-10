@@ -1,21 +1,21 @@
 #!/bin/bash
-# Mede quanta FOLGA sobra contra o teto de 200 locais de chunk do LuaJIT.
+# Measures how much SLACK is left against LuaJIT's ceiling of 200 chunk locals.
 #
-# POR QUE ISTO E UM GATE E NAO UMA NOTA. Estourar LUAI_MAXVARS e erro de
-# COMPILACAO: o mod inteiro deixa de carregar, para todo mundo, e o sintoma nao
-# e uma feature quebrada, e o jogo sem o mod. Este arquivo ja chegou a 199 de
-# 200 uma vez (ver main.lua:52) e so escapou por uma refatoracao.
+# WHY THIS IS A GATE AND NOT A NOTE. Blowing LUAI_MAXVARS is a COMPILATION
+# error: the whole mod stops loading, for everyone, and the symptom is not a
+# broken feature, it is the game without the mod. This file already reached
+# 199 of 200 once (see main.lua:52) and only escaped it through a refactor.
 #
-# A medicao e empirica de proposito: contar `local` no texto erra escopo,
-# multi-atribuicao e declaracao dentro de bloco. Aqui a gente ANEXA locais de
-# chunk ate o LuaJIT recusar, e a resposta e o numero real.
+# The measurement is empirical on purpose: counting `local` in the text gets
+# scope, multi-assignment and in-block declaration wrong. Here we APPEND chunk
+# locals until LuaJIT refuses, and the answer is the real number.
 #
-# Uso: bash mods/voxel_characters/tools/folga_locais.sh [piso]
+# Usage: bash mods/voxel_characters/tools/folga_locais.sh [floor]
 set -u
 ALVO="${VC_MAIN:-mods/voxel_characters/main.lua}"
 PISO="${1:-15}"
-command -v luajit >/dev/null || { echo "luajit nao encontrado"; exit 1; }
-[ -f "$ALVO" ] || { echo "nao achei $ALVO (rode da raiz do repo)"; exit 1; }
+command -v luajit >/dev/null || { echo "luajit not found"; exit 1; }
+[ -f "$ALVO" ] || { echo "could not find $ALVO (run from the repo root)"; exit 1; }
 
 T=$(mktemp -t vcfolga) || exit 1
 trap 'rm -f "$T"' EXIT
@@ -31,7 +31,7 @@ PY
   luajit -bl "$T" /dev/null >/dev/null 2>&1
 }
 
-cabe 0 || { echo "FOLGA 0: $ALVO ja NAO COMPILA"; exit 1; }
+cabe 0 || { echo "SLACK 0: $ALVO already DOES NOT COMPILE"; exit 1; }
 
 lo=0; hi=1
 while cabe "$hi"; do lo=$hi; hi=$((hi * 2)); [ "$hi" -gt 512 ] && break; done
@@ -40,11 +40,11 @@ while [ $((hi - lo)) -gt 1 ]; do
   if cabe "$mid"; then lo=$mid; else hi=$mid; fi
 done
 
-echo "folga: $lo locais de chunk (teto do LuaJIT: 200, entao $((200 - lo)) em uso)"
+echo "slack: $lo chunk locals (LuaJIT ceiling: 200, so $((200 - lo)) in use)"
 if [ "$lo" -lt "$PISO" ]; then
-  echo "ABAIXO DO PISO de $PISO. Nao adicione estado de chunk sem refatorar:"
-  echo "  o padrao ja usado aqui e uma TABELA de descricao mais funcoes"
-  echo "  genericas, no lugar de um punhado de locais por feature (main.lua:52)."
+  echo "BELOW THE FLOOR of $PISO. Do not add chunk state without refactoring:"
+  echo "  the pattern already used here is a description TABLE plus generic"
+  echo "  functions, instead of a handful of locals per feature (main.lua:52)."
   exit 1
 fi
 echo "OK"

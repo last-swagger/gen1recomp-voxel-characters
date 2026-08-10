@@ -26,8 +26,8 @@ LISTA="$AQUI/mutantes.txt"
 SO="${1:-}"
 
 LUAJIT=$(command -v luajit || echo /usr/local/bin/luajit)
-[ -x "$LUAJIT" ] || { echo "luajit nao encontrado"; exit 2; }
-[ -f "$LISTA" ] || { echo "sem lista de mutantes: $LISTA"; exit 2; }
+[ -x "$LUAJIT" ] || { echo "luajit not found"; exit 2; }
+[ -f "$LISTA" ] || { echo "no mutant list: $LISTA"; exit 2; }
 
 # THE SUITE ONLY RUNS FROM THE REPO ROOT. Its second line is
 # `require("tests.love_stub")`, resolved against the CURRENT DIRECTORY, so from
@@ -41,15 +41,15 @@ LUAJIT=$(command -v luajit || echo /usr/local/bin/luajit)
 #
 # The baseline check below would catch it, but only by accident, and the error
 # it prints would blame the suite. So: cd first, explicitly.
-cd "$RAIZ" || { echo "nao consegui entrar em $RAIZ"; exit 2; }
+cd "$RAIZ" || { echo "could not enter $RAIZ"; exit 2; }
 
 # The working tree has to be clean for the RESULT to mean anything: a mutant
 # that "survives" because an unrelated edit was already breaking the suite is a
 # false report, and the report is the whole product here.
 SUJO=$(git -C "$MOD" status --porcelain -- '*.lua' | head -5)
 if [ -n "$SUJO" ]; then
-  echo "ARVORE SUJA. Mutacao precisa de base limpa, senao o resultado mistura"
-  echo "a mutacao com o que ja estava modificado:"
+  echo "DIRTY TREE. Mutation needs a clean base, otherwise the result mixes"
+  echo "the mutation with what was already modified:"
   echo "$SUJO" | sed 's/^/  /'
   exit 2
 fi
@@ -71,11 +71,11 @@ BASE=$("$LUAJIT" "$MOD/tests/voxel_chars_test.lua" 2>&1 | grep -oE '[0-9]+/[0-9]
 BASE_OK=$(echo "$BASE" | cut -d/ -f1)
 BASE_DE=$(echo "$BASE" | cut -d/ -f2 | grep -oE '^[0-9]+')
 if [ -z "${BASE_OK:-}" ] || [ "$BASE_OK" != "$BASE_DE" ]; then
-  echo "A SUITE JA ESTA VERMELHA sem mutante nenhum: $BASE"
-  echo "  Conserte antes. Mutacao contra base vermelha nao mede nada."
+  echo "THE SUITE IS ALREADY RED with no mutant at all: $BASE"
+  echo "  Fix that first. Mutation against a red base measures nothing."
   exit 2
 fi
-echo "base limpa: $BASE_OK checagens"
+echo "clean base: $BASE_OK checks"
 echo
 
 N=0
@@ -93,7 +93,7 @@ while IFS= read -r linha || [ -n "$linha" ]; do
   ALVO="$MOD/$ARQ"
 
   if [ ! -f "$ALVO" ]; then
-    printf "%2d  %-22s SEM ARQUIVO\n" "$N" "$ARQ"
+    printf "%2d  %-22s NO FILE\n" "$N" "$ARQ"
     SOBREVIVERAM=$((SOBREVIVERAM + 1))
     continue
   fi
@@ -103,7 +103,7 @@ while IFS= read -r linha || [ -n "$linha" ]; do
   # was not aimed. Both are silent failures if not checked here.
   QUANTAS=$(grep -Fc -- "$DE" "$ALVO" 2>/dev/null || echo 0)
   if [ "$QUANTAS" != "1" ]; then
-    printf "%2d  %-22s PADRAO CASA %s VEZES (esperado 1)\n" "$N" "$ARQ" "$QUANTAS"
+    printf "%2d  %-22s PATTERN MATCHES %s TIMES (expected 1)\n" "$N" "$ARQ" "$QUANTAS"
     echo "      $DE"
     SOBREVIVERAM=$((SOBREVIVERAM + 1))
     continue
@@ -133,24 +133,24 @@ while IFS= read -r linha || [ -n "$linha" ]; do
     # No count at all means the suite crashed, which counts as killed: the
     # mutant made the code not run. Say so, because "crashed" and "failed a
     # check" are different qualities of evidence.
-    printf "%2d  %-22s morto (a suite nem rodou)\n" "$N" "$ARQ"
+    printf "%2d  %-22s dead (the suite did not even run)\n" "$N" "$ARQ"
   elif [ "$OK" = "$BASE_OK" ]; then
-    printf "%2d  %-22s SOBREVIVEU  %s\n" "$N" "$ARQ" "$RES"
+    printf "%2d  %-22s SURVIVED  %s\n" "$N" "$ARQ" "$RES"
     echo "      $DESC"
     SOBREVIVERAM=$((SOBREVIVERAM + 1))
   else
-    printf "%2d  %-22s morto  %s\n" "$N" "$ARQ" "$RES"
+    printf "%2d  %-22s dead  %s\n" "$N" "$ARQ" "$RES"
   fi
 done < "$LISTA"
 
 echo
 if [ "$RODARAM" -eq 0 ]; then
-  echo "NENHUM MUTANTE RODOU"
+  echo "NO MUTANT RAN"
   exit 2
 fi
 if [ "$SOBREVIVERAM" -eq 0 ]; then
-  echo "MUTANTES OK: a suite matou os $RODARAM"
+  echo "MUTANTES OK: the suite killed all $RODARAM"
   exit 0
 fi
-echo "$SOBREVIVERAM de $RODARAM SOBREVIVERAM: a suite passa por cima dessas linhas"
+echo "$SOBREVIVERAM of $RODARAM SURVIVED: the suite runs over these lines unchecked"
 exit 1
