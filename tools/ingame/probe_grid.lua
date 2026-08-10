@@ -1,31 +1,31 @@
--- Sonda do GRID do host: nossos personagens ganham o wireframe?
+-- Probe for the host's GRID: do our characters get the wireframe?
 --
--- O Kim perguntou se o mod devia "se comportar de acordo" com o grid do voxel
--- mod. Antes de projetar qualquer coisa, a pergunta e se ja nao esta resolvido.
+-- Kim asked whether the mod should "behave in accordance" with the voxel
+-- mod's grid. Before designing anything, the question is whether it isn't already solved.
 --
--- Lendo o host: o grid nao e um overlay desenhado por cima, e o PROPRIO shader
--- da cena medindo a distancia do fragmento ate o plano inteiro mais proximo, em
--- espaco de MODELO (VoxelGrid.lua:1-18). Toda malha desenhada por Voxel3D.draw
--- passa por esse shader, e a nossa passa. Entao a previsao e que o solido ja
--- receba o wireframe de graca, e que o "suporte" seja zero codigo.
+-- Reading the host: the grid isn't an overlay drawn on top, it's the scene's
+-- OWN shader measuring the fragment's distance to the nearest whole plane, in
+-- MODEL space (VoxelGrid.lua:1-18). Every mesh drawn by Voxel3D.draw goes
+-- through that shader, and ours does too. So the prediction is that the solid
+-- already gets the wireframe for free, and that "support" would be zero code.
 --
--- Previsao nao e medicao. Isto mede.
+-- Prediction is not measurement. This measures.
 --
---   G1 da para ler o estado    VoxelGrid.enabled() responde e set() muda
---   G2 o grid muda a tela      controle: ligar o grid tem que mudar alguma
---                              coisa, senao nada abaixo vale
---   G3 e NAO toca no personagem o delta do grid tem que ser o MESMO com o mod
---                              ligado e desligado
+--   G1 the state can be read   VoxelGrid.enabled() responds and set() changes it
+--   G2 grid changes the screen control: turning the grid on has to change
+--                              something, otherwise nothing below counts
+--   G3 does NOT touch the character the grid's delta has to be the SAME with the mod
+--                              on and off
 --
--- G3 AFIRMA O CONTRARIO DO QUE ESTE ARQUIVO PREVIA, e a inversao e o resultado.
+-- G3 STATES THE OPPOSITE OF WHAT THIS FILE PREDICTED, and the reversal is the result.
 --
--- A previsao era que o solido ganhasse o wireframe de graca, porque o grid e o
--- proprio shader da cena medindo distancia ate plano inteiro em espaco de
--- modelo, e a nossa malha passa por esse shader. Medido: 54700 amostras mudam
--- com o mod ligado e 54701 com ele desligado. O grid nao encosta na gente.
+-- The prediction was that the solid would get the wireframe for free, because
+-- the grid is the scene's own shader measuring distance to the nearest whole
+-- plane in model space, and our mesh goes through that shader. Measured: 54700
+-- samples change with the mod on and 54701 with it off. The grid doesn't touch us.
 --
--- O motivo esta escrito no host, e e uma decisao e nao um esquecimento
--- (VoxelScene.lua:584-589, drawCast chama Voxel3D.seams(false)):
+-- The reason is written in the host, and it's a decision, not an oversight
+-- (VoxelScene.lua:584-589, drawCast calls Voxel3D.seams(false)):
 --
 --   "Characters carry no wireframe out here, whatever the V-GRID row says. The
 --    seams are what makes the WORLD read as built out of voxels, and the people
@@ -33,15 +33,15 @@
 --    -- a grid over a 16x16 sprite lands a line every couple of display pixels
 --    and turns a face into a mesh."
 --
--- Ou seja: nosso mod ja se comporta certo, por heranca, e "ligar o grid nos
--- personagens" nao seria preencher uma lacuna, seria CONTRARIAR o autor do
--- host num ponto que ele pensou. Continua sendo uma opcao possivel de produto,
--- com custo declarado: as faces laterais e de topo do solido nao tem arte
--- nenhuma, e costura em cima delas realca justamente a superficie inventada.
+-- In other words: our mod already behaves correctly, by inheritance, and
+-- "turning the grid on for characters" wouldn't be filling a gap, it would be
+-- GOING AGAINST the host author on a point he thought through. It remains a
+-- possible product option, with a declared cost: the solid's side and top
+-- faces have no art at all, and seams over them would highlight exactly the invented surface.
 --
--- Entao este gate deixou de perguntar "ja funciona?" e passou a proteger o
--- contrato: se um dia o wireframe comecar a aparecer nos personagens, alguem
--- mudou algo e a gente quer saber no mesmo dia..
+-- So this gate stopped asking "does it already work?" and started protecting
+-- the contract: if the wireframe ever starts appearing on the characters,
+-- someone changed something and we want to know the same day..
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
@@ -159,15 +159,15 @@ return function(game)
     string.format("o estado do grid responde: ligado=%s desligado=%s",
       tostring(ligou), tostring(desligou)))
 
-  -- Com o MOD LIGADO: quanto o grid muda a tela.
+  -- With the MOD ON: how much the grid changes the screen.
   opcao("depth", 3)
   grid(false); local semGrid = captura()
   grid(true);  local comGrid = captura()
   local dMod = difere(semGrid, comGrid)
 
-  -- Com o MOD DESLIGADO: quanto o grid muda a tela sem o nosso solido. A
-  -- diferenca entre os dois numeros e a area que o grid pinta EM CIMA DO QUE
-  -- NOS DESENHAMOS. Sem este segundo termo, G3 estaria medindo o cenario.
+  -- With the MOD OFF: how much the grid changes the screen without our solid. The
+  -- difference between the two numbers is the area the grid paints ON TOP OF WHAT
+  -- WE DRAW. Without this second term, G3 would be measuring the scenery.
   opcao("depth", "off")
   grid(false); local semGridSemMod = captura()
   grid(true);  local comGridSemMod = captura()
@@ -177,9 +177,9 @@ return function(game)
   nota("grid muda %d amostras com o mod, %d sem o mod", dMod, dSemMod)
   veredito("G2", dMod > 200,
     string.format("o grid muda a tela: %d amostras", dMod))
-  -- O host suprime a costura nos personagens de proposito (drawCast chama
-  -- Voxel3D.seams(false)). Entao o certo e os dois numeros baterem: o grid
-  -- pinta o mundo e nao pinta gente, com ou sem o nosso solido em cena.
+  -- The host suppresses seams on characters on purpose (drawCast calls
+  -- Voxel3D.seams(false)). So the correct behavior is for the two numbers to match: the grid
+  -- paints the world and doesn't paint people, with or without our solid on screen.
   local folga = math.max(200, dSemMod * 0.02)
   veredito("G3", math.abs(dMod - dSemMod) <= folga,
     string.format("o grid nao encosta no nosso solido: %d com o mod contra %d "

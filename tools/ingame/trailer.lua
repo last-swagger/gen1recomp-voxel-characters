@@ -1,22 +1,22 @@
--- TRAILER, gravado dentro do proprio jogo.
+-- TRAILER, recorded from inside the game itself.
 --
--- Uma lista de PLANOS: cada um escolhe mapa, posicao, degrau de camera, opcoes
--- do mod, se o personagem anda, quanto dura e o que a legenda diz. O driver
--- executa a lista e grava a sequencia inteira numerada; o trailer.sh monta.
+-- A list of PLANOS: each one picks map, position, camera step, mod options,
+-- whether the character walks, how long it lasts, and what the caption says.
+-- The driver runs the list and records the whole sequence numbered; trailer.sh assembles it.
 --
--- POR QUE DENTRO DO JOGO, e nao capturando tela por fora: o degrau de camera,
--- a hora do dia, a posicao e as opcoes viram DADO em vez de gesto. Um trailer
--- gravado a mao nao se refaz quando uma feature muda; este se refaz rodando de
--- novo, e e por isso que ele vale como ferramenta e nao so como video.
+-- WHY FROM INSIDE THE GAME, and not capturing the screen from outside: the camera step,
+-- the time of day, the position and the options become DATA instead of gesture. A trailer
+-- recorded by hand doesn't get redone when a feature changes; this one gets redone by running
+-- it again, and that's why it counts as a tool and not just as a video.
 --
--- O ROTEIRO conta a historia do mod na ordem em que ela aconteceu: o mundo
--- deita, os personagens ganham corpo, o corpo ganha vida, e no fim a camera
--- entra na cabeca do jogador. Cada plano existe para mostrar UMA coisa, porque
--- plano que mostra duas nao mostra nenhuma.
+-- The SCRIPT tells the mod's story in the order it happened: the world
+-- tips over, the characters gain a body, the body gains life, and at the end the camera
+-- enters the player's head. Each shot exists to show ONE thing, because
+-- a shot that shows two things shows none.
 --
--- Uso:
+-- Usage:
 --   POKEPORT_VERSION=blue POKEPORT_DRIVER=.../trailer.lua love .
---   VC_TRAILER_SEGUNDOS=12  corta tudo proporcionalmente, para testar rapido
+--   VC_TRAILER_SEGUNDOS=12  cuts everything proportionally, to test quickly
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
@@ -62,9 +62,9 @@ return function(game)
   local Pipelines = require("src.render.Pipelines")
   local FPLEVEL = VoxelState.FP_LEVEL or 6
 
-  -- Os degraus por NOME, para o roteiro nao carregar numero magico. A escada
-  -- do host e ANGLES_DEG = {0, 35, 15, 35, 50, 75, 75, 75}, indexada por
-  -- nivel + 1, entao o nivel 0 e o jogo plano e o 5 e o mais em pe.
+  -- The steps by NAME, so the script doesn't carry a magic number. The host's
+  -- ladder is ANGLES_DEG = {0, 35, 15, 35, 50, 75, 75, 75}, indexed by
+  -- level + 1, so level 0 is the flat game and 5 is the most upright.
   local DEGRAU = { plano = 0, baixo = 2, medio = 3, alto = 4, empe = 5,
                    primeira = FPLEVEL }
 
@@ -75,7 +75,7 @@ return function(game)
     footfall = "off", first_person = "card",
   }
 
-  -- O ROTEIRO. Editar aqui e editar o trailer.
+  -- THE SCRIPT. Editing here means editing the trailer.
   local PLANOS = {
     { mapa = "PALLET_TOWN", x = 5, y = 6, dir = "down", degrau = "plano",
       seg = 4, legenda = "Pokemon Red, exactly as it has always been" },
@@ -96,11 +96,11 @@ return function(game)
     { mapa = "VIRIDIAN_CITY", x = 17, y = 17, dir = "down", degrau = "empe",
       seg = 4, opcoes = { front_shape = 0.17, top_dome = 0.15 },
       legenda = "Shading that suggests volume without inventing geometry" },
-    -- PRIMEIRA PESSOA EM PAR, e nao num plano so. O Kim assistiu e disse que
-    -- nao viu diferenca, e ele estava certo: um plano sozinho mostra o
-    -- resultado sem mostrar o que mudou, e em primeira pessoa a diferenca e
-    -- justamente a espessura, que so existe por comparacao. Mesmo lugar,
-    -- mesma direcao, mesmo degrau, so a opcao muda entre os dois.
+    -- FIRST PERSON IN A PAIR, and not in a single shot. Kim watched it and said
+    -- he didn't see a difference, and he was right: a single shot alone shows the
+    -- result without showing what changed, and in first person the difference is
+    -- precisely the thickness, which only exists through comparison. Same place,
+    -- same direction, same step, only the option changes between the two.
     { mapa = "CERULEAN_POKECENTER", x = 3, y = 4, dir = "right",
       degrau = "primeira", seg = 4, opcoes = { first_person = "card" },
       legenda = "In first person we used to fall back to the flat card" },
@@ -111,7 +111,7 @@ return function(game)
       seg = 4, legenda = "Voxel Characters" },
   }
 
-  -- Escala o roteiro inteiro quando se quer so conferir o encanamento.
+  -- Scales the whole script when you just want to check the plumbing.
   local ALVO = tonumber(os.getenv("VC_TRAILER_SEGUNDOS") or "")
   if ALVO then
     local soma = 0
@@ -121,9 +121,9 @@ return function(game)
     end
   end
 
-  -- 30 quadros por segundo de video, capturando um quadro de jogo sim outro
-  -- nao. Trinta chega para leitura de movimento e corta pela metade o disco e
-  -- o tempo de montagem, que a 1500 arquivos deixa de ser detalhe.
+  -- 30 video frames per second, capturing one game frame and skipping the
+  -- next. Thirty is enough to read movement and it cuts disk space and
+  -- assembly time in half, which at 1500 files stops being a detail.
   local PASSO, FPS = 2, 30
 
   local legenda, legendaAlpha = nil, 0
@@ -138,9 +138,9 @@ return function(game)
     love.graphics.setFont(fonte)
     local tw = fonte:getWidth(legenda)
     local x, y = (w - tw) / 2, h - 86
-    -- Terco inferior, sem caixa: caixa preta num jogo de Game Boy le como
-    -- interface do jogo e nao como legenda de video. Sombra resolve leitura
-    -- sobre qualquer fundo sem competir com a arte.
+    -- Lower third, no box: a black box in a Game Boy game reads as
+    -- game interface and not as video caption. A shadow solves legibility
+    -- over any background without competing with the art.
     love.graphics.setColor(0, 0, 0, 0.75 * legendaAlpha)
     love.graphics.print(legenda, x + 2, y + 2)
     love.graphics.setColor(1, 1, 1, legendaAlpha)
@@ -150,18 +150,18 @@ return function(game)
 
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
 
-  -- ANDAR SEM BATER NA PAREDE.
+  -- WALKING WITHOUT HITTING THE WALL.
   --
-  -- O Kim assistiu e reparou: nos planos em que o personagem anda, ele chega
-  -- na parede e continua empurrando, e isso le como amador porque le como
-  -- alguem esquecendo o controle apertado. A causa era boba: o plano segurava
-  -- uma direcao pelo tempo todo sem nunca perguntar se dava para seguir.
+  -- Kim watched and noticed: in the shots where the character walks, it reaches
+  -- the wall and keeps pushing, and that reads as amateur because it reads as
+  -- someone forgetting the controller is held down. The cause was silly: the shot held
+  -- one direction the whole time without ever asking if it could keep going.
   --
-  -- Agora pergunta, e pergunta ao mesmo juiz que o resto do harness usa
-  -- (Pouso.recusa, que consulta o motor sobre limite, colisao, placa, porta e
-  -- NPC). Quando a proxima celula recusa, a direcao inverte. O resultado e um
-  -- vai e vem dentro do espaco que existe, que e o que um trailer quer de
-  -- qualquer forma: movimento continuo, sem parede.
+  -- Now it asks, and it asks the same judge the rest of the harness uses
+  -- (Pouso.recusa, which consults the engine about boundary, collision, sign, door and
+  -- NPC). When the next cell refuses, the direction reverses. The result is a
+  -- back and forth within the space that exists, which is what a trailer wants
+  -- anyway: continuous movement, no wall.
   local OPOSTO = { up = "down", down = "up", left = "right", right = "left" }
   local DELTA = { up = { 0, -1 }, down = { 0, 1 },
                   left = { -1, 0 }, right = { 1, 0 } }
@@ -186,9 +186,9 @@ return function(game)
     pcall(Pipelines.setLevel, "voxel", DEGRAU[p.degrau] or 4)
     local _, px, py = Pouso.escolher(game, p.mapa, p.x, p.y)
     U.teleport(game, p.mapa, px, py, p.dir)
-    -- Assentar antes de gravar: o degrau faz tween, a malha reconstroi e o
-    -- teleporte tem um quadro de mundo velho. Gravar por cima disso poe um
-    -- salto no comeco de cada plano, e o corte ja e o salto.
+    -- Settle before recording: the step does a tween, the mesh rebuilds and the
+    -- teleport has one frame of old world. Recording over that puts a
+    -- jump at the start of each shot, and the cut is already the jump.
     U.wait(70)
 
     local quadros = p.seg * FPS
@@ -196,14 +196,14 @@ return function(game)
     local andando = p.dir
     legenda = p.legenda
     for i = 1, quadros do
-      -- A legenda entra e sai dentro do plano. Aparecer de uma vez junto com o
-      -- corte faz o olho ler as duas coisas ao mesmo tempo e nao ler nenhuma.
+      -- The caption fades in and out within the shot. Appearing all at once together with the
+      -- cut makes the eye read both things at the same time and read neither.
       local t = i / quadros
       legendaAlpha = math.min(1, math.min(t, 1 - t) * 6)
       if p.anda then
-        -- So inverte quando a celula seguinte recusa E o personagem ja esta
-        -- parado nela; perguntar no meio de um passo devolveria a celula de
-        -- onde ele saiu e a direcao ficaria trocando a cada quadro.
+        -- Only reverses when the next cell refuses AND the character is already
+        -- stopped in it; asking mid step would return the cell it
+        -- left from and the direction would keep swapping every frame.
         if not podeSeguir(andando) then
           game.input.state[andando] = false
           andando = OPOSTO[andando] or andando

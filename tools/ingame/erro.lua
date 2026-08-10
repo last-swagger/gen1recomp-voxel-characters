@@ -1,15 +1,15 @@
--- Faz o LOVE reportar erro por stdout e SAIR, em vez de abrir janela e esperar.
+-- Makes LOVE report errors over stdout and EXIT, instead of opening a window and waiting.
 --
--- Todo driver deste diretorio comeca chamando isto. Por padrao o LOVE trata
--- erro abrindo uma tela com a mensagem e esperando tecla; de dentro de um
--- script isso e indistinguivel de trabalho pesado, e a ferramenta so morre no
--- timeout, com log vazio, enquanto a causa fica escrita numa janela que ninguem
--- esta olhando. Tres vezes numa sessao.
+-- Every driver in this directory starts by calling this. By default LOVE
+-- handles an error by opening a screen with the message and waiting for a
+-- key; from inside a script that is indistinguishable from heavy work, and
+-- the tool only dies on timeout, with an empty log, while the cause sits
+-- written on a window nobody is looking at. Three times in one session.
 --
--- A alternativa que eu tentei antes, fotografar a tela para ler a mensagem, foi
--- pior: numa maquina de trabalho a foto pega o que estiver na frente, e pegou
--- conversa pessoal duas vezes. As imagens foram apagadas e a ideia abandonada.
--- A mensagem tem que sair por onde o script ja le.
+-- The alternative I tried before, photographing the screen to read the
+-- message, was worse: on a work machine the photo picks up whatever is in
+-- front, and it caught a personal conversation twice. The images were deleted
+-- and the idea abandoned. The message has to come out where the script already reads.
 return function()
   local function handler(msg)
     msg = tostring(msg)

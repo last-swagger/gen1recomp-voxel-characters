@@ -1,33 +1,33 @@
--- PASSO 1 do roadmap: provar, com o jogo rodando, que a matriz que o host
--- passa para Voxel3D.draw carrega uma posicao por INSTANCIA que serve como
--- identidade estavel.
+-- STEP 1 of the roadmap: prove, with the game running, that the matrix the host
+-- passes to Voxel3D.draw carries a position per INSTANCE that serves as a
+-- stable identity.
 --
--- Este driver NAO muda nada. Ele so observa. Se ele reprovar, o roadmap
--- encolhe para animacao compartilhada e nada do resto se constroi.
+-- This driver does NOT change anything. It only observes. If it fails, the roadmap
+-- shrinks to shared animation and nothing else gets built.
 --
--- O que ele responde, cada um com um veredito por escrito:
+-- What it answers, each one with a verdict written out:
 --
---   P1 intercepta      o wrap de Voxel3D.draw ve desenho de PERSONAGEM
---   P2 e a posicao     m[12]-8 bate com o py do mundo, m[4] com o px
---   P3 distingue       duas instancias na mesma tela dao valores diferentes
---   P4 estavel         NPC parado nao muda de valor entre quadros
---   P5 espelho         virar para o lado nao mexe em m[12]; mede o efeito em m[4]
---   P6 camera          trocar o degrau de camera nao mexe em m[12]
---   P7 andando         valor anda continuo, sem salto e sem NaN
---   P8 mundo           com a CAMERA andando, o NPC parado nao muda de valor
+--   P1 intercepts      the wrap of Voxel3D.draw sees a CHARACTER draw
+--   P2 is the position m[12]-8 matches the world's py, m[4] the px
+--   P3 distinguishes   two instances on the same screen give different values
+--   P4 stable          a still NPC doesn't change value between frames
+--   P5 mirror          turning sideways doesn't touch m[12]; measures the effect on m[4]
+--   P6 camera          switching the camera step doesn't touch m[12]
+--   P7 walking         value moves continuously, no jump and no NaN
+--   P8 world           with the CAMERA moving, the still NPC doesn't change value
 --
--- P8 e o que decide o passo 6 do roadmap. Se o valor for relativo a camera,
--- ele muda para todo mundo quando o jogador anda, e defasar por posicao faria
--- a cidade inteira respirar em onda junto com o passo do jogador.
+-- P8 is what decides step 6 of the roadmap. If the value were relative to camera,
+-- it would change for everyone when the player walks, and staggering by position would make
+-- the whole city breathe in a wave together with the player's step.
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
   dofile("mods/voxel_characters/tools/ingame/erro.lua")()
 
-  -- O DEFEITO QUE ME CUSTOU MAIS TEMPO NESTA FERRAMENTA: sem TTY, o stdout do
-  -- LOVE fica em buffer de BLOCO, e um processo que nao sai nunca esvazia. Log
-  -- vazio nao distingue "nao aconteceu nada" de "nao terminou", e eu ja tirei a
-  -- conclusao errada disso mais de uma vez. Uma linha resolve para sempre.
+  -- THE BUG THAT COST ME THE MOST TIME IN THIS TOOL: without a TTY, LOVE's stdout
+  -- stays in BLOCK buffer, and a process that never exits never flushes it. An empty
+  -- log doesn't distinguish "nothing happened" from "didn't finish", and I've drawn
+  -- the wrong conclusion from this more than once. Line buffering fixes it for good.
   io.stdout:setvbuf("line")
 
   local linhas = {}
@@ -36,9 +36,9 @@ return function(game)
     local linha = ok and s or tostring(fmt)
     linhas[#linhas + 1] = linha
     print("[probe] " .. linha)
-    -- love.filesystem.write NAO levanta erro quando falha; ele devolve false.
-    -- Escrever sem conferir foi como eu passei minutos achando que o driver
-    -- tinha travado quando ele so tinha parado de conseguir escrever.
+    -- love.filesystem.write does NOT raise an error when it fails; it returns false.
+    -- Writing without checking is how I spent minutes thinking the driver
+    -- had frozen when it had only stopped being able to write.
     local okw, err = love.filesystem.write("vc_probe.txt",
       table.concat(linhas, "\n") .. "\n")
     if not okw then print("[probe] AVISO: nao consegui escrever: " .. tostring(err)) end
@@ -78,11 +78,11 @@ return function(game)
     tostring(type(Voxel3D.draw) == "function"),
     tostring(type(SpriteBillboards.mesh) == "function"))
 
-  -- ------------------------------------------------- quem e malha de gente
-  -- Terreno, grama, sombra e pokedex tambem passam por Voxel3D.draw. O unico
-  -- discriminador exato e a procedencia: uma malha que saiu de
-  -- SpriteBillboards.mesh e de personagem, e nenhuma outra e. Marcar na saida
-  -- da fabrica e mais barato e mais honesto que adivinhar pelos argumentos.
+  -- ------------------------------------------------- who is a people mesh
+  -- Terrain, grass, shadow and pokedex also go through Voxel3D.draw. The only
+  -- exact discriminator is provenance: a mesh that came out of
+  -- SpriteBillboards.mesh is a character's, and nothing else is. Marking it at the
+  -- factory's output is cheaper and more honest than guessing from the arguments.
   local malhaDeGente = setmetatable({}, { __mode = "k" })
   local nomeDaMalha = setmetatable({}, { __mode = "k" })
   local meshOriginal = SpriteBillboards.mesh
@@ -95,15 +95,15 @@ return function(game)
     return m
   end
 
-  -- ------------------------------------------------------- wrap do draw
+  -- ------------------------------------------------------- draw wrap
   local capturando = false
-  local quadro = {}     -- desenhos de personagem do quadro corrente
+  local quadro = {}     -- character draws of the current frame
   local drawOriginal = Voxel3D.draw
   Voxel3D.draw = function(mesh, texture, model, pull, sunModel)
     if capturando and mesh and malhaDeGente[mesh] and type(model) == "table" then
-      -- De ONDE veio esta chamada. Sem isto eu nao teria como saber que a cena
-      -- desenha cada personagem mais de uma vez por quadro, e teria lido a
-      -- duplicata como "duas instancias no mesmo lugar".
+      -- WHERE this call came from. Without this I would have no way to know that the scene
+      -- draws each character more than once per frame, and I would have read the
+      -- duplicate as "two instances in the same place".
       local info = debug.getinfo(2, "Sl")
       quadro[#quadro + 1] = {
         nome = nomeDaMalha[mesh],
@@ -124,22 +124,22 @@ return function(game)
     return c
   end
 
-  -- Um quadro observado: zera, espera o desenho acontecer, devolve o que veio.
+  -- One observed frame: reset, wait for the draw to happen, return what came in.
   local function observa()
     limpaQuadro()
     capturando = true
-    coroutine.yield()          -- o desenho deste quadro roda agora
+    coroutine.yield()          -- this frame's draw runs now
     capturando = false
     return copiaQuadro()
   end
 
-  -- --------------------------------------------------------------- mundo
-  -- VSYNC DESLIGADO. Com vsync ligado e a janela ocluida (que e o caso normal
-  -- quando isto roda de um shell, atras do editor), love.graphics.present()
-  -- espera um flip que o compositor do macOS nao agenda, e o laco inteiro anda
-  -- a menos de um quadro por segundo. Sintoma: o driver parece travado logo
-  -- depois de entrar no mundo, inclusive os drivers do proprio projeto. Nao e
-  -- travamento, e o relogio.
+  -- --------------------------------------------------------------- world
+  -- VSYNC OFF. With vsync on and the window occluded (which is the normal case
+  -- when this runs from a shell, behind the editor), love.graphics.present()
+  -- waits for a flip that macOS's compositor never schedules, and the entire loop runs
+  -- at less than one frame per second. Symptom: the driver looks frozen right
+  -- after entering the world, including the project's own drivers. It's not
+  -- a freeze, it's the clock.
   if love.window and love.window.setVSync then pcall(love.window.setVSync, 0) end
 
   local function ambiente()
@@ -163,9 +163,9 @@ return function(game)
   end
   nota("mapa: %s  entidades: %d", tostring(ow.map and ow.map.id), #ow.entities)
 
-  -- O pipeline voxel precisa estar ligado; sem ele Voxel3D.draw sai cedo
-  -- (`if not (active and mesh) then return end`) e todo o resto mede zero, que
-  -- e exatamente a classe de teste que passa por motivo trivial.
+  -- The voxel pipeline needs to be on; without it Voxel3D.draw exits early
+  -- (`if not (active and mesh) then return end`) and everything else measures zero, which
+  -- is exactly the class of test that passes for a trivial reason.
   local desenhos = observa()
   local tentativas = 0
   while #desenhos == 0 and tentativas < 10 do
@@ -182,10 +182,10 @@ return function(game)
     love.graphics.captureScreenshot("vc_probe_sem_desenho.png")
     return
   end
-  -- Quantas PASSADAS existem por quadro, e de onde cada uma sai. A cena
-  -- desenha o mesmo personagem mais de uma vez (passada principal, silhueta de
-  -- oclusao, etc). Sem separar por ponto de chamada, a duplicata se disfarca de
-  -- "duas instancias no mesmo lugar" e reprova um teste que deveria passar.
+  -- How many PASSES exist per frame, and where each one comes from. The scene
+  -- draws the same character more than once (main pass, occlusion silhouette,
+  -- etc). Without separating by call site, the duplicate disguises itself as
+  -- "two instances in the same place" and fails a test that should pass.
   local porOrigem, ordemOrigem = {}, {}
   for _, d in ipairs(desenhos) do
     if not porOrigem[d.de] then
@@ -212,19 +212,19 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- P2
-  -- O teste certo e de INCLUSAO, nao de igualdade. A cena desenha mais gente do
-  -- que ow.entities lista: os NPCs dos mapas VIZINHOS entram como ghosts
-  -- (OverworldController.ghosts), e a primeira versao deste teste reprovou por
-  -- isso, nao por defeito do host. A pergunta honesta e: TODA entidade deste
-  -- mapa aparece desenhada na posicao de mundo dela?
-  -- A chave tem que ser o PAR (px,py), nao dois conjuntos independentes: um
-  -- desenho em py=10 e outro (de OUTRA entidade) em px=5 nao provam que
-  -- existe um desenho em (5,10). Conjuntos separados deixam passar qualquer
-  -- combinacao cruzada de px de uma entidade com py de outra.
+  -- The right test is one of INCLUSION, not equality. The scene draws more people
+  -- than ow.entities lists: NPCs from NEIGHBORING maps enter as ghosts
+  -- (OverworldController.ghosts), and the first version of this test failed because
+  -- of that, not because of a host defect. The honest question is: does EVERY entity of
+  -- this map appear drawn at its world position?
+  -- The key has to be the PAIR (px,py), not two independent sets: a
+  -- draw at py=10 and another (from ANOTHER entity) at px=5 don't prove that
+  -- there is a draw at (5,10). Separate sets let through any
+  -- cross combination of one entity's px with another's py.
   local desenhado = {}
   for _, d in ipairs(principal) do
     local py = d.m12 - 8
-    -- m[4] carrega px direto, ou px+16 quando espelhado (e ai m[1] = -1).
+    -- m[4] carries px directly, or px+16 when mirrored (and then m[1] = -1).
     local px = d.m1 < 0 and (d.m4 - 16) or d.m4
     desenhado[string.format("%.2f/%.2f", px, py)] = true
   end
@@ -241,16 +241,16 @@ return function(game)
     table.concat(faltando, " ")))
 
   -- ---------------------------------------------------------------- P3
-  -- Duas instancias DIFERENTES tem que dar pares (px,py) diferentes; se
-  -- colidirem, sao indistinguiveis e animariam em unissono.
+  -- Two DIFFERENT instances have to give different (px,py) pairs; if
+  -- they collide, they're indistinguishable and would animate in unison.
   --
-  -- Antes de comparar, tirar as REPETICOES EXATAS. O mesmo personagem e
-  -- desenhado mais de uma vez no mesmo quadro pelo mesmo ponto de chamada: o
-  -- host desenha a copia refletida na agua por esta mesma funcao
+  -- Before comparing, remove EXACT REPEATS. The same character is
+  -- drawn more than once in the same frame by the same call site: the
+  -- host draws the water-reflected copy through this very same function
   -- (VoxelScene.lua:604-610, "the water's reflection copy, drawn by this same
-  -- function"). Repeticao exata (mesma folha, mesmo frame, mesma posicao) e uma
-  -- copia, nao uma segunda pessoa; a primeira versao deste teste contou cada
-  -- personagem colidindo consigo mesmo e reprovou 25 vezes.
+  -- function"). An exact repeat (same sheet, same frame, same position) is a
+  -- copy, not a second person; the first version of this test counted each
+  -- character colliding with itself and failed 25 times.
   local exatos, unicos, copias = {}, {}, 0
   for _, d in ipairs(principal) do
     local px = d.m1 < 0 and (d.m4 - 16) or d.m4
@@ -279,11 +279,11 @@ return function(game)
     "%d personagens distintos, %d colisoes de posicao", #unicos, #colisoes))
 
   -- ---------------------------------------------------------------- P4
-  -- Um NPC ao longo de 60 quadros. O esperado e RECALCULADO do py vivo dele a
-  -- cada quadro, e nao fixado uma vez: os NPCs deste jogo perambulam sozinhos,
-  -- e um esperado congelado transformaria "o NPC andou" em "a medicao falhou".
-  -- Com o esperado vivo, a pergunta fica a certa: o valor desenhado e SEMPRE o
-  -- py de mundo daquela instancia, ande ela ou nao.
+  -- A single NPC over 60 frames. The expected value is RECALCULATED from its live py
+  -- every frame, not fixed once: the NPCs in this game wander on their own,
+  -- and a frozen expected value would turn "the NPC walked" into "the measurement failed".
+  -- With a live expected value, the question becomes the right one: is the drawn value ALWAYS the
+  -- world py of that instance, whether it moves or not.
   local alvo
   for _, e in ipairs(ow.npcs or {}) do
     if not e.moving then alvo = e break end
@@ -313,9 +313,9 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- P5
-  -- Espelho. O jogador virado para a esquerda e para a direita: um dos dois e
-  -- espelhado (m[1] negativo). m[12] nao pode mudar; m[4] pode, e a gente
-  -- mede QUANTO em vez de supor.
+  -- Mirror. The player facing left and facing right: one of the two is
+  -- mirrored (m[1] negative). m[12] can't change; m[4] can, and we
+  -- measure HOW MUCH instead of assuming.
   local jogador = ow.player
   local function achaJogador(q)
     for _, d in ipairs(q) do
@@ -338,8 +338,8 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- P6
-  -- Degrau de camera. O lean e rotateX; ele mexe na parte de rotacao da
-  -- matriz, e nao pode mexer na translacao.
+  -- Camera step. The lean is rotateX; it affects the rotation part of the
+  -- matrix, and must not affect the translation.
   if alvo then
     local ruins = 0
     for i = 1, 7 do
@@ -354,17 +354,17 @@ return function(game)
     veredito("P6", ruins == 0, string.format(
       "%d de 7 degraus de camera mudaram o valor do NPC", ruins))
   else
-    -- SEM NPC PARADO NAO HA VEREDITO, e antes disso a P6 simplesmente sumia:
-    -- o bloco inteiro vivia dentro de `if alvo then`, entao um mapa sem NPC
-    -- parado tirava a checagem do resumo e `todos` continuava verdadeiro. O
-    -- P4 logo acima ja trata o mesmo caso emitindo um veredito falso, que e o
-    -- certo: nao medir e um resultado, e nao a ausencia de um.
+    -- WITHOUT A STILL NPC THERE IS NO VERDICT, and before this P6 would simply vanish:
+    -- the whole block lived inside `if alvo then`, so a map without a still
+    -- NPC removed the check from the summary and `todos` stayed true. P4
+    -- right above already handles the same case by emitting a false verdict, which is
+    -- the correct thing: not measuring is a result, not the absence of one.
     veredito("P6", false, "nao achei NPC parado para observar entre degraus")
   end
 
-  -- ---------------------------------------------------------------- P7 e P8
-  -- Andar. Duas perguntas ao mesmo tempo: o valor do JOGADOR anda continuo
-  -- (P7) e o valor do NPC PARADO nao anda junto com a camera (P8).
+  -- ---------------------------------------------------------------- P7 and P8
+  -- Walking. Two questions at the same time: does the PLAYER'S value move continuously
+  -- (P7) and does the value of the STILL NPC not move along with the camera (P8).
   local antes, saltoMax, nan = nil, 0, 0
   local npcMudou, camAntes, camAndou = 0, nil, 0
   local achouJogador = 0
@@ -400,21 +400,21 @@ return function(game)
   U.wait(20)
   nota("a camera se moveu em %d dos 24 quadros de caminhada", camAndou)
 
-  -- P7 so vale se o jogador foi localizado em algum quadro. Sem isto, se
-  -- achaJogador nunca casar em nenhum dos 24 quadros, saltoMax fica em 0 e nan
-  -- em 0, e o teste passaria sem ter medido nada: a mesma armadilha que o P8
-  -- guarda com camAndou > 0, so que do lado do jogador.
+  -- P7 only counts if the player was located in some frame. Without this, if
+  -- achaJogador never matches in any of the 24 frames, saltoMax stays at 0 and nan
+  -- at 0, and the test would pass without having measured anything: the same trap that P8
+  -- guards against with camAndou > 0, just on the player's side.
   veredito("P7", achouJogador > 0 and nan == 0 and saltoMax <= 4.01, string.format(
     "maior salto entre quadros: %.2f px; NaN em %d quadros; jogador localizado " ..
     "em %d de 24 quadros (se for 0, o teste nao valeu)", saltoMax, nan, achouJogador))
-  -- P8 so vale se a camera realmente andou. Sem isso o teste passaria pelo
-  -- motivo trivial de nada ter se mexido, que e a armadilha desta casa.
+  -- P8 only counts if the camera actually moved. Without this the test would pass for
+  -- the trivial reason that nothing moved, which is this house's trap.
   veredito("P8", npcMudou == 0 and camAndou > 0, string.format(
     "o valor do NPC divergiu do py dele em %d de 24 quadros; " ..
     "a camera andou em %d quadros (se for 0, o teste nao valeu)",
     npcMudou, camAndou))
 
-  -- ------------------------------------------------------------- resumo
+  -- ------------------------------------------------------------- summary
   nota("")
   nota("=== resumo ===")
   local todos = true
@@ -428,8 +428,8 @@ return function(game)
   love.graphics.captureScreenshot("vc_probe_fim.png")
   U.wait(20)
 
-  -- Desfaz os dois wraps. Um driver que deixa o host remendado envenena
-  -- qualquer medicao seguinte no mesmo processo.
+  -- Undo both wraps. A driver that leaves the host patched poisons
+  -- any subsequent measurement in the same process.
   Voxel3D.draw = drawOriginal
   SpriteBillboards.mesh = meshOriginal
 end

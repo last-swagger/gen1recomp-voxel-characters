@@ -1,51 +1,51 @@
--- Gate in-game da PRIMEIRA PESSOA.
+-- In-game gate for FIRST PERSON.
 --
--- Desde a v1.3.0 este mod devolvia o card plano sempre que a primeira pessoa
--- estivesse ativa. Nao era falta de suporte, era conserto: o Colonel_Aureliano
--- reportou espetos pretos, e o card nao tem o defeito.
+-- Since v1.3.0 this mod returned the flat card whenever first person
+-- was active. It was not lack of support, it was a fix: Colonel_Aureliano
+-- reported black spikes, and the card does not have the defect.
 --
--- Lendo o host, o defeito nao e da camera, e da DISTANCIA. O shader empurra
--- cada vertice ao longo do proprio raio ate o olho por `pull` unidades
--- (Voxel3D.lua:122-130); primeira pessoa e o degrau 6 e ANGLES_DEG[7] = 75
--- graus, entao pull = 6 unidades de mundo com o tile valendo 16; o near plane
--- fica em 1 unidade quando olho e foco estao juntos. Um vertice a distancia d
--- vai parar em d - 6: atravessa o near plane com d < 7 e vai para tras do olho
--- com d < 6. O card plano sobrevive porque todos os seus vertices cruzam
--- juntos; num solido os cantos estao a distancias diferentes.
+-- Reading the host, the defect is not the camera's, it is the DISTANCE's. The shader pushes
+-- each vertex along its own ray toward the eye by `pull` units
+-- (Voxel3D.lua:122-130); first person is step 6 and ANGLES_DEG[7] = 75
+-- degrees, so pull = 6 world units with the tile worth 16; the near plane
+-- sits at 1 unit when eye and focus are together. A vertex at distance d
+-- ends up at d - 6: it crosses the near plane at d < 7 and goes behind the eye
+-- at d < 6. The flat card survives because all its vertices cross
+-- together; in a solid the corners are at different distances.
 --
--- A suite offline ja prova a CONTA: varrendo 0 a 80 unidades, o pull repassado
--- nunca alcanca o olho, e quebrar o clamp mata quatro checks. Este arquivo
--- mede a unica coisa que a suite nao pode: se a conta certa chega na TELA.
+-- The offline suite already proves the MATH: sweeping 0 to 80 units, the passed pull
+-- never reaches the eye, and breaking the clamp kills four checks. This file
+-- measures the one thing the suite cannot: whether the right math reaches the SCREEN.
 --
---   P1 entrou mesmo              o blend chega a 1; sem isso tudo abaixo
---                                mediria outra camera
---   P2 tem personagem na tela    controle ligando e desligando o mod inteiro.
---                                E o primeiro que eu preciso porque zero
---                                diferenca tem duas causas opostas: a opcao
---                                nao chegou, ou nao havia o que mudar
---   P3 o solido aparece          com personagem confirmado na tela, SOLID
---                                difere de CARD
---   P4 a TRANSICAO nao explode   varrendo o blend, a diferenca SOLID-CARD
---                                fica na ordem do volume e nao do quadro,
---                                comparada contra um piso medido do MESMO
---                                jeito
+--   P1 it actually entered              the blend reaches 1; without it, everything below
+--                                       would be measuring a different camera
+--   P2 character is on screen           control by switching the whole mod on and off.
+--                                       It's the first one I need because zero
+--                                       difference has two opposite causes: the option
+--                                       did not arrive, or there was nothing to change
+--   P3 the solid appears                with character confirmed on screen, SOLID
+--                                       differs from CARD
+--   P4 the TRANSITION doesn't explode   sweeping the blend, the SOLID-CARD difference
+--                                       stays on the order of the volume and not of the frame,
+--                                       compared against a floor measured the SAME
+--                                       way
 --
--- P4 e o que interessa. O card do PROPRIO jogador e o caso catastrofico,
--- porque a camera esta entrando na cabeca dele e a distancia vai a zero, e o
--- host so esconde esse card depois de blend > 0.9. A faixa varrida aqui e
--- exatamente onde o defeito vivia.
+-- P4 is what matters. The PLAYER'S OWN card is the catastrophic case,
+-- because the camera is entering his head and the distance goes to zero, and the
+-- host only hides that card after blend > 0.9. The range swept here is
+-- exactly where the defect lived.
 --
--- DUAS ARMADILHAS QUE ESTE ARQUIVO JA PAGOU, escritas para nao se repetirem:
+-- TWO TRAPS THIS FILE ALREADY PAID FOR, written so they don't repeat:
 --
---   VoxelState.setLevel NAO MANDA. Quem e dono do degrau e o Pipelines do
---   motor, e Voxel.update(level) (VoxelState.lua:180) reescreve Voxel.level a
---   partir dele todo quadro. O sintoma de chamar o errado foi "o blend nunca
---   subiu", que parece a camera nao existir nesta maquina.
+--   VoxelState.setLevel DOES NOT COMMAND. The owner of the step is the engine's
+--   Pipelines, and Voxel.update(level) (VoxelState.lua:180) rewrites Voxel.level
+--   from it every frame. The symptom of calling the wrong one was "the blend never
+--   went up", which looks like the camera does not exist on this machine.
 --
---   FOTOGRAFAR OS DOIS LADOS ENQUANTO A CAMERA ANDA mede a camera. Na primeira
---   versao isso deu 80 a 94 por cento do quadro diferindo, e nada era espeto.
---   Cada lado agora sai de uma entrada propria com a mesma espera, e a amostra
---   so conta se os dois blends baterem.
+--   PHOTOGRAPHING BOTH SIDES WHILE THE CAMERA MOVES measures the camera. In the first
+--   version this gave 80 to 94 percent of the frame differing, and nothing was a spike.
+--   Each side now comes from its own entry with the same wait, and the sample
+--   only counts if the two blends match.
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
@@ -126,13 +126,13 @@ return function(game)
     return n
   end
 
-  -- O host, pela mesma porta que o mod usa.
-  -- OS TRES HOSTS, e nao so o original. O mod aceita DRAMATIC_SHAPE, o fork de
-  -- arte de batalha do absol89 e o Dramaless do artyrambles (main.lua:37-47), e
-  -- probe_life.lua ja varre os tres. Este arquivo pedia so o primeiro, entao no
-  -- fork que boa parte da comunidade roda ele falhava no P0 e o gate inteiro
-  -- era pulado, sem que ninguem visse diferenca entre "nao mediu" e "mediu e
-  -- passou".
+  -- The host, through the same door the mod uses.
+  -- ALL THREE HOSTS, not just the original. The mod accepts DRAMATIC_SHAPE, the
+  -- battle art fork by absol89 and Dramaless by artyrambles (main.lua:37-47), and
+  -- probe_life.lua already sweeps all three. This file only asked for the first, so in the
+  -- fork that a good part of the community runs it failed at P0 and the whole gate
+  -- was skipped, with nobody seeing the difference between "did not measure" and "measured and
+  -- passed".
   local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE" }
   local lib, hostId
   for _, id in ipairs(HOSTS) do
@@ -168,23 +168,23 @@ return function(game)
   end
   nota("FP_LEVEL do host: %d", FPLEVEL)
 
-  -- O QUARTO DO RED, e a volta a ele conta uma historia inteira.
+  -- RED'S ROOM, and the return to it tells a whole story.
   --
-  -- Primeira escolha: quarto do Red, zero object events. Errado, porque no
-  -- blend CHEIO o unico personagem ali e o jogador e o host esconde o card
-  -- dele acima de 0.9. A tela ficava sem ninguem e a medicao dava zero, que le
-  -- como "o solido nao aparece".
+  -- First choice: Red's room, zero object events. Wrong, because at
+  -- FULL blend the only character there is the player and the host hides his
+  -- card above 0.9. The screen was left with nobody and the measurement gave zero, which reads
+  -- as "the solid doesn't appear".
   --
-  -- Segunda escolha: centro pokemon, "porque tem gente parada". Media com
-  -- sorte: uma corrida achou um NPC no cone da camera e a seguinte nao achou
-  -- nenhum nas quatro direcoes. E quando finalmente casei os blends, o piso
-  -- CARD contra CARD deu 29 mil de 87 mil amostras, 33% do quadro, porque
-  -- aquele mapa tem NPC andando e o gate estava medindo eles.
+  -- Second choice: pokemon center, "because there are people standing around". It measured with
+  -- luck: one run found an NPC in the camera's cone and the next found
+  -- none in the four directions. And when I finally matched the blends, the CARD
+  -- against CARD floor gave 29 thousand out of 87 thousand samples, 33% of the frame, because
+  -- that map has NPCs walking and the gate was measuring them.
   --
-  -- Terceira, e a certa: quarto do Red DE NOVO, mas medindo no MEIO do blend
-  -- em vez de no fim. Ali o card do proprio jogador esta em cena por
-  -- construcao, e ele e o pior caso do defeito, porque a camera esta entrando
-  -- na cabeca dele. Zero object events volta a ser a vantagem que era.
+  -- Third, and the right one: Red's room AGAIN, but measuring at the MIDDLE of the blend
+  -- instead of at the end. There the player's own card is in the scene by
+  -- construction, and it's the worst case of the defect, because the camera is entering
+  -- his head. Zero object events becomes the advantage it used to be again.
   local MAPA = os.getenv("VC_MAP") or "REDS_HOUSE_2F"
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   local _, PX, PY = Pouso.escolher(game, MAPA, 3, 4)
@@ -202,33 +202,33 @@ return function(game)
     return TOTAL or 1
   end
 
-  -- ---------------------------------------------------------------- P1 e P2
+  -- ---------------------------------------------------------------- P1 and P2
   --
-  -- A CAMERA DE PRIMEIRA PESSOA OLHA PARA ONDE O JOGADOR OLHA, entao a direcao
-  -- do teleporte decide se existe personagem no quadro. Em vez de eu escolher
-  -- uma direcao e torcer, o gate MEDE as quatro: liga e desliga o mod inteiro
-  -- e fica com a que mais muda. Essa e a mesma pergunta do controle negativo,
-  -- respondida uma vez e reaproveitada.
-  -- O CONTROLE MEDE CONTRA O CARD DO PROPRIO JOGADOR, e nao contra um NPC que
-  -- talvez esteja no quadro.
+  -- THE FIRST PERSON CAMERA LOOKS WHERE THE PLAYER LOOKS, so the direction
+  -- of the teleport decides whether there is a character in frame. Instead of me choosing
+  -- a direction and hoping, the gate MEASURES all four: turns the whole mod on and off
+  -- and keeps the one that changes the most. That's the same question as the negative control,
+  -- answered once and reused.
+  -- THE CONTROL MEASURES AGAINST THE PLAYER'S OWN CARD, and not against an NPC that
+  -- might be in frame.
   --
-  -- A versao anterior varria as quatro direcoes procurando alguem em cena. Ela
-  -- recusava o veredito quando nao achava, que e o certo, mas achava com sorte:
-  -- mesmo comando, uma corrida achou 531 amostras e a seguinte achou zero nas
-  -- quatro. O probe teleporta para um centro pokemon e torce para um NPC estar
-  -- no cone da camera, e onde os NPCs estao nao e coisa que ele controle. Gate
-  -- que falha por motivo alheio ao codigo ensina a rodar de novo ate ficar
-  -- verde, e gate que se roda de novo nao e gate.
+  -- The previous version swept the four directions looking for someone in the scene. It
+  -- refused the verdict when it didn't find one, which is correct, but found one by luck:
+  -- same command, one run found 531 samples and the next found zero in the
+  -- four. The probe teleports to a pokemon center and hopes for an NPC to be
+  -- in the camera's cone, and where the NPCs are is not something it controls. A gate
+  -- that fails for a reason unrelated to the code teaches you to run it again until it's
+  -- green, and a gate that gets run again is not a gate.
   --
-  -- O jogador esta SEMPRE em cena abaixo do blend 0.9: o host so esconde o card
-  -- dele acima disso (FirstPerson.hidePlayer), e a faixa abaixo e exatamente
-  -- onde o defeito dos espetos vivia, porque e onde a camera entra na cabeca
-  -- dele. Entao o controle mora ali: garantido, e no caso que interessa.
-  -- ESPERAR PELO BLEND, e nao por um numero de quadros. Contar quadros deu
-  -- 0.64 num lado e 0.94 no outro, e a diferenca entre as duas fotos passou a
-  -- ser a CAMERA em vez da opcao: 62 mil amostras de "controle" que nao
-  -- controlavam nada. Parar num valor de blend faz os dois lados casarem por
-  -- construcao.
+  -- The player is ALWAYS in the scene below blend 0.9: the host only hides his card
+  -- above that (FirstPerson.hidePlayer), and the range below is exactly
+  -- where the spike defect lived, because it's where the camera enters his
+  -- head. So the control lives there: guaranteed, and in the case that matters.
+  -- WAITING FOR THE BLEND, and not for a number of frames. Counting frames gave
+  -- 0.64 on one side and 0.94 on the other, and the difference between the two photos became
+  -- the CAMERA instead of the option: 62 thousand "control" samples that did not
+  -- control anything. Stopping at a blend value makes the two sides match by
+  -- construction.
   local ALVO = 0.55
   local function noBlend(alvo)
     sai(); U.wait(50)
@@ -245,11 +245,11 @@ return function(game)
   U.teleport(game, MAPA, PX, PY, "down")
   U.wait(40)
 
-  -- O CONTROLE RODA EM SOLID, e isto ja me enganou uma vez. Com FIRST PERSON
-  -- em CARD o mod devolve o card original nessa camera POR CONTRATO, entao
-  -- ligar e desligar o mod inteiro nao muda nada e o controle mede zero por
-  -- decisao de projeto, nao por falta de personagem em cena. Um controle que
-  -- pode dar zero pelo motivo certo e pelo motivo errado nao controla nada.
+  -- THE CONTROL RUNS IN SOLID, and this already fooled me once. With FIRST PERSON
+  -- set to CARD the mod returns the original card in this camera BY CONTRACT, so
+  -- turning the whole mod on and off changes nothing and the control measures zero by
+  -- design decision, not by lack of character in the scene. A control that
+  -- can give zero for the right reason and for the wrong reason controls nothing.
   opcao("first_person", "solid")
   opcao("depth", 3); U.wait(8)
   local bCom, com = noBlend(ALVO)
@@ -276,7 +276,7 @@ return function(game)
     return fim()
   end
 
-  -- Dali em diante, sempre a mesma direcao.
+  -- From there on, always the same direction.
   local DIR = melhor.dir
   local function posiciona()
     sai(); U.wait(30)
@@ -285,7 +285,7 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- P3
-  -- No MESMO blend do controle, porque e ali que existe personagem garantido.
+  -- At the SAME blend as the control, because that's where a character is guaranteed to exist.
   local function ladoNoBlend(modo)
     opcao("first_person", modo); U.wait(8)
     return noBlend(ALVO)
@@ -302,13 +302,13 @@ return function(game)
 
   -- ---------------------------------------------------------------- P4
   --
-  -- O PISO VEM DO MESMO PROCEDIMENTO. Comparar a diferenca contra um numero
-  -- absoluto escolhido por mim mediria o meu chute; comparar contra CARD-CARD
-  -- feito com a mesma saida, mesma entrada e mesma espera mede so o que a
-  -- opcao mudou. Tudo que a cena faz sozinha nesse intervalo aparece nos dois.
-  -- Tambem por blend, e nao por quadro. Com contagem de quadros o piso da
-  -- transicao chegou a 39 mil de 87 mil amostras, quase o teto inteiro: os
-  -- dois lados paravam em blends diferentes e a diferenca era a camera.
+  -- THE FLOOR COMES FROM THE SAME PROCEDURE. Comparing the difference against a number
+  -- I picked by hand would measure my own guess; comparing against CARD-CARD
+  -- done with the same output, same input and same wait measures only what the
+  -- option changed. Everything the scene does on its own in that interval shows up in both.
+  -- Also by blend, and not by frame. With frame counting the transition
+  -- floor reached 39 thousand out of 87 thousand samples, almost the whole ceiling: the
+  -- two sides stopped at different blends and the difference was the camera.
   local function amostraEm(alvo, modo)
     opcao("first_person", modo); U.wait(6)
     return noBlend(alvo)
@@ -335,16 +335,16 @@ return function(game)
   end
   sai(); U.wait(60)
 
-  -- O CRITERIO. Um solido honesto difere do card no CORPO e em nada mais, e o
-  -- corpo em primeira pessoa e grande, entao um teto apertado reprovaria a
-  -- feature funcionando. O espeto e diferente em especie: a cunha preta sai do
-  -- corpo e varre o quadro. Metade do quadro separa os dois com folga dos dois
-  -- lados, e o piso medido no mesmo procedimento diz quanto disso e a cena.
+  -- THE CRITERION. An honest solid differs from the card in the BODY and nothing else, and the
+  -- body in first person is large, so a tight ceiling would fail the
+  -- feature working. The spike is different in kind: the black wedge comes out of the
+  -- body and sweeps the frame. Half the frame separates the two with margin on both
+  -- sides, and the floor measured with the same procedure says how much of that is the scene.
   local TETO = total() * 0.5
-  -- TETO E PISO. So com teto, P4 nao distingue "nao explodiu" de "nao
-  -- desenhou": um SOLID que caisse no card durante a transicao daria sinal
-  -- zero, que e <= teto, e passaria. P3 nao cobre isso porque mede no blend
-  -- alvo, nao na varredura.
+  -- CEILING AND FLOOR. With only a ceiling, P4 doesn't distinguish "did not explode" from "did not
+  -- draw": a SOLID that fell back to the card during the transition would give a
+  -- zero signal, which is <= ceiling, and would pass. P3 doesn't cover this because it measures at the
+  -- target blend, not on the sweep.
   veredito("P4", usadas >= 5 and piorSinal <= TETO
       and piorSinal > piorPiso * 2 + 100,
     string.format("pior CARD-SOLID na transicao %d (%.1f%%) no blend %.2f, "

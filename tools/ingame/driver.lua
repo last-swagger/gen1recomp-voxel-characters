@@ -1,83 +1,83 @@
--- Gate in-game do Voxel Characters.
+-- In-game gate for Voxel Characters.
 --
--- O harness offline (tools/render/) mede geometria e cor em dois segundos, mas
--- carrega o mod com o host MOCKADO. Por construcao ele nunca mostra o sol de
--- verdade (o host faz p.rgb * vShade * sunlight * dayTint e o harness so tem o
--- vShade), nem o personagem contra o mundo, nem a escala real (o harness usa
--- celulas de 240 a 320 px e o jogo desenha numa fracao disso), nem movimento.
+-- The offline harness (tools/render/) measures geometry and color in two seconds, but
+-- it loads the mod with the host MOCKED. By construction it never shows the real
+-- sun (the host does p.rgb * vShade * sunlight * dayTint and the harness only has
+-- vShade), nor the character against the world, nor the real scale (the harness uses
+-- cells of 240 to 320 px and the game draws at a fraction of that), nor movement.
 --
--- Nao substitui o harness: o harness pega regressao rapido, este responde
--- "presta".
+-- It does not replace the harness: the harness catches regressions fast, this one answers
+-- "is it any good".
 --
--- ISTO USA tests/drivers/util.lua, o utilitario que os 240 drivers do proprio
--- projeto usam. Eu escrevi este arquivo duas vezes do zero antes de procurar,
--- e as duas versoes falharam por coisas que o util.lua ja resolve.
+-- THIS USES tests/drivers/util.lua, the utility that the project's own 240
+-- drivers use. I wrote this file twice from scratch before looking,
+-- and both versions failed because of things util.lua already solves.
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
   dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   local n = 0
 
-  -- Sem TTY o stdout do LOVE fica em buffer de BLOCO e um processo que nao sai
-  -- nunca esvazia. Log vazio nao distingue "nao aconteceu nada" de "nao
-  -- terminou", e eu ja tirei a conclusao errada disso mais de uma vez.
+  -- Without a TTY, LOVE's stdout is BLOCK buffered and a process that doesn't exit
+  -- never flushes. An empty log doesn't distinguish "nothing happened" from "hasn't
+  -- finished", and I've already drawn the wrong conclusion from this more than once.
   io.stdout:setvbuf("line")
 
-  -- VSYNC DESLIGADO, E ESTA E A LINHA QUE FAZ O GATE FUNCIONAR SOZINHO.
+  -- VSYNC OFF, AND THIS IS THE LINE THAT MAKES THE GATE WORK BY ITSELF.
   --
-  -- Com vsync ligado e a janela ocluida (o caso normal quando isto roda de um
-  -- shell, atras do editor), love.graphics.present() espera um flip que o
-  -- compositor do macOS nao agenda enquanto ninguem esta olhando. O laco de
-  -- love.run inteiro para: medido em 5 quadros em 90 segundos. O sintoma e
-  -- indistinguivel de "travou no launcher" (zero fotos, log vazio) e foi por
-  -- isso que este gate passou dias parecendo quebrado. Os drivers do PROPRIO
-  -- projeto (tests/drivers/zoom_test.lua) travam igual sem isto: nao era
-  -- codigo nosso.
+  -- With vsync on and the window occluded (the normal case when this runs from a
+  -- shell, behind the editor), love.graphics.present() waits for a flip that the
+  -- macOS compositor doesn't schedule while nobody is looking. The entire
+  -- love.run loop stops: measured at 5 frames in 90 seconds. The symptom is
+  -- indistinguishable from "stuck at the launcher" (zero photos, empty log) and that's
+  -- why this gate spent days looking broken. The PROJECT'S OWN drivers
+  -- (tests/drivers/zoom_test.lua) hang the same way without this: it wasn't
+  -- our code.
   if love.window and love.window.setVSync then pcall(love.window.setVSync, 0) end
 
-  -- FOTO: love.graphics.captureScreenshot, NAO U.shot.
+  -- PHOTO: love.graphics.captureScreenshot, NOT U.shot.
   --
-  -- Os dois existem e sao caminhos de codigo diferentes. O U.shot usa
-  -- game.capturePath e grava com io.open em caminho RELATIVO ao diretorio de
-  -- trabalho; o captureScreenshot grava no diretorio de save do LOVE. Eu ja
-  -- tinha um driver funcionando com o segundo e quebrei tudo ao "melhorar"
-  -- para o padrao do projeto sem verificar que o mecanismo novo funcionava
-  -- neste ambiente. Adotar a estrutura da casa foi certo; adotar junto um
-  -- mecanismo que eu nao tinha provado, nao.
+  -- Both exist and are different code paths. U.shot uses
+  -- game.capturePath and writes with io.open to a path RELATIVE to the working
+  -- directory; captureScreenshot writes to LOVE's save directory. I already
+  -- had a driver working with the latter and broke everything by "improving"
+  -- to match the project's pattern without checking that the new mechanism worked
+  -- in this environment. Adopting the house structure was right; adopting along with it
+  -- a mechanism I hadn't proven, was not.
   local function foto(nome)
     n = n + 1
     local caminho = string.format("vc_%02d_%s.png", n, nome)
     love.graphics.captureScreenshot(caminho)
-    U.wait(8)  -- a captura so chega no disco no fim do quadro
+    U.wait(8)  -- the capture only lands on disk at the end of the frame
     U.log("foto " .. caminho)
   end
 
   U.log("VC driver: comecando")
 
-  -- CHEGAR AO MUNDO: U.teleport, nao marteladas de "a".
+  -- REACHING THE WORLD: U.teleport, not hammering "a".
   --
-  -- A versao anterior deste arquivo esperava ate 900 quadros e depois batia
-  -- "a" trezentas vezes torcendo para atravessar titulo e menu, e falhava com
-  -- ZERO fotos e log vazio. Duas coisas estavam erradas e as duas foram
-  -- medidas:
+  -- The previous version of this file waited up to 900 frames and then mashed
+  -- "a" three hundred times hoping to get through title and menu, and it failed with
+  -- ZERO photos and an empty log. Two things were wrong and both were
+  -- measured:
   --
-  -- 1. POKEPORT_GAME e POKEPORT_SLOT sao LETRA MORTA aqui. Eles so sao lidos
-  --    em LaunchOptions.resolve (main.lua:359), que fica DEPOIS do
-  --    `if scripted then ... return end` (main.lua:313-330). Com
-  --    POKEPORT_DRIVER setado o controle nunca chega la. A versao que boota
-  --    vem de POKEPORT_VERSION (main.lua:304), default "red". Nesta maquina
-  --    red NAO esta pronto (faltam assets/generated/audio/programs.bin e
-  --    assets/generated/trade/game_boy.png), entao o boot caia no importador
-  --    e ficava esperando um ROM que ninguem ia arrastar: o driver nem chegava
-  --    a ser criado. Quem resolve isso e o run.sh, exportando POKEPORT_VERSION.
+  -- 1. POKEPORT_GAME and POKEPORT_SLOT are DEAD LETTERS here. They're only read
+  --    in LaunchOptions.resolve (main.lua:359), which comes AFTER the
+  --    `if scripted then ... return end` (main.lua:313-330). With
+  --    POKEPORT_DRIVER set, control never gets there. The version that boots
+  --    comes from POKEPORT_VERSION (main.lua:304), default "red". On this machine
+  --    red is NOT ready (missing assets/generated/audio/programs.bin and
+  --    assets/generated/trade/game_boy.png), so the boot fell into the importer
+  --    and sat waiting for a ROM nobody was going to drag in: the driver never even
+  --    got created. What fixes this is run.sh, exporting POKEPORT_VERSION.
   --
-  -- 2. U.teleport e o padrao da casa: 212 dos 240 drivers do projeto usam, e
-  --    so 8 usam o caminho de apertar tecla. Ele esvazia a pilha e empurra o
-  --    OverworldController direto, entao nao existe titulo para atravessar.
-  -- E O DESTINO E VALIDADO. U.teleport nao valida nada: se a celula pedida for
-  -- placa, mesa, parede ou NPC, o jogador pousa em cima e a foto sai com ele
-  -- num lugar onde ninguem consegue ficar. Foi o Kim que viu isso nas fotos
-  -- antes de mim. Ver tools/ingame/pouso.lua.
+  -- 2. U.teleport is the house standard: 212 of the project's 240 drivers use it, and
+  --    only 8 use the key-press path. It clears the stack and pushes
+  --    OverworldController directly, so there's no title screen to get through.
+  -- AND THE DESTINATION IS VALIDATED. U.teleport doesn't validate anything: if the requested cell is
+  -- a sign, table, wall or NPC, the player lands on top of it and the photo comes out with them
+  -- in a place nobody can stand. It was Kim who spotted this in the photos
+  -- before I did. See tools/ingame/pouso.lua.
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   local MAPA, X, Y, RAIO = Pouso.escolher(game,
     os.getenv("VC_MAP") or "VIRIDIAN_CITY",
@@ -99,10 +99,10 @@ return function(game)
   end
   U.log("VC driver: no mundo, mapa " .. MAPA)
 
-  -- Ligar uma opcao do mod por codigo, para comparar com e sem sem ninguem
-  -- navegar menu. VC_OPT="front_shape=0.12". O mod persiste a opcao no save e
-  -- reage ao evento mod.options_changed, entao escrever e emitir e o mesmo
-  -- caminho que o menu usa.
+  -- Turn on a mod option by code, to compare with and without anyone
+  -- navigating the menu. VC_OPT="front_shape=0.12". The mod persists the option in the save and
+  -- reacts to the mod.options_changed event, so writing and emitting is the same
+  -- path the menu uses.
   local opt = os.getenv("VC_OPT")
   if opt and opt ~= "" then
     local chave, valor = opt:match("^([%w_]+)=(.+)$")
@@ -118,10 +118,10 @@ return function(game)
           game.mods.modOptions.voxel_characters or {}
         game.mods.modOptions.voxel_characters[chave] = valor
       end
-      -- O barramento e game.mods.events, nao game.mods (src/mods/Loader.lua:595
-      -- e :1059). Escrever a opcao no save SEM emitir nao muda nada na tela,
-      -- porque a malha ja esta cacheada: foi assim que eu produzi um A/B com
-      -- imagens byte a byte identicas e quase apresentei como comparacao.
+      -- The bus is game.mods.events, not game.mods (src/mods/Loader.lua:595
+      -- and :1059). Writing the option to the save WITHOUT emitting changes nothing on screen,
+      -- because the mesh is already cached: that's how I produced an A/B with
+      -- byte-for-byte identical images and nearly presented it as a comparison.
       local emitiu = false
       if game.mods and game.mods.events
         and type(game.mods.events.emit) == "function" then
@@ -129,14 +129,14 @@ return function(game)
           "mod.options_changed",
           { mod = "voxel_characters", key = chave, value = valor })
       end
-      -- LER DE VOLTA, e nao confiar no emit. `pcall(emit)` devolve verdadeiro
-      -- quando o barramento aceitou a mensagem, INCLUSIVE quando nao ha
-      -- ouvinte nenhum, ou seja quando o voxel_characters nem esta carregado.
-      -- Esta guarda existe para impedir um A/B com dois lados identicos, e do
-      -- jeito que estava ela atestava que a mensagem saiu, nao que ela chegou.
+      -- READ IT BACK, and don't trust the emit. `pcall(emit)` returns true
+      -- when the bus accepted the message, EVEN WHEN there is no
+      -- listener at all, meaning when voxel_characters isn't even loaded.
+      -- This guard exists to prevent an A/B with two identical sides, and the
+      -- way it was, it attested that the message went out, not that it arrived.
       --
-      -- A row de STATUS le o estado do PROPRIO mod, entao ela e a resposta de
-      -- quem recebeu. Sem ela, nada aqui distingue "aplicado" de "ignorado".
+      -- The STATUS row reads the state of the mod ITSELF, so it is the response of
+      -- whoever received it. Without it, nothing here distinguishes "applied" from "ignored".
       local chegou, status = false, nil
       local rows = {}
       local okRows = pcall(function()
@@ -165,9 +165,9 @@ return function(game)
 
   foto("no_mundo")
 
-  -- Os oito degraus de camera do host. A tecla "3" cicla o pipeline voxel:
-  -- ele e registrado com hotkey = "3" em DramaticShapeVoxelMod/main.lua:155,
-  -- sobre VoxelState.ANGLES_DEG = { 0, 35, 15, 35, 50, 75, 75, 75 }.
+  -- The host's eight camera steps. The "3" key cycles the voxel pipeline:
+  -- it's registered with hotkey = "3" in DramaticShapeVoxelMod/main.lua:155,
+  -- over VoxelState.ANGLES_DEG = { 0, 35, 15, 35, 50, 75, 75, 75 }.
   for i = 1, 7 do
     U.tap(game, "3")
     U.wait(20)
@@ -175,23 +175,23 @@ return function(game)
   end
   U.log("VC driver: angulos cobertos")
 
-  -- PRIMEIRA PESSOA, os dois modos, e por que ela precisa de tratamento
-  -- proprio mesmo estando na volta da tecla "3".
+  -- FIRST PERSON, both modes, and why it needs its own
+  -- handling even though it's within the "3" key cycle.
   --
-  -- O degrau 6 do HOTKEY_ORDER ja e 1ST, entao camera5 acima ja e primeira
-  -- pessoa. Mas com o padrao (FIRST PERSON = CARD) essa foto mostra o card
-  -- plano, que e o comportamento antigo, e o gate contava a foto sem nunca
-  -- olhar o modo novo. Duas fotos do MESMO degrau, uma em cada modo, e o que
-  -- torna a diferenca visivel para quem abre a pasta.
+  -- Step 6 of HOTKEY_ORDER is already 1ST, so camera5 above is already first
+  -- person. But with the default (FIRST PERSON = CARD) that photo shows the flat
+  -- card, which is the old behavior, and the gate counted the photo without ever
+  -- looking at the new mode. Two photos of the SAME step, one in each mode, is what
+  -- makes the difference visible to whoever opens the folder.
   --
-  -- Pelo Pipelines e nao por tecla: a volta da tecla depende de onde o save
-  -- parou, e o gate nao pode depender disso para chegar num degrau especifico.
+  -- Via Pipelines and not via key: the key cycle depends on where the save
+  -- stopped, and the gate can't depend on that to reach a specific step.
   do
     local ok = pcall(function()
       require("src.render.Pipelines").setLevel("voxel", 6)
     end)
     if ok then
-      U.wait(120)  -- o degrau faz tween e a primeira pessoa tem blend por cima
+      U.wait(120)  -- the step tweens and first person has a blend on top
       for _, modo in ipairs({ "card", "solid" }) do
         local o = game.save and game.save.options
         if o then
@@ -221,21 +221,21 @@ return function(game)
     end
   end
 
-  -- Andando. E a unica coisa que imagem parada de harness nao julga.
+  -- Walking. It's the one thing a still harness image can't judge.
   for i = 1, 6 do
     U.hold(game, "down", 8)
     if i % 2 == 0 then foto(string.format("andando%d", i)) end
   end
 
-  -- CONTROLE NEGATIVO: existe personagem NOSSO em alguma dessas fotos?
+  -- NEGATIVE CONTROL: is OUR character present in any of these photos?
   --
-  -- Ate agora este gate dizia GATE OK contando ARQUIVOS. Desligar o mod inteiro
-  -- deixaria ele verde: o driver roda ate o fim, escreve as fotos, e ninguem
-  -- olha um pixel. Um gate assim mede que o jogo abriu, nao que o mod fez algo.
+  -- Until now this gate said GATE OK by counting FILES. Turning off the whole mod
+  -- would leave it green: the driver runs to the end, writes the photos, and nobody
+  -- looks at a single pixel. A gate like that measures that the game opened, not that the mod did anything.
   --
-  -- O controle e ligar e desligar o mod na MESMA posicao e na MESMA camera e
-  -- comparar. Fotografa os dois estados em disco para quem abrir a pasta poder
-  -- olhar, e imprime o numero para o run.sh poder reprovar.
+  -- The control is turning the mod on and off at the SAME position and SAME camera and
+  -- comparing. It photographs both states to disk so whoever opens the folder can
+  -- look, and prints the number so run.sh can fail the gate.
   do
     local function opta(valor)
       local o = game.save and game.save.options
@@ -282,14 +282,14 @@ return function(game)
       return d, n
     end
 
-    -- O PISO SAI DA MESMA CORRIDA. Duas fotos com o mod LIGADO, sem trocar
-    -- nada entre elas, medem o quanto a cena anda sozinha: ciclo de dia, NPC
-    -- perambulando, tudo que nao e o mod.
+    -- THE FLOOR COMES FROM THE SAME RUN. Two photos with the mod ON, without changing
+    -- anything between them, measure how much the scene moves on its own: day cycle, NPC
+    -- wandering, everything that isn't the mod.
     --
-    -- Sem isso o limiar era uma fracao que eu escolhi (um quinhentos avos), e
-    -- ao neutralizar o mod de proposito a medida deu 175 de 87552 contra um
-    -- limiar de exatamente 175: passou raspando, por acaso. Limiar escolhido
-    -- no chute nao separa sinal de ruido, so parece que separa.
+    -- Without this the threshold was a fraction I picked (one five-hundredth), and
+    -- when deliberately neutralizing the mod the measurement came out 175 of 87552 against a
+    -- threshold of exactly 175: it passed by a hair, by chance. A threshold chosen
+    -- by guessing doesn't separate signal from noise, it just looks like it does.
     opta(3)
     local com1 = pega()
     U.wait(20)

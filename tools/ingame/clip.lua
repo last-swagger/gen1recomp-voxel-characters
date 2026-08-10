@@ -1,19 +1,19 @@
--- Grava os quadros de um clipe lado a lado: o mesmo lugar, a mesma camera, o
--- mesmo numero de quadros, uma vez com a opcao desligada e uma vez com ela
--- ligada. Quem monta o video e o clip.sh, com ffmpeg.
+-- Records the frames of a side-by-side clip: the same place, the same camera,
+-- the same number of frames, once with the option off and once with it on.
+-- clip.sh is what assembles the video, with ffmpeg.
 --
--- POR QUE ISTO EXISTE: BREATH, SWAY e MOTION LAG so significam alguma coisa no
--- TEMPO. Foto parada nao julga nenhuma das tres, e ate agora a unica forma de
--- mostrar o efeito para alguem era pedir para a pessoa abrir o jogo. Um clipe
--- de tres segundos resolve isso, e e tambem o que a comunidade consegue ver
--- numa mensagem de Discord.
+-- WHY THIS EXISTS: BREATH, SWAY and MOTION LAG only mean anything over TIME.
+-- A still photo judges none of the three, and until now the only way to show
+-- the effect to someone was asking them to open the game. A three-second
+-- clip solves that, and it is also what the community can see in a Discord
+-- message.
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
   dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   io.stdout:setvbuf("line")
-  -- Sem isto o laco anda a menos de um quadro por segundo com a janela
-  -- ocluida, e gravar 200 quadros levaria minutos. Ver tools/ingame/driver.lua.
+  -- Without this the loop runs at less than one frame per second with the
+  -- window occluded, and recording 200 frames would take minutes. See tools/ingame/driver.lua.
   if love.window and love.window.setVSync then pcall(love.window.setVSync, 0) end
 
   local function log(fmt, ...)
@@ -21,17 +21,17 @@ return function(game)
     print("[clip] " .. (ok and s or tostring(fmt)))
   end
 
-  -- DOIS LADOS ARBITRARIOS, nao so desligado contra ligado.
+  -- TWO ARBITRARY SIDES, not just off against on.
   --
-  -- VC_CLIP_OPT="breath=0.020"            esquerda OFF, direita 0.020
-  -- VC_CLIP_OPT="breath=0.010:0.035"      esquerda 0.010, direita 0.035
+  -- VC_CLIP_OPT="breath=0.020"            left OFF, right 0.020
+  -- VC_CLIP_OPT="breath=0.010:0.035"      left 0.010, right 0.035
   --
-  -- A segunda forma existe para o loop de escolha: julgar entre dois
-  -- candidatos e mais facil e mais confiavel do que julgar um sozinho, e e o
-  -- unico jeito de a preferencia de quem assiste virar sinal aproveitavel.
-  -- Comparar contra OFF responde "faz alguma coisa?"; comparar dois niveis
-  -- responde "qual deles?", que e a pergunta que sobra depois que a feature ja
-  -- existe.
+  -- The second form exists for the choice loop: judging between two
+  -- candidates is easier and more reliable than judging one alone, and it is
+  -- the only way for the viewer's preference to become usable signal.
+  -- Comparing against OFF answers "does it do anything?"; comparing two
+  -- levels answers "which one?", which is the question left over once the
+  -- feature already exists.
   local OPT = os.getenv("VC_CLIP_OPT") or "breath=0.020"
   local CHAVE, RESTO = OPT:match("^([%w_]+)=(.+)$")
   if not CHAVE then log("opcao ilegivel: %s", OPT); return end
@@ -63,8 +63,8 @@ return function(game)
     return ok
   end
 
-  -- POUSO. Ver tools/ingame/pouso.lua: U.teleport nao valida nada, e por isso
-  -- o jogador aterrissava em cima de placa e de mesa nas fotos do gate.
+  -- LANDING SPOT. See tools/ingame/pouso.lua: U.teleport does not validate
+  -- anything, which is why the player used to land on top of signs and tables in the gate's photos.
   local pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   local mapa, x, y = pouso.escolher(game,
     os.getenv("VC_MAP") or "OAKS_LAB",
@@ -77,18 +77,18 @@ return function(game)
   end
   log("mapa %s em (%d,%d)", mapa, x, y)
 
-  -- DEGRAU DE CAMERA, e primeira pessoa entre eles.
+  -- CAMERA STEP, and first person is one of them.
   --
-  -- Ate agora todo clipe saiu no degrau que o save tinha, o que ja rescalou
-  -- contagem de pixel entre corridas neste projeto e, pior, deixou a primeira
-  -- pessoa sem NENHUM clipe: os jogadores pediram a feature e nao havia como
-  -- mostra-la lado a lado.
+  -- Until now every clip came out on whatever step the save had, which had
+  -- already rescaled pixel counts between runs in this project and, worse,
+  -- left FIRST PERSON with NO clip at all: players asked for the feature and
+  -- there was no way to show it side by side.
   --
-  -- Pela mesma porta que o host usa, e nao por VoxelState.setLevel: quem e
-  -- dono do degrau e o Pipelines do motor, e Voxel.update reescreve
-  -- Voxel.level a partir dele todo quadro (VoxelState.lua:180). Chamar o
-  -- errado nao da erro, so nao faz nada, e o sintoma parece a camera nao
-  -- existir.
+  -- Through the same door the host uses, and not through VoxelState.setLevel:
+  -- the step is owned by the engine's Pipelines, and Voxel.update rewrites
+  -- Voxel.level from it every frame (VoxelState.lua:180). Calling the wrong
+  -- one does not error, it just does nothing, and the symptom looks like the
+  -- camera does not exist.
   local DEGRAUS = { off = 0, baixo = 2, medio = 3, alto = 4, empe = 5,
                     primeira = 6, terceira = 7 }
   local pedido = os.getenv("VC_CLIP_DEGRAU")
@@ -103,25 +103,25 @@ return function(game)
       require("src.render.Pipelines").setLevel("voxel", nivel)
     end)
     if not ok then log("nao consegui trocar o degrau de camera"); return end
-    -- O degrau faz tween e a primeira pessoa ainda tem o blend por cima dele.
-    -- Gravar antes de assentar poe o movimento da CAMERA dentro do clipe, e o
-    -- olho le isso como o efeito que a gente esta tentando mostrar.
+    -- The step tweens and first person still has the blend on top of it.
+    -- Recording before it settles puts the CAMERA's motion inside the clip,
+    -- and the eye reads that as the effect we are trying to show.
     U.wait(120)
     log("degrau de camera: %s (nivel %d)", pedido, nivel)
   end
 
-  -- POR QUE FECHADO E NAO NA RUA. Na rua o ceu tem ciclo de dia, e como os dois
-  -- lados sao gravados um depois do outro, o degrade do fundo muda entre eles:
-  -- quem olha o lado a lado ve o ceu diferente antes de ver o personagem
-  -- respirar, e a diferenca que importa fica em segundo plano. Dentro do
-  -- laboratorio nao ha ceu, e ainda tem gente parada o bastante para mostrar
-  -- que cada um respira na sua fase.
+  -- WHY INDOORS AND NOT ON THE STREET. Outside, the sky has a day cycle, and
+  -- since the two sides are recorded one after the other, the background
+  -- gradient shifts between them: whoever looks at the side by side sees a
+  -- different sky before seeing the character breathe, and the difference
+  -- that matters falls into the background. Inside the lab there is no sky,
+  -- and there are still enough people standing still to show each one breathes on its own phase.
   --
-  -- ZOOM ZERO POR PADRAO. Forcar zoom no jogo puxa a camera para um angulo
-  -- baixo e o quadro vira parede e chao. Quem aproxima e o RECORTE no clip.sh,
-  -- depois, sobre o que o jogo desenhou: o personagem fica sempre perto do
-  -- centro porque a camera o segue, entao recortar o centro basta e nao mexe em
-  -- nada da cena.
+  -- ZOOM ZERO BY DEFAULT. Forcing zoom in the game pulls the camera to a low
+  -- angle and the frame turns into wall and floor. What zooms in is the CROP
+  -- in clip.sh, afterward, over what the game already drew: the character
+  -- stays near the center because the camera follows it, so cropping the
+  -- center is enough and does not touch anything in the scene.
   U.tap(game, "3")
   U.wait(30)
   for _ = 1, ZOOM do
@@ -129,45 +129,45 @@ return function(game)
   end
   U.wait(30)
 
-  -- BLINK desligado durante o clipe: ele anima olho no tempo e apareceria nos
-  -- dois lados, confundindo quem tenta ver o que a opcao muda.
+  -- BLINK off during the clip: it animates the eye over time and would show
+  -- up on both sides, confusing anyone trying to see what the option changes.
   opcao("blink", "off")
   opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
   opcao("footfall", "off")
   U.wait(30)
-  -- O lado esquerdo pode ser um NIVEL, nao so o desligado.
+  -- The left side can be a LEVEL, not just the off state.
   if VAL_ESQ ~= "off" then opcao(CHAVE, VAL_ESQ); U.wait(30) end
 
-  -- MOTION LAG so existe com o personagem SE MOVENDO: parado, a mola esta em
-  -- repouso e os dois lados sairiam identicos, o que faria o clipe provar que a
-  -- feature nao faz nada. Entao para essa opcao os dois lados andam, e andam
-  -- IGUAL: mesma direcao, mesmo numero de quadros, invertendo no meio para o
-  -- personagem nao sair do enquadramento.
-  -- MOTION LAG e FOOTFALL so existem com o personagem SE MOVENDO. Parado, a
-  -- mola esta em repouso e a velocidade e zero, entao os dois lados sairiam
-  -- identicos e o clipe provaria que a feature nao faz nada.
+  -- MOTION LAG only exists with the character MOVING: standing still, the
+  -- spring is at rest and both sides would come out identical, which would
+  -- make the clip prove that the feature does nothing. So for this option
+  -- both sides walk, and walk THE SAME WAY: same direction, same number of
+  -- frames, reversing halfway so the character does not leave the frame.
+  -- MOTION LAG and FOOTFALL only exist with the character MOVING. Standing
+  -- still, the spring is at rest and the velocity is zero, so both sides
+  -- would come out identical and the clip would prove the feature does nothing.
   local ANDA = (CHAVE == "lag" or CHAVE == "footfall")
     or os.getenv("VC_CLIP_ANDAR") == "1"
-  -- Quantos quadros ANDANDO antes de inverter o sentido. Trocar de direcao
-  -- custa uma parada, e parada mata justamente o efeito que se quer filmar,
-  -- entao o padrao anda o suficiente para tres passos inteiros de 16 quadros
-  -- em cada sentido antes de virar.
+  -- How many frames WALKING before reversing direction. Changing direction
+  -- costs a stop, and stopping is exactly what kills the effect we are trying
+  -- to film, so the default walks long enough for three full 16-frame steps
+  -- in each direction before turning around.
   local TRECHO = tonumber(os.getenv("VC_CLIP_TRECHO")) or 48
 
-  -- ------------------------------------------------------- LEGENDA NO QUADRO
-  -- O rotulo e desenhado DENTRO DO JOGO, nao colado depois pelo ffmpeg, e a
-  -- razao e concreta: o ffmpeg desta maquina foi compilado sem libfreetype,
-  -- entao nao tem o filtro drawtext. Um pipeline de trailer que depende de um
-  -- build de terceiro quebra no primeiro colaborador que nao tem o mesmo.
+  -- ------------------------------------------------------- CAPTION IN FRAME
+  -- The label is drawn INSIDE THE GAME, not pasted on afterward by ffmpeg, and
+  -- the reason is concrete: this machine's ffmpeg was built without libfreetype,
+  -- so it has no drawtext filter. A trailer pipeline that depends on a
+  -- third-party build breaks on the first contributor who does not have it.
   --
-  -- Desenhando aqui, o texto entra no quadro de origem e sobrevive a tudo que
-  -- vem depois: recorte, escala, mp4 e gif. E cada lado carrega o proprio
-  -- rotulo, entao quando os dois sao empilhados o BEFORE cai na esquerda e o
-  -- AFTER na direita sem ninguem coordenar nada.
+  -- Drawn here, the text enters the source frame and survives everything that
+  -- comes after: crop, scale, mp4 and gif. And each side carries its own
+  -- label, so when the two are stacked BEFORE lands on the left and AFTER
+  -- lands on the right without anyone coordinating anything.
   --
-  -- O QUE OLHAR e o pedido do Kim e e a parte que mais vale: um clipe sem isso
-  -- exige que quem assiste ja saiba o que a feature faz. Com isso, o clipe se
-  -- explica sozinho, que e o que um trailer precisa fazer.
+  -- WHAT TO WATCH is Kim's request, and it is the part that matters most: a
+  -- clip without it requires whoever is watching to already know what the
+  -- feature does. With it, the clip explains itself, which is what a trailer needs to do.
   local O_QUE_OLHAR = {
     breath = "os ombros subindo e descendo com o personagem parado",
     sway = "o corpo trocando o peso de um lado para o outro",
@@ -179,14 +179,14 @@ return function(game)
     shape = "como o volume e construido",
   }
 
-  -- O ROTULO DO NIVEL VEM DO PROPRIO MOD, nao de uma tabela aqui.
+  -- THE LEVEL'S LABEL COMES FROM THE MOD ITSELF, not from a table in this file.
   --
-  -- A legenda precisa dizer "NORMAL", nao "0.7". Manter um mapa de valor para
-  -- rotulo neste arquivo criaria uma segunda fonte da verdade que envelhece na
-  -- primeira vez que alguem mexer num nivel, e o clipe passaria a mentir sem
-  -- nenhum teste reclamar. Em vez disso a gente monta as rows do menu pelo
-  -- mesmo hook que o jogo usa e le o valor da row, que e literalmente o texto
-  -- que aparece na tela de opcoes.
+  -- The caption needs to say "NORMAL", not "0.7". Keeping a value-to-label map
+  -- in this file would create a second source of truth that goes stale the
+  -- first time someone touches a level, and the clip would start lying
+  -- without any test complaining. Instead we build the menu rows through the
+  -- same hook the game uses and read the row's value, which is literally the
+  -- text that shows up on the options screen.
   local function rotuloDoNivel(chave)
     local ok, Runtime = pcall(require, "src.mods.Runtime")
     if not ok then return nil end
@@ -205,8 +205,8 @@ return function(game)
   local fonteMedia = love.graphics.newFont(15)
   local legendaTag = nil
 
-  -- A area que o clip.sh recorta, em coordenadas de janela. A legenda precisa
-  -- cair DENTRO dela, senao ela existe no quadro cheio e some no recorte.
+  -- The area clip.sh crops, in window coordinates. The caption needs to land
+  -- INSIDE it, otherwise it exists in the full frame and disappears in the crop.
   local RX, RY, RW, RH = 232, 200, 560, 420
   do
     local r = os.getenv("VC_CLIP_RECORTE")
@@ -226,14 +226,14 @@ return function(game)
     love.graphics.origin()
     love.graphics.setBlendMode("alpha")
 
-    -- faixa de cima: BEFORE / AFTER e a opcao com o nivel
+    -- top bar: BEFORE / AFTER and the option with its level
     love.graphics.setColor(0, 0, 0, 0.62)
     love.graphics.rectangle("fill", RX, RY, RW, 52)
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.setFont(fonteGrande)
-    -- BEFORE e AFTER so fazem sentido quando um dos lados e o estado atual.
-    -- Num A/B entre dois niveis os dois sao candidatos, entao a legenda passa a
-    -- ser A e B: chamar um deles de "before" mentiria sobre o que se compara.
+    -- BEFORE and AFTER only make sense when one of the sides is the current
+    -- state. In an A/B between two levels both are candidates, so the caption
+    -- switches to A and B: calling one of them "before" would lie about what is being compared.
     local ehContraOff = tostring(VAL_ESQ) == "off"
     love.graphics.print(
       ehContraOff and (antes and "BEFORE" or "AFTER") or (antes and "A" or "B"),
@@ -245,7 +245,7 @@ return function(game)
         or tostring(antes and VAL_ESQ or VALOR)):upper(),
       RX + 12, RY + 31)
 
-    -- faixa de baixo: o que olhar
+    -- bottom bar: what to watch
     local dica = O_QUE_OLHAR[CHAVE]
     if dica then
       love.graphics.setColor(0, 0, 0, 0.62)
@@ -272,44 +272,44 @@ return function(game)
     if ANDA then
       game.input.state["left"] = false
       game.input.state["right"] = false
-      U.wait(45)  -- deixa a mola voltar ao repouso antes do proximo lado
+      U.wait(45)  -- let the spring return to rest before the next side
     end
     log("lado %s gravado%s", tag, ANDA and " (andando)" or "")
   end
 
-  -- MESMO PONTO DE PARTIDA NOS DOIS LADOS, e isto foi aprendido olhando o
-  -- resultado. Quando o clipe anda, o segundo lado comecava de onde o primeiro
-  -- tinha parado, entao o lado a lado mostrava o personagem em LUGARES
-  -- diferentes e ninguem conseguia ver o efeito: o olho compara a posicao
-  -- antes de comparar a deformacao. Voltar para a mesma celula antes de cada
-  -- lado deixa a unica diferenca visivel ser a opcao.
+  -- SAME STARTING POINT ON BOTH SIDES, and this was learned by watching the
+  -- result. When the clip walks, the second side used to start from wherever
+  -- the first one had stopped, so the side by side showed the character in
+  -- DIFFERENT PLACES and nobody could see the effect: the eye compares
+  -- position before it compares deformation. Returning to the same cell
+  -- before each side leaves the option as the only visible difference.
   local function reposiciona()
     if not ANDA then return end
     U.teleport(game, mapa, x, y, os.getenv("VC_FACING") or "down")
     U.wait(45)
   end
 
-  -- Lado esquerdo: desligado.
+  -- Left side: off.
   reposiciona()
   grava("off")
 
-  -- O PISO: o MESMO lado, gravado DE NOVO, pelo mesmo caminho. E o unico jeito
-  -- de saber quanto dois clipes diferem entre si por motivo que nao e a opcao.
+  -- THE FLOOR: the SAME side, recorded AGAIN, through the same path. It is the
+  -- only way to know how much two clips differ from each other for a reason that is not the option.
   --
-  -- A primeira tentativa de piso comparava o quadro 10 com o quadro 40 da MESMA
-  -- gravacao, e isso mede outra coisa: quadros vizinhos de uma corrida continua
-  -- sao correlacionados, enquanto duas corridas comecam com fases diferentes.
-  -- Medido: com o mesmo valor nos dois lados, "entre" dava 22 dB e "dentro"
-  -- 28 dB, ou seja o par entre lados parecia MAIS diferente, e a guarda
-  -- aprovava um A/B que nao comparava nada.
+  -- The first attempt at a floor compared frame 10 to frame 40 of the SAME
+  -- recording, and that measures something else: neighboring frames of one
+  -- continuous run are correlated, while two separate runs start at different
+  -- phases. Measured: with the same value on both sides, "between" gave 22 dB
+  -- and "within" gave 28 dB, meaning the pair between sides looked MORE
+  -- different, and the guard would approve an A/B that compared nothing.
   --
-  -- Estes quadros nao entram no video; existem so para dar escala.
+  -- These frames do not go into the video; they exist only to give scale.
   reposiciona()
   grava("piso")
 
-  -- Lado direito: a opcao pedida. MOTION LAG so aparece com o personagem se
-  -- movendo, entao para ela os dois lados andam; para as outras, os dois lados
-  -- ficam parados. O que os dois lados nunca fazem e coisas diferentes.
+  -- Right side: the requested option. MOTION LAG only shows up with the
+  -- character moving, so for it both sides walk; for the others, both sides
+  -- stay still. What the two sides never do is different things.
   opcao(CHAVE, NUM)
   U.wait(30)
   reposiciona()

@@ -1,38 +1,38 @@
--- Gate in-game do canal de vida.
+-- In-game gate for the life channel.
 --
--- PRIMEIRO ERRO DESTE ARQUIVO, guardado porque e instrutivo: a primeira versao
--- envolvia Voxel3D.draw por CIMA do wrap do mod e lia a matriz achando que via
--- a saida. Ve a ENTRADA. Quem envolve depois roda antes. O resultado foi
--- "escala 1.000000 em 440 amostras", que eu quase li como "a feature nao
--- funciona" quando o defeito era do instrumento. De fora do processo do mod
--- nao da para ver a matriz que ele produz: ela vai direto para uma referencia
--- que o mod capturou no patch.
+-- FIRST BUG IN THIS FILE, kept because it's instructive: the first version
+-- wrapped Voxel3D.draw ABOVE the mod's wrap and read the matrix thinking it saw
+-- the output. It sees the INPUT. Whoever wraps last runs first. The result was
+-- "scale 1.000000 across 440 samples", which I almost read as "the feature does not
+-- work" when the defect was in the instrument. From outside the mod's process
+-- you cannot see the matrix it produces: it goes straight to a reference
+-- that the mod captured in the patch.
 --
--- Entao a divisao de trabalho ficou assim, e cada lado mede o que so ele pode:
+-- So the division of labor ended up like this, and each side measures what only it can:
 --
---   tests/voxel_chars_test.lua   a MATEMATICA. O host mockado e quem recebe a
---                                matriz transformada, entao la ela e visivel
---                                inteira: colunas, espelho, sombra, fase.
---   este arquivo                 os PIXELS. Se a conta certa chega na tela.
+--   tests/voxel_chars_test.lua   the MATH. The mocked host is who receives the
+--                                transformed matrix, so there it's fully visible:
+--                                columns, mirror, shadow, phase.
+--   this file                    the PIXELS. Whether the right math reaches the screen.
 --
--- O que este gate pergunta:
+-- What this gate asks:
 --
---   V1 a linha de base e parada   com tudo OFF, um ciclo inteiro de quadros
---                                 e identico. Sem isso nada abaixo vale.
---   V2 respirar mexe a tela       com BREATH ligado, o mesmo ciclo passa a
---                                 diferir
---   V3 o menu manda               o nivel mais fraco se separa dos outros
---                                 (a metrica satura acima disso, e diz isso)
---   V4 a mudanca e NOSSA          com VOXEL CHARS OFF, BREATH nao muda nada
---   V5 balancar tambem mexe       e tambem responde ao nivel do menu
---   V6 a mola fica quieta         MOTION LAG com todo mundo parado nao muda
---                                 nada: mola em repouso, alvo zero
---   V7 e acorda com o passo       a mesma caminhada com e sem LAG difere
---   V8 quanto custa               ms por quadro numa cidade cheia, com e sem
+--   V1 baseline is still              with everything OFF, a whole cycle of frames
+--                                 is identical. Without this nothing below counts.
+--   V2 breathing moves the screen  with BREATH on, the same cycle starts to
+--                                 differ
+--   V3 the menu is in control      the weakest level separates from the others
+--                                 (the metric saturates above that, and says so)
+--   V4 the change is OURS          with VOXEL CHARS OFF, BREATH changes nothing
+--   V5 swaying moves it too        and also responds to the menu level
+--   V6 the spring stays quiet      MOTION LAG with everyone still doesn't change
+--                                 anything: spring at rest, target zero
+--   V7 and wakes with the step     the same walk with and without LAG differs
+--   V8 how much it costs           ms per frame in a full city, with and without
 --
--- V4 e o que nao passa por acaso: e o controle negativo. V6
--- e V7 sao um par: um sozinho passaria por motivo errado (uma feature morta
--- passa em V6; uma feature que oscila sozinha passa em V7).
+-- V4 is the one that doesn't pass by chance: it's the negative control. V6
+-- and V7 are a pair: alone, either would pass for the wrong reason (a dead feature
+-- passes V6; a feature that oscillates on its own passes V7).
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
@@ -58,8 +58,8 @@ return function(game)
 
   nota("=== gate de pixel do canal de vida ===")
 
-  -- Captura um quadro como ImageData, sem passar por disco. A callback do
-  -- captureScreenshot roda no fim do quadro, entao a gente cede ate ela vir.
+  -- Captures a frame as ImageData, without going through disk. The
+  -- captureScreenshot callback runs at the end of the frame, so we yield until it arrives.
   local function captura()
     local pronto
     love.graphics.captureScreenshot(function(imageData) pronto = imageData end)
@@ -70,9 +70,9 @@ return function(game)
     return nil
   end
 
-  -- Conta pixels diferentes com passo 3 nos dois eixos: um nono do trabalho, e
-  -- nenhum efeito deste tamanho se esconde numa grade de 3 px quando o jogo
-  -- desenha a 5 px de tela por pixel de Game Boy.
+  -- Counts different pixels with a stride of 3 on both axes: a ninth of the work, and
+  -- no effect of this size hides in a 3 px grid when the game
+  -- draws at 5 screen px per Game Boy pixel.
   local function difere(a, b)
     if not (a and b) then return -1 end
     local w, h = a:getWidth(), a:getHeight()
@@ -107,16 +107,16 @@ return function(game)
     return ok
   end
 
-  -- UM LUGAR SEM MAIS NINGUEM, e isso foi aprendido caro.
+  -- A PLACE WITH NO ONE ELSE, and this was learned the hard way.
   --
-  -- Primeira escolha foi o laboratorio do Oak, "porque tem gente parada". Tem
-  -- ONZE object events, e em tres segundos sempre algum vira de lado ou anda um
-  -- passo. O gate ficou reprovando por movimento de NPC e eu quase li isso como
-  -- defeito da mola. O quarto do Red no andar de cima tem ZERO object events:
-  -- o unico personagem na tela e o jogador, que fica exatamente onde a gente
-  -- deixou. Um personagem so basta, porque o que este gate mede e se o efeito
-  -- CHEGA na tela e responde ao menu; que duas instancias fiquem fora de fase e
-  -- provado na suite offline, onde da para ler a matriz inteira.
+  -- The first choice was Oak's lab, "because there's people standing around." There are
+  -- ELEVEN object events, and within three seconds someone always turns or takes a
+  -- step. The gate kept failing on NPC movement and I almost read that as
+  -- a spring defect. Red's room upstairs has ZERO object events:
+  -- the only character on screen is the player, who stays exactly where we
+  -- left them. One character is enough, because what this gate measures is whether the effect
+  -- REACHES the screen and responds to the menu; that two instances end up out of phase is
+  -- proven in the offline suite, where you can read the whole matrix.
   local MAPA = os.getenv("VC_MAP") or "REDS_HOUSE_2F"
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   local _, PX, PY = Pouso.escolher(game, MAPA, 3, 4)
@@ -127,24 +127,24 @@ return function(game)
   end
   nota("mapa: %s, %d entidades", MAPA, #(game.overworld.entities or {}))
 
-  -- PINAR O DEGRAU DE CAMERA, e isto e correcao de um defeito do gate.
+  -- PINNING THE CAMERA STEP, and this is a fix for a gate defect.
   --
-  -- A versao anterior dava UM toque em "3" e seguia. O degrau fica salvo nas
-  -- opcoes, entao o ponto de partida dependia de como a execucao ANTERIOR
-  -- tinha deixado o jogo, e um toque so caia em degraus diferentes a cada vez.
-  -- Degrau diferente e personagem de tamanho diferente na tela, e o numero de
-  -- pixels que mudam escala com isso: a mesma opcao mediu 266 numa corrida e
-  -- 77 na seguinte, e eu quase li a queda como regressao da feature. Nao era a
-  -- feature, era a camera.
+  -- The previous version gave ONE tap on "3" and moved on. The step is saved in the
+  -- options, so the starting point depended on how the PREVIOUS run
+  -- had left the game, and a single tap landed on a different step each time.
+  -- Different step means a different character size on screen, and the number of
+  -- pixels that change scales with that: the same option measured 266 in one run and
+  -- 77 in the next, and I almost read the drop as a regression in the feature. It wasn't the
+  -- feature, it was the camera.
   --
-  -- Agora o gate procura o degrau do jogo (35 graus, VoxelState.ANGLES_DEG) e
-  -- so mede quando esta nele. Numero de corridas diferentes passa a ser
-  -- comparavel.
+  -- Now the gate looks for the game's step (35 degrees, VoxelState.ANGLES_DEG) and
+  -- only measures when it's on it. Numbers from different runs become
+  -- comparable.
   opcao("depth", 3)
   U.wait(20)
-  -- A lib do host e buscada AQUI, nao no topo: esta versao do probe mede pixel
-  -- e nao precisa do host para nada mais, entao carregar so onde usa evita que
-  -- um host ausente derrube o gate inteiro em vez de perder uma checagem.
+  -- The host lib is fetched HERE, not at the top: this version of the probe measures pixels
+  -- and doesn't need the host for anything else, so loading it only where it's used avoids
+  -- an absent host bringing down the whole gate instead of just losing one check.
   local VoxelState
   do
     local V
@@ -160,10 +160,10 @@ return function(game)
   local okEstado = VoxelState ~= nil
   local ALVO = math.rad(35)
   local degrauOk = false
-  -- ESPERAR O ANGULO ASSENTAR antes de comparar. VoxelState.angle e suavizado:
-  -- logo depois do toque ele esta no meio do caminho entre dois degraus, e
-  -- comparar ali reprova um degrau que na verdade era o certo. A primeira
-  -- versao disto girou dez vezes e parou em 50 graus dizendo que nao achou 35.
+  -- WAIT FOR THE ANGLE TO SETTLE before comparing. VoxelState.angle is smoothed:
+  -- right after the tap it's halfway between two steps, and
+  -- comparing there fails a step that was actually correct. The first
+  -- version of this spun ten times and stopped at 50 degrees saying it didn't find 35.
   local function assenta()
     local anterior
     for _ = 1, 90 do
@@ -175,22 +175,22 @@ return function(game)
     return tonumber(VoxelState.angle)
   end
   if okEstado and VoxelState then
-    -- ESPERAR A SUAVIZACAO COMECAR antes de esperar ela terminar. `assenta`
-    -- devolve assim que duas leituras seguidas sao iguais, e logo depois do
-    -- toque elas AINDA sao iguais, porque a animacao nem arrancou. A versao
-    -- anterior lia o angulo velho, achava que tinha assentado, tocava de novo e
-    -- passava direto pelo degrau que queria: girou dez vezes e parou em 50.
+    -- WAIT FOR THE SMOOTHING TO START before waiting for it to finish. `assenta`
+    -- returns as soon as two consecutive readings are equal, and right after the
+    -- tap they're STILL equal, because the animation hasn't even started. The previous
+    -- version read the old angle, thought it had settled, tapped again and
+    -- shot straight past the step it wanted: spun ten times and stopped at 50.
     for _ = 1, 12 do
       local a = assenta()
       if a and math.abs(a - ALVO) < 0.02 then degrauOk = true break end
       U.tap(game, "3")
-      U.wait(30)   -- tempo de a suavizacao arrancar, ANTES de esperar parar
+      U.wait(30)   -- time for the smoothing to start, BEFORE waiting for it to stop
     end
     nota("degrau de camera: %.1f graus (alvo 35, achado: %s)",
       math.deg(tonumber(VoxelState.angle) or 0), tostring(degrauOk))
-    -- O degrau e INFORMACAO, nao pre-requisito. Ele muda o tamanho do
-    -- personagem na tela e portanto a escala dos numeros abaixo, entao ele e
-    -- registrado para quem for comparar duas corridas saber se pode.
+    -- The step is INFORMATION, not a prerequisite. It changes the size of the
+    -- character on screen and therefore the scale of the numbers below, so it's
+    -- recorded so that whoever compares two runs knows whether they can.
     if not degrauOk then
       nota("nota: parei em %.0f graus e nao em 35; os numeros abaixo sao " ..
         "comparaveis entre si, nao com os de outra corrida.",
@@ -202,33 +202,33 @@ return function(game)
   end
   U.wait(30)
 
-  -- BLINK e um confundidor: ele anima os olhos no tempo, entao a linha de base
-  -- nunca ficaria parada e V1 acusaria o inocente.
+  -- BLINK is a confounder: it animates the eyes over time, so the baseline
+  -- would never stay still and V1 would accuse the innocent.
   opcao("blink", "off")
   opcao("sway", "off"); opcao("lag", "off")
   U.wait(30)
 
 
-  -- Assinatura da cena: onde cada entidade esta. Se ela mudar entre as duas
-  -- fotos, alguem deu um passo, e um passo muda centenas de pixels, o que
-  -- afoga um efeito de meio pixel.
+  -- Scene signature: where each entity is. If it changes between the two
+  -- photos, someone took a step, and a step changes hundreds of pixels, which
+  -- drowns out a half-pixel effect.
   --
-  -- Isto NAO e conveniencia: a primeira versao mediu 1261 pixels em SUBTLE
-  -- contra 566 em STRONG, e a ordem invertida parecia defeito do mod. Era um
-  -- ajudante do laboratorio dando um passo dentro da janela de medicao. Sem
-  -- provar que a cena estava parada, o numero nao mede a feature, mede o NPC.
+  -- This is NOT a convenience: the first version measured 1261 pixels in SUBTLE
+  -- against 566 in STRONG, and the inverted order looked like a mod defect. It was a
+  -- lab assistant taking a step inside the measurement window. Without
+  -- proving the scene was still, the number doesn't measure the feature, it measures the NPC.
   --
-  -- E POSICAO NAO BASTA. Um NPC com NPC_CHANGE_FACING "marcha" parado: ele
-  -- troca de direcao e de frame de caminhada sem sair do lugar (NPC.lua:70-79
-  -- deixa px e py cravados). A assinatura so de posicao nao ve isso, e a troca
-  -- de frame muda centenas de pixels, que foi como MOTION LAG parado mediu 476
-  -- pixels e pareceu uma mola oscilando sozinha. Entao a assinatura carrega
-  -- tudo que escolhe o sprite: onde, para onde, e em que ponto do passo.
+  -- AND POSITION ISN'T ENOUGH. An NPC with NPC_CHANGE_FACING "marches" in place: it
+  -- switches direction and walk frame without leaving its spot (NPC.lua:70-79
+  -- keeps px and py pinned). A position-only signature doesn't see this, and the frame
+  -- switch changes hundreds of pixels, which is how MOTION LAG at rest measured 476
+  -- pixels and looked like a spring oscillating on its own. So the signature carries
+  -- everything that picks the sprite: where, toward where, and at what point in the step.
   local function assinatura()
     local t = {}
     for _, e in ipairs(game.overworld.entities or {}) do
-      -- walkPhase() e o seletor de frame de verdade, e em NPC ele nao tem
-      -- efeito colateral (NPC.lua:124-127). pcall porque o jogador nao tem.
+      -- walkPhase() is the real frame selector, and on NPC it has no
+      -- side effect (NPC.lua:124-127). pcall because the player doesn't have one.
       local ok, fase = pcall(function() return e:walkPhase() end)
       t[#t + 1] = string.format("%d,%d,%s,%s,%s,%s",
         e.px or 0, e.py or 0, tostring(e.facing), tostring(e.progress),
@@ -237,17 +237,17 @@ return function(game)
     return table.concat(t, ";")
   end
 
-  -- ENVELOPE, e nao um par de quadros.
+  -- ENVELOPE, not a pair of frames.
   --
-  -- Um par separado por um intervalo FIXO mede |s(t2) - s(t1)|, que depende da
-  -- fase em que cada personagem estava. Com dez pessoas em fases diferentes o
-  -- numero balanca: eu medi NORMAL 525 contra STRONG 510 e SUBTLE 1261 contra
-  -- STRONG 566 em corridas diferentes, e as duas inversoes eram do instrumento,
-  -- nao do mod. A resposta certa e varrer o CICLO: uma foto de referencia e
-  -- cinco comparacoes espalhadas por um periodo, ficando com a MAIOR. Isso mede
-  -- a excursao, que e o que a amplitude controla, e nao depende de onde a
-  -- senoide estava quando o gate comecou.
-  local PERIODO = 186  -- 3.1 s a 60 fps
+  -- A pair separated by a FIXED interval measures |s(t2) - s(t1)|, which depends on the
+  -- phase each character was in. With ten people in different phases the
+  -- number swings: I measured NORMAL 525 against STRONG 510 and SUBTLE 1261 against
+  -- STRONG 566 in different runs, and both inversions were the instrument's,
+  -- not the mod's. The right answer is to sweep the CYCLE: one reference photo and
+  -- five comparisons spread across a period, keeping the LARGEST. This measures
+  -- the excursion, which is what the amplitude controls, and doesn't depend on where the
+  -- sine wave was when the gate started.
+  local PERIODO = 186  -- 3.1 s at 60 fps
   local function envelope()
     for tentativa = 1, 6 do
       local antes = assinatura()
@@ -258,15 +258,15 @@ return function(game)
         local q = captura()
         if assinatura() ~= antes then estavel = false; break end
         local d = difere(ref, q)
-        -- CONTA AS MEDICOES QUE DERAM CERTO, e nao so o maior valor.
+        -- COUNT THE MEASUREMENTS THAT SUCCEEDED, not just the highest value.
         --
-        -- `difere` devolve -1 quando uma das capturas veio nil (a captura
-        -- desiste depois de 120 quadros). Com `pior` comecando em zero, um run
-        -- em que NENHUMA foto saiu devolvia zero, e zero e exatamente o que
-        -- quatro checagens deste arquivo exigem para dizer "a cena esta
-        -- parada": V1, V4 (o controle negativo), V6 e V9. Quebrar a captura
-        -- deixava as quatro verdes sem uma unica medicao. Zero-por-nada tem
-        -- que ser distinguivel de zero-medido.
+        -- `difere` returns -1 when one of the captures came back nil (the capture
+        -- gives up after 120 frames). With `pior` starting at zero, a run
+        -- where NO photo came out returned zero, and zero is exactly what
+        -- four checks in this file require to say "the scene is
+        -- still": V1, V4 (the negative control), V6 and V9. Broken capture
+        -- left all four green without a single measurement. Zero-from-nothing has
+        -- to be distinguishable from zero-measured.
         if d >= 0 then
           medidas = medidas + 1
           if d > pior then pior = d end
@@ -302,22 +302,22 @@ return function(game)
     "STRONG mudou %d pixels contra %d da linha de base",
     medidas[3] and medidas[3].px or -1, base))
 
-  -- ESTA METRICA NAO MEDE MAGNITUDE, E O GATE PAROU DE FINGIR QUE MEDE.
+  -- THIS METRIC DOES NOT MEASURE MAGNITUDE, AND THE GATE STOPPED PRETENDING IT DOES.
   --
-  -- Contar pixel que mudou tem duas faixas ruins e uma boa, e a boa e estreita.
-  -- Enquanto o deslocamento e menor que um pixel de tela, so parte das bordas
-  -- vira e o numero cresce. Passando disso, toda borda ja virou e ele satura.
-  -- E o tamanho do personagem na tela depende do DEGRAU DE CAMERA, que fica
-  -- salvo nas opcoes entre execucoes: a mesma opcao mediu 266 numa corrida e 9
-  -- na seguinte, so porque a camera estava noutro degrau.
+  -- Counting changed pixels has two bad ranges and one good one, and the good one is narrow.
+  -- While the displacement is smaller than one screen pixel, only part of the edges
+  -- flip and the number grows. Past that, every edge has already flipped and it saturates.
+  -- And the character's size on screen depends on the CAMERA STEP, which stays
+  -- saved in the options between runs: the same option measured 266 in one run and 9
+  -- in the next, just because the camera was on a different step.
   --
-  -- Eu tentei pinar o degrau e nao consegui de forma confiavel. Entao a
-  -- afirmacao de monotonia SAIU daqui em vez de ficar reprovando por acaso. Ela
-  -- nao se perdeu: a suite offline mede a magnitude EXATA de cada nivel, com
-  -- teto absoluto, e la o numero e a escala da matriz, nao pixel contado.
+  -- I tried to pin the step and couldn't do it reliably. So the
+  -- monotonicity claim LEFT here instead of failing by chance. It
+  -- wasn't lost: the offline suite measures the EXACT magnitude of each level, with
+  -- an absolute ceiling, and there the number is the matrix's scale, not counted pixels.
   --
-  -- O que este gate afirma, e sustenta: cada nivel produz movimento na tela, e
-  -- a linha de base e silenciosa. Presenca e controle negativo, nao tamanho.
+  -- What this gate asserts, and holds: each level produces movement on screen, and
+  -- the baseline is silent. Presence is the negative control, not size.
   local semEfeito = {}
   for _, med in ipairs(medidas) do
     if med.px <= base then semEfeito[#semEfeito + 1] = med.nome end
@@ -328,9 +328,9 @@ return function(game)
     medidas[3] and medidas[3].px or -1, base, table.concat(semEfeito, ", ")))
 
   -- ---------------------------------------------------------------- V4
-  -- Sem solido nao ha o que respirar: o mod devolve o card original do host e
-  -- o wrap de draw nao reconhece a malha como nossa. Se ainda assim mudasse
-  -- pixel, a mudanca viria de outro lugar e as tres medidas acima nao valem.
+  -- Without solid there is nothing to breathe: the mod returns the host's original card and
+  -- the draw wrap doesn't recognize the mesh as ours. If pixels still changed,
+  -- the change would come from somewhere else and the three measurements above wouldn't hold.
   opcao("depth", "off")
   U.wait(40)
   local semSolido, ts = parDeQuadros()
@@ -340,8 +340,8 @@ return function(game)
     "sem solido, BREATH nao pode mexer em nada")
 
   -- ---------------------------------------------------------------- V5
-  -- SWAY e uma oscilacao de ocioso, como a respiracao: cena parada, tela muda,
-  -- e mais forca muda mais.
+  -- SWAY is an idle oscillation, like breathing: scene still, screen changes,
+  -- and more strength changes more.
   opcao("depth", 3); opcao("breath", "off")
   U.wait(40)
   local balanco = {}
@@ -353,20 +353,20 @@ return function(game)
     nota("SWAY %-6s (%.2f): envelope de %d pixels (%d tentativas)",
       nivel[1], nivel[2], n, ts2)
   end
-  -- Mesmo motivo do V3: presenca, nao ordem. A ordem entre niveis e provada na
-  -- suite offline, onde o numero e a escala da matriz.
+  -- Same reason as V3: presence, not order. The order between levels is proven in the
+  -- offline suite, where the number is the matrix's scale.
   veredito("V5", balanco[1] and balanco[2]
     and balanco[1] > base and balanco[2] > base, string.format(
     "SUBTLE %d e NORMAL %d, os dois acima da base %d",
     balanco[1] or -1, balanco[2] or -1, base))
 
   -- ---------------------------------------------------------------- V6
-  -- MOTION LAG nao pode aparecer com o personagem PARADO ha muito tempo: a
-  -- mola esta em repouso e o alvo e zero. Se aparecesse, o efeito estaria
-  -- vindo de outro lugar (ou a mola estaria oscilando sozinha, que e o modo de
-  -- falha classico de uma mola mal amortecida).
+  -- MOTION LAG cannot appear with the character STILL for a long time: the
+  -- spring is at rest and the target is zero. If it appeared, the effect would be
+  -- coming from somewhere else (or the spring would be oscillating on its own, which is the classic
+  -- failure mode of an underdamped spring).
   opcao("sway", "off"); opcao("lag", 1.2)
-  U.wait(90)  -- tempo de sobra para a mola assentar
+  U.wait(90)  -- plenty of time for the spring to settle
   local lagParado, tl = parDeQuadros()
   nota("MOTION LAG NORMAL com todo mundo parado: %d pixels (%d tentativas)",
     lagParado, tl)
@@ -374,15 +374,15 @@ return function(game)
     "com ninguem se movendo, a mola tem que estar em repouso")
 
   -- ---------------------------------------------------------------- V7
-  -- E tem que aparecer DEPOIS de um passo. A mesma sequencia exata rodada com
-  -- LAG desligado e ligado: mesmo mapa, mesma celula de partida, mesmo numero
-  -- de quadros. O jogador termina na mesma celula com o mesmo frame de sprite
-  -- nas duas, entao a unica diferenca possivel entre as duas fotos e o atraso.
-  -- O QUARTO E PEQUENO E TEM MOVEL. A primeira versao mandava "down" de um
-  -- ponto onde a cama bloqueia: o jogador nao saia do lugar, velocidade zero,
-  -- atraso zero, e as duas fotos sairam IDENTICAS. Zero pixel de diferenca
-  -- parecia "a feature nao faz nada" e era "o teste nao andou". Entao: descobre
-  -- primeiro uma direcao que realmente move, e so depois mede.
+  -- And it has to appear AFTER a step. The exact same sequence run with
+  -- LAG off and on: same map, same starting cell, same number
+  -- of frames. The player ends up in the same cell with the same sprite frame
+  -- in both, so the only possible difference between the two photos is the delay.
+  -- THE ROOM IS SMALL AND HAS FURNITURE. The first version sent "down" from a
+  -- spot where the bed blocks: the player didn't move, velocity zero,
+  -- delay zero, and both photos came out IDENTICAL. Zero pixels of difference
+  -- looked like "the feature does nothing" and was "the test didn't move". So: find
+  -- a direction that actually moves first, and only then measure.
   local PARTIDA_X, PARTIDA_Y = 3, 4
   function tentaPasso(dir)
     U.teleport(game, MAPA, PARTIDA_X, PARTIDA_Y, dir)
@@ -405,10 +405,10 @@ return function(game)
       "o jogador nao conseguiu andar em nenhuma direcao; o teste nao vale")
   else
     nota("direcao que move a partir de (%d,%d): %s", PARTIDA_X, PARTIDA_Y, direcao)
-    -- PISO: a MESMA sequencia, a MESMA opcao (LAG off) dos dois lados. Duas
-    -- corridas independentes nao caem na mesma fase de tile animado ou de NPC
-    -- virando entre elas; isto mede quanto SO a passagem do tempo muda, para
-    -- a comparacao com LAG ligado abaixo nao confundir isso com o efeito.
+    -- FLOOR: the SAME sequence, the SAME option (LAG off) on both sides. Two
+    -- independent runs don't land on the same animated-tile phase or NPC
+    -- turning between them; this measures how much time passing ALONE changes, so that
+    -- the comparison with LAG on below doesn't confuse this with the effect.
     local _, semLag2 = tentaPasso(direcao)
     local piso = difere(semLag, semLag2)
     opcao("lag", 1.2); U.wait(20)
@@ -421,9 +421,9 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- V9
-  -- FOOTFALL so existe ANDANDO, e tem que sumir sozinho quando o personagem
-  -- para. Mesmo par de checks de MOTION LAG, pelo mesmo motivo: sozinhos, um
-  -- deles passa por feature morta e o outro por feature que oscila sozinha.
+  -- FOOTFALL only exists while WALKING, and has to vanish on its own when the character
+  -- stops. Same pair of checks as MOTION LAG, for the same reason: alone, one
+  -- of them would pass for a dead feature and the other for a feature that oscillates on its own.
   opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
   opcao("footfall", 0.7)
   U.wait(90)
@@ -434,12 +434,12 @@ return function(game)
 
   -- ---------------------------------------------------------------- V10
   do
-    -- reaproveita a mesma sequencia deterministica do V7: mesma celula de
-    -- partida, mesmo numero de quadros, so a opcao muda.
+    -- reuses the same deterministic sequence from V7: same starting
+    -- cell, same number of frames, only the option changes.
     opcao("footfall", "off"); U.wait(20)
     local andou1, a = tentaPasso(direcao or "left")
-    -- PISO: mesmo motivo do V7. FOOTFALL off nos dois lados, mesma sequencia,
-    -- mede o que so a passagem do tempo muda entre duas corridas.
+    -- FLOOR: same reason as V7. FOOTFALL off on both sides, same sequence,
+    -- measures what only the passage of time changes between two runs.
     local andou1b, a2 = tentaPasso(direcao or "left")
     local piso = (andou1 and andou1b) and difere(a, a2) or -1
     opcao("footfall", 0.7); U.wait(20)
@@ -453,37 +453,37 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- V8
-  -- CUSTO. O wrap roda uma vez por personagem por desenho, e numa cidade cheia
-  -- isso e cinquenta vezes por quadro. O numero que importa nao e "e rapido",
-  -- e "quanto do orcamento de 16.7 ms some".
+  -- COST. The wrap runs once per character per draw, and in a full city
+  -- that's fifty times per frame. The number that matters isn't "it's fast",
+  -- it's "how much of the 16.7 ms budget it eats up".
   --
-  -- DUAS ARMADILHAS, as duas ja pagas neste projeto:
+  -- TWO TRAPS, both already paid for in this project:
   --
-  -- 1. vsync. Com ele ligado todo quadro custa 16.67 ms faca o que fizer, e o
-  --    benchmark mede o monitor. Desligado la em cima.
-  -- 2. AQUECIMENTO. A primeira versao mediu 11.45 ms desligado e 4.35 ms
-  --    ligado: ligar a feature deixava o jogo 2.6 vezes MAIS RAPIDO, que e
-  --    impossivel. O que estava sendo medido era o mod construindo as 25 malhas
-  --    da cidade na primeira passada, tudo caindo na condicao que rodou
-  --    primeiro. Numero absurdo e o instrumento falando, nao o codigo.
+  -- 1. vsync. With it on, every frame costs 16.67 ms no matter what, and the
+  --    benchmark measures the monitor. Turned off above.
+  -- 2. WARM-UP. The first version measured 11.45 ms off and 4.35 ms
+  --    on: turning the feature on made the game 2.6 times FASTER, which is
+  --    impossible. What was being measured was the mod building the city's 25
+  --    meshes on the first pass, all of it landing on whichever condition ran
+  --    first. An absurd number is the instrument talking, not the code.
   --
-  -- Consertado com aquecimento antes e A/B/A/B depois: se a diferenca fosse
-  -- deriva de aquecimento, ela sumiria no segundo par.
+  -- Fixed with warm-up beforehand and A/B/A/B afterward: if the difference were
+  -- warm-up drift, it would vanish in the second pair.
   do
-    -- CONTROLE POSITIVO, MEDIDO NO QUARTO VAZIO, ANTES DE IR PARA A CIDADE.
+    -- POSITIVE CONTROL, MEASURED IN THE EMPTY ROOM, BEFORE GOING TO THE CITY.
     --
-    -- O bloco de tempo abaixo so cronometra; se opcao() falhar em silencio
-    -- (AVISO em "nota", emit quebrado), liga() e desliga() ficam identicos e o
-    -- custo medido da ~0, e "abaixo do ruido, nao mensuravel" passaria por
-    -- "a feature e barata" quando o problema de verdade e que ela nunca ligou.
+    -- The timing block below only times; if opcao() fails silently
+    -- (WARNING in "nota", broken emit), liga() and desliga() end up identical and the
+    -- measured cost comes out ~0, and "below the noise, not measurable" would pass for
+    -- "the feature is cheap" when the real problem is that it never turned on.
     --
-    -- A cidade NAO serve para este controle: Viridian tem NPC andando e agua
-    -- animada, e um par de fotos OFF-contra-OFF la deu 0 pixels numa janela e
-    -- 817 na seguinte, so de NPC — o mesmo erro de instrumento que V7 e V10
-    -- tinham antes do piso. Entao o controle usa o ENVELOPE (mesma disciplina
-    -- do resto do arquivo: so mede quando a assinatura da cena fica parada) no
-    -- quarto vazio que o resto deste driver ja estabeleceu, e so DEPOIS disso
-    -- teleporta para a cidade cheia, onde o custo por quadro e realista.
+    -- The city does NOT work for this control: Viridian has NPCs walking and animated
+    -- water, and a pair of OFF-against-OFF photos there gave 0 pixels in one window and
+    -- 817 in the next, just from NPCs, the same instrument error V7 and V10
+    -- had before the floor. So the control uses the ENVELOPE (same discipline
+    -- as the rest of the file: only measures when the scene signature stays still) in the
+    -- empty room that the rest of this driver already established, and only AFTER that
+    -- does it teleport to the full city, where the per-frame cost is realistic.
     opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
     U.wait(30)
     local controleBase = parDeQuadros()
@@ -515,7 +515,7 @@ return function(game)
       opcao("breath", 0.020); opcao("sway", 0.45); opcao("lag", 1.2)
       U.wait(30)
     end
-    -- Aquecimento: constroi malha, carrega textura, deixa o LRU assentar.
+    -- Warm-up: builds the mesh, loads the texture, lets the LRU settle.
     liga(); mede(300); desliga(); mede(300)
 
     local off1 = mede(240); liga()
@@ -529,33 +529,33 @@ return function(game)
     nota("  ligado     %.3f e %.3f ms   media %.3f", on1, on2, on)
     nota("  diferenca  %.3f ms de 16.7 ms de orcamento (%.1f%%)",
       on - off, (on - off) / 16.7 * 100)
-    -- COMO LER ISTO. O piso de ruido da medida e a variacao entre duas leituras
-    -- da MESMA condicao. Se a diferenca entre ligado e desligado for menor que
-    -- esse piso, o custo nao e "pequeno": e NAO MENSURAVEL com esta regua, e o
-    -- sinal da diferenca vira moeda jogada. Exigir que os dois pares concordem
-    -- no sinal seria exigir que o ruido se comporte, e reprovaria justamente o
-    -- melhor resultado possivel.
+    -- HOW TO READ THIS. The measurement's noise floor is the variation between two readings
+    -- of the SAME condition. If the difference between on and off is smaller than
+    -- that floor, the cost isn't "small": it's NOT MEASURABLE with this ruler, and the
+    -- sign of the difference becomes a coin flip. Requiring the two pairs to agree
+    -- on the sign would be requiring the noise to behave, and would fail exactly the
+    -- best possible result.
     local ruido = math.max(math.abs(off1 - off2), math.abs(on1 - on2))
     local diferenca = math.abs(on - off)
     nota("  piso de ruido da regua: %.3f ms", ruido)
-    -- O criterio E o piso de ruido, com um teto absoluto so como rede: a
-    -- versao anterior reprovava com 0.503 ms contra piso de 0.577 e imprimia
-    -- "abaixo do ruido" na mesma linha, porque a condicao era um limite fixo de
-    -- 0.5 que nao tinha nada a ver com a mensagem. Veredito que contradiz o
-    -- proprio texto e pior que veredito nenhum.
+    -- The criterion IS the noise floor, with an absolute ceiling only as a safety net: the
+    -- previous version failed with 0.503 ms against a floor of 0.577 and printed
+    -- "below the noise" on the same line, because the condition was a fixed limit of
+    -- 0.5 that had nothing to do with the message. A verdict that contradicts its
+    -- own text is worse than no verdict at all.
     local aceitavel = diferenca < ruido or diferenca < 0.5
-    -- O TETO ABSOLUTO VIROU CHECAGEM DE VALIDADE DO PISO, e a troca veio de
-    -- uma reprovacao que contradizia a propria mensagem: diferenca 2.557 ms,
-    -- piso 7.800 ms, texto dizendo "abaixo do ruido, o custo nao e mensuravel"
-    -- e veredito FALHOU, porque um teto fixo de 1.5 ms disparava por baixo do
-    -- criterio de piso. Dois criterios que podem discordar, e a linha impressa
-    -- so falava de um.
+    -- THE ABSOLUTE CEILING BECAME A VALIDITY CHECK ON THE FLOOR, and the change came from
+    -- a failure that contradicted its own message: difference 2.557 ms,
+    -- floor 7.800 ms, text saying "below the noise, the cost is not measurable"
+    -- and verdict FAILED, because a fixed ceiling of 1.5 ms tripped below the
+    -- floor criterion. Two criteria that can disagree, and the printed line
+    -- only spoke about one.
     --
-    -- Piso de 7.8 ms num orcamento de 16.7 nao e defeito do mod, e maquina
-    -- ocupada: neste caso eu tinha LOVE e ssh rodando ao lado. Com esse ruido a
-    -- medida nao tem PODER, e reprovar seria culpar o codigo pelo ambiente,
-    -- enquanto aprovar seria dizer que mediu. Entao o teto agora pergunta se o
-    -- piso presta, e a mensagem diz qual dos dois falou.
+    -- A floor of 7.8 ms in a 16.7 budget is not a mod defect, it's a busy machine:
+    -- in this case I had LOVE and ssh running alongside. With this much noise the
+    -- measurement has no POWER, and failing it would mean blaming the code for the environment,
+    -- while passing it would mean claiming it measured. So the ceiling now asks whether the
+    -- floor is any good, and the message says which of the two spoke.
     local pisoUtil = ruido < 3.0
     if not pisoUtil then
       nota("  piso de %.3f ms e alto demais: maquina ocupada, a medida perde "
@@ -568,7 +568,7 @@ return function(game)
           or "acima do ruido, e um custo real"))
   end
 
-  -- Fotos para o Kim julgar de olho, ja que numero nao diz se presta.
+  -- Photos for Kim to judge by eye, since a number doesn't say whether it's any good.
   opcao("depth", 3); opcao("breath", 0.020); U.wait(40)
   love.graphics.captureScreenshot("vc_life_a.png"); U.wait(8)
   U.wait(46)

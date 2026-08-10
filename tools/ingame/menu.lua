@@ -1,34 +1,34 @@
--- Gate do MENU: aperta tecla de verdade, no menu de verdade, do jeito que o
--- jogador aperta.
+-- MENU gate: presses a real key, in the real menu, the way the
+-- player presses it.
 --
--- POR QUE ELE EXISTE, e a resposta e um bug que escapou de tudo. No dia da
--- v1.6.0, uma revisao independente do motor descobriu que apertar A em cima da
--- row de STATUS ou de LIFE FECHAVA a tela de opcoes. O motor resolve A,
--- esquerda e direita no mesmo ramo, nesta ordem (src/ui/OptionsMenu.lua:549-566):
+-- WHY IT EXISTS, and the answer is a bug that slipped through everything. On the day of
+-- v1.6.0, an independent engine review found that pressing A on top of the
+-- STATUS or LIFE row CLOSED the options screen. The engine resolves A,
+-- left and right in the same branch, in this order (src/ui/OptionsMenu.lua:549-566):
 --
---     row.activate  ->  chama
---     row.step      ->  cicla
---     senao, se foi A, trata como CANCEL e da POP NO MENU
+--     row.activate  ->  calls
+--     row.step      ->  cycles
+--     otherwise, if it was A, treat as CANCEL and POP THE MENU
 --
--- Nossas duas rows de leitura tem `value` e mais nada, entao caiam no terceiro
--- caso. E A e a primeira tecla que alguem aperta numa linha que nao reconhece,
--- que e exatamente o publico da row de STATUS.
+-- Our two read-only rows have `value` and nothing else, so they fall into the third
+-- case. And A is the first key someone presses on a line they don't recognize,
+-- which is exactly the audience for the STATUS row.
 --
--- Nenhum dos 486 checks offline nem dos oito checks de pixel pegou, e nao foi
--- azar: NENHUM DELES APERTA TECLA NO MENU. Os offline chamam o hook direto e
--- leem a tabela de rows; os de pixel escrevem a opcao no save e emitem o
--- evento. Os dois pulam a tela por onde 100% dos jogadores passam.
+-- None of the 486 offline checks nor the eight pixel checks caught it, and it wasn't
+-- bad luck: NONE OF THEM PRESS A KEY IN THE MENU. The offline ones call the hook directly and
+-- read the rows table; the pixel ones write the option to the save and emit the
+-- event. Both skip the screen that 100% of players go through.
 --
--- O que este gate pergunta:
+-- What this gate asks:
 --
---   M1 o menu abre            START, achar OPTION pelo ROTULO, A
---   M2 as rows existem        todas as nossas aparecem, na ordem certa
---   M3 alcancaveis            da para chegar em cada uma so com baixo/cima
---   M4 A nao fecha            A em row de leitura mantem o menu aberto
---   M5 direita cicla          o rotulo vira o proximo nivel, e persiste
---   M6 esquerda volta         e o ciclo fecha nos dois sentidos
---   M7 convive                as rows de outro mod continuam intactas
---   M8 chega na tela          sair do menu, e o mundo mudou de verdade
+--   M1 the menu opens         START, find OPTION by LABEL, A
+--   M2 the rows exist         all of ours appear, in the right order
+--   M3 reachable              you can reach each one using only down/up
+--   M4 A doesn't close        A on a read-only row keeps the menu open
+--   M5 right cycles           the label becomes the next level, and persists
+--   M6 left goes back         and the cycle closes in both directions
+--   M7 coexists               another mod's rows stay intact
+--   M8 reaches the screen     exit the menu, and the world really changed
 
 return function(game)
   local U = dofile("tests/drivers/util.lua")
@@ -59,13 +59,13 @@ return function(game)
 
   nota("=== gate do menu de opcoes ===")
 
-  -- --------------------------------------------------------------- mundo
+  -- --------------------------------------------------------------- world
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
-  -- QUARTO VAZIO, e a licao veio do outro gate. M8 mede um efeito de meio
-  -- pixel comparando dois quadros; num mapa aberto o ciclo de dia, a agua e o
-  -- NPC perambulando fazem a linha de base ser milhares de pixels e o efeito
-  -- afunda no ruido. REDS_HOUSE_2F tem ZERO object events: o unico personagem
-  -- na tela e o jogador, e a linha de base fica em zero.
+  -- EMPTY ROOM, and the lesson came from the other gate. M8 measures a half
+  -- pixel effect by comparing two frames; on an open map the day cycle, the water and the
+  -- NPC wandering around make the baseline thousands of pixels and the effect
+  -- sinks into the noise. REDS_HOUSE_2F has ZERO object events: the only character
+  -- on screen is the player, and the baseline sits at zero.
   local mapa, x, y = Pouso.escolher(game,
     os.getenv("VC_MAP") or "REDS_HOUSE_2F",
     tonumber(os.getenv("VC_X")) or 3,
@@ -77,15 +77,15 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- M1
-  -- START e latcheado enquanto o jogador esta no meio de um passo
-  -- (OverworldController.lua:1186), entao espera ele assentar.
+  -- START is latched while the player is mid-step
+  -- (OverworldController.lua:1186), so wait for it to settle.
   for _ = 1, 120 do
     if not (game.overworld.player and game.overworld.player.moving) then break end
     U.wait(1)
   end
-  -- Abrir a tela de opcoes pelo caminho do jogador, reutilizavel: M8 precisa
-  -- fechar e reabrir, e a segunda abertura NAO pode assumir o mesmo indice da
-  -- primeira, porque o menu START lembra onde o cursor estava
+  -- Open the options screen the way the player does, reusable: M8 needs to
+  -- close and reopen it, and the second opening can NOT assume the same index as
+  -- the first, because the START menu remembers where the cursor was
   -- (StartMenu.lua:153, game.save.startMenuIndex).
   local function abrirOpcoes()
     for _ = 1, 120 do
@@ -119,19 +119,19 @@ return function(game)
     and "START, OPTION, A: a tela de opcoes abriu" or tostring(porqueNao))
   if not menuAberto then return end
 
-  -- O Dramatic Shape TROCA menu.rows no lugar em certas mudancas
-  -- (DramaticShapeVoxelMod/main.lua:958), entao nunca cachear o array: sempre
-  -- reler do objeto de estado.
+  -- Dramatic Shape SWAPS menu.rows in place on certain changes
+  -- (DramaticShapeVoxelMod/main.lua:958), so never cache the array: always
+  -- reread it from the state object.
   local function rows() return topo().rows or {} end
   local function rowPorId(sufixo)
     for i, r in ipairs(rows()) do
       if tostring(r.id):match(":" .. sufixo .. "$") then return i, r end
     end
   end
-  -- Defensivo de proposito: rowPorId devolve nil quando o menu esta fechado, e
-  -- a primeira versao disto estourou em M8 exatamente assim, depois de sair do
-  -- menu para fotografar. Um gate que morre no meio nao reprova nada, ele so
-  -- some com o resto dos checks.
+  -- Defensive on purpose: rowPorId returns nil when the menu is closed, and
+  -- the first version of this blew up in M8 exactly like that, after leaving the
+  -- menu to take a screenshot. A gate that dies partway through doesn't fail anything, it just
+  -- vanishes along with the rest of the checks.
   local function valorDe(r) return (r and r.value) and r.value(game) or "" end
   local function valorDaRow(sufixo)
     local _, r = rowPorId(sufixo)
@@ -162,10 +162,10 @@ return function(game)
       anterior = i
     end
   end
-  -- EXTRAS TAMBEM CONTAM. A primeira versao so perguntava se cada row esperada
-  -- existia, entao esquecer FOOTFALL na lista nao aparecia aqui: ela passava e
-  -- quem pegava era a M7, que conta. Um teste de inventario tem que reclamar
-  -- dos dois lados, senao ele so cobre o que alguem lembrou de escrever.
+  -- EXTRAS ALSO COUNT. The first version only asked whether each expected row
+  -- existed, so forgetting FOOTFALL in the list didn't show up here: it passed and
+  -- what caught it was M7, which counts. An inventory test has to complain
+  -- about both sides, otherwise it only covers what someone remembered to write.
   local nomeados = {}
   for _, e in ipairs(ESPERADAS) do nomeados[e[1]] = true end
   local extras = {}
@@ -180,9 +180,9 @@ return function(game)
       table.concat(extras, ", ")))
 
   -- ---------------------------------------------------------------- M3
-  -- Alcancavel so com o teclado. A janela mostra quatro rows por vez
-  -- (OptionRows.VISIBLE), entao chegar nas nossas custa dezenas de toques: e
-  -- exatamente o que o jogador faz, e ninguem tinha testado.
+  -- Reachable using only the keyboard. The window shows four rows at a time
+  -- (OptionRows.VISIBLE), so reaching ours costs dozens of presses: that's
+  -- exactly what the player does, and nobody had tested it.
   local function vaiPara(indiceAlvo)
     local m = topo()
     local limite = #rows() + 3
@@ -204,7 +204,7 @@ return function(game)
     visivel and "dentro" or "FORA da janela visivel"))
 
   -- ---------------------------------------------------------------- M4
-  -- O BUG DA v1.6.0. A numa row de leitura nao pode fechar o menu.
+  -- THE v1.6.0 BUG. A on a read-only row must not close the menu.
   local ruins = {}
   for _, id in ipairs({ "status", "life" }) do
     local i = rowPorId(id)
@@ -212,7 +212,7 @@ return function(game)
       U.tap(game, "a"); U.wait(8)
       if getmetatable(topo()) ~= OptionsMenu then
         ruins[#ruins + 1] = id .. " fechou o menu"
-        abrirOpcoes()  -- reabre para os checks seguintes continuarem valendo
+        abrirOpcoes()  -- reopens so the following checks stay valid
       end
     else
       ruins[#ruins + 1] = id .. " nao alcancavel"
@@ -226,7 +226,7 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- M5, M6
-  -- Direita cicla para frente, esquerda volta, e o valor persiste no save.
+  -- Right cycles forward, left goes back, and the value persists in the save.
   local ciclos, quebrados = 0, {}
   for _, chave in ipairs({ "breath", "sway", "lag", "front_shape", "shape" }) do
     local i = rowPorId(chave)
@@ -261,8 +261,8 @@ return function(game)
   veredito("M6", #quebrados == 0, "o ciclo fecha nos dois sentidos")
 
   -- ---------------------------------------------------------------- M7
-  -- Convivencia. Outros mods anexam rows pelo mesmo hook; as nossas nao podem
-  -- ter comido nem reordenado as deles.
+  -- Coexistence. Other mods append rows through the same hook; ours must not
+  -- have eaten or reordered theirs.
   local outras, nossas = 0, 0
   for _, r in ipairs(rows()) do
     if tostring(r.id):match("^voxel_characters:") then nossas = nossas + 1
@@ -273,8 +273,8 @@ return function(game)
     "esperado %d nossas e pelo menos uma de fora", #ESPERADAS))
 
   -- ---------------------------------------------------------------- M8
-  -- Sair do menu pelo caminho do jogador e conferir que a mudanca chegou na
-  -- tela. Sem isto, tudo acima poderia ser uma tabela bonita que nao desenha.
+  -- Exit the menu the way the player does and check that the change reached the
+  -- screen. Without this, everything above could be a pretty table that doesn't draw.
   local function foto()
     local pronto
     love.graphics.captureScreenshot(function(d) pronto = d end)
@@ -293,7 +293,7 @@ return function(game)
     return n
   end
 
-  -- Poe BREATH num valor dado, so com tecla, e devolve o rotulo que ficou.
+  -- Sets BREATH to a given value, using only keys, and returns the label it ended on.
   local function porBreath(rotulo)
     local i = rowPorId("breath")
     if not (i and vaiPara(i)) then return nil end
@@ -304,11 +304,11 @@ return function(game)
     return valorDaRow("breath")
   end
 
-  -- SAIR ATE O MUNDO, nao um B so. A tela de opcoes foi empurrada POR CIMA do
-  -- menu START, entao um B devolve ao START e nao ao mundo. A primeira versao
-  -- disto media um quadro com o menu na frente, achava que nao estava no mundo
-  -- e desistia, e o veredito saia "nao consegui montar a comparacao" sem dizer
-  -- que o problema era o numero de teclas.
+  -- EXIT ALL THE WAY TO THE WORLD, not just one B. The options screen was pushed ON TOP OF the
+  -- START menu, so one B returns to START and not to the world. The first version
+  -- of this measured a frame with the menu in front, thought it wasn't in the world
+  -- and gave up, and the verdict came out as "couldn't put together the comparison" without saying
+  -- that the problem was the number of key presses.
   local function sairParaOMundo()
     for _ = 1, 6 do
       if topo() == game.overworld then return true end
@@ -317,7 +317,7 @@ return function(game)
     return topo() == game.overworld
   end
 
-  -- Mede a variacao da tela com o menu FECHADO, na configuracao corrente.
+  -- Measures how much the screen changes with the menu CLOSED, at the current setting.
   local function medeNoMundo()
     if not sairParaOMundo() then return -1 end
     local a = foto()
@@ -337,11 +337,11 @@ return function(game)
       detalheM8 = string.format("OFF %d, STRONG %d", base, ligado)
     end
   end
-  -- M8 prova o CAMINHO, nao a magnitude. Ele roda no mapa aberto, onde NPC
-  -- perambula e agua se mexe, entao a linha de base ja e alta e a diferenca e
-  -- de poucos por cento. Quem mede quanto o efeito vale e o probe_life.lua, num
-  -- quarto sem mais ninguem. Os dois juntos cobrem: aqui, que mexer no menu
-  -- chega na tela; la, que o que chega tem o tamanho pedido.
+  -- M8 proves the PATH, not the magnitude. It runs on the open map, where the NPC
+  -- wanders and water moves, so the baseline is already high and the difference is
+  -- a few percent. What measures how much the effect is worth is probe_life.lua, in a
+  -- room with nobody else. The two together cover: here, that changing the menu
+  -- reaches the screen; there, that what reaches it has the requested size.
   veredito("M8", m8ok, detalheM8 ..
     " (mudar a opcao SO PELO MENU tem que mudar a tela)")
 
