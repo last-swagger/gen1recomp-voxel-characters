@@ -737,7 +737,13 @@ local function makeMod(handle, stored)
     events = {},
     log = { info = record("info"), warn = record("warn"), error = record("error") },
   }
-  function mod.options:define(s) schema = s end
+  function mod.options:define(s)
+    schema = s
+    -- Item 16: exposed on the mod table too (not just the closure-local
+    -- above) so callers can read the schema back after loadWith returns,
+    -- and derive real maxima instead of hand-copying them.
+    mod._schema = s
+  end
   function mod.options:get(key)
     if stored and stored[key] ~= nil then return stored[key] end
     for _, row in ipairs(schema or {}) do
@@ -5870,12 +5876,48 @@ do
   -- each in world pixels. `sx` (the X scale FOOTFALL introduced) is read
   -- from out[1] / model[1], the same as the foot contract (further
   -- below).
+  --
+  -- item 16: the four maxima below used to be written by hand, and a
+  -- hand-written number keeps testing an old ceiling forever if somebody
+  -- raises it in the menu (main.lua, OPTIONS) without touching this file:
+  -- exactly the shape of the MOTION LAG defect this test exists to catch,
+  -- 465 checks that all asked "did something change" and none asked "by
+  -- how much". So the maxima are read back from the schema the mod itself
+  -- registers (mod.options:define, captured on mod._schema above) instead:
+  -- for each life option, the largest numeric level it offers.
+  local function maxNumericLevel(schema, key)
+    local max = nil
+    for _, row in ipairs(schema) do
+      if row.key == key then
+        for _, level in ipairs(row.choices) do
+          if type(level[2]) == "number" and (max == nil or level[2] > max) then
+            max = level[2]
+          end
+        end
+      end
+    end
+    return max
+  end
+  local probePixels = {}
+  probePixels[0] = 1
+  local probeHandle = makeVoxelHandle("1.6.0", probePixels, 16, 16,
+    nil, nil, nil, nil, nil, true)
+  local probeMod = loadWith(makeMod(probeHandle))
+  local ceilings = {
+    breath = maxNumericLevel(probeMod._schema, "breath"),
+    sway = maxNumericLevel(probeMod._schema, "sway"),
+    lag = maxNumericLevel(probeMod._schema, "lag"),
+    footfall = maxNumericLevel(probeMod._schema, "footfall"),
+  }
+  for key in pairs(ceilings) do
+    assert(ceilings[key] ~= nil, "teto de seguranca: schema tem um maximo numerico para " .. key)
+  end
+
   local pixels = {}
   pixels[0] = 1
   local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
     nil, nil, nil, nil, nil, true)
-  loadWith(makeMod(handle,
-    { breath = 0.035, sway = 0.45, lag = 1.2, footfall = 0.7 }))
+  loadWith(makeMod(handle, ceilings))
   local mesh = modules.SpriteBillboards.mesh({ image = "swimmer.png", frames = 1 }, 0)
   local maxS, maxKx, maxKz, maxSx = 0, 0, 0, 0
   withDrivenClock(function(setClock)
