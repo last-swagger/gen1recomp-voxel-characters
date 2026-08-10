@@ -251,15 +251,27 @@ return function(game)
     for tentativa = 1, 6 do
       local antes = assinatura()
       local ref = captura()
-      local pior, estavel = 0, true
+      local pior, estavel, medidas = 0, true, 0
       for k = 1, 5 do
         U.wait(math.floor(PERIODO / 6))
         local q = captura()
         if assinatura() ~= antes then estavel = false; break end
         local d = difere(ref, q)
-        if d > pior then pior = d end
+        -- CONTA AS MEDICOES QUE DERAM CERTO, e nao so o maior valor.
+        --
+        -- `difere` devolve -1 quando uma das capturas veio nil (a captura
+        -- desiste depois de 120 quadros). Com `pior` comecando em zero, um run
+        -- em que NENHUMA foto saiu devolvia zero, e zero e exatamente o que
+        -- quatro checagens deste arquivo exigem para dizer "a cena esta
+        -- parada": V1, V4 (o controle negativo), V6 e V9. Quebrar a captura
+        -- deixava as quatro verdes sem uma unica medicao. Zero-por-nada tem
+        -- que ser distinguivel de zero-medido.
+        if d >= 0 then
+          medidas = medidas + 1
+          if d > pior then pior = d end
+        end
       end
-      if estavel then return pior, tentativa end
+      if estavel and medidas > 0 then return pior, tentativa end
       U.wait(30)
     end
     return -1, 6

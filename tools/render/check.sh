@@ -67,7 +67,14 @@ for fr in 3 5; do
   R=$($LOVE $H sprite=red shapes=slab frames=$fr yaws=0 rungs=75 cell=140 \
       blink=on blinkscan=1 out=chk_b$fr.png 2>&1 | grep BLINKSCAN)
   say "red pisca andando, frame $fr" "$R"
-  echo "$R" | grep -q "fecha em" || FAIL=1
+  # ANCORADO NO INICIO DA MENSAGEM, e este `BLINKSCAN ` custou uma auditoria
+  # inteira: o harness imprime "BLINKSCAN fecha em t=..." ou "BLINKSCAN nao
+  # fecha em 10 s", e a segunda CONTEM a primeira como substring. Um grep por
+  # "fecha em" casava com as duas, entao apagar a piscada inteira deixava
+  # estas tres checagens verdes, e as duas negativas ("nao fecha") tambem,
+  # porque ali a ausencia vira verdade. As cinco checagens do piscar
+  # sobreviviam a remocao da feature que existem para medir.
+  echo "$R" | grep -q "BLINKSCAN fecha em" || FAIL=1
 done
 
 R=$($LOVE $H sprite=girl shapes=slab frames=3 yaws=0 rungs=75 cell=140 \
@@ -86,7 +93,7 @@ echo "$R" | grep -q "nao fecha" || FAIL=1
 R=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=75 cell=140 \
     blink=on blinkscan=1 out=chk_blink.png 2>&1 | grep BLINKSCAN)
 say "piscada dispara" "$R"
-echo "$R" | grep -q "fecha em" || FAIL=1
+echo "$R" | grep -q "BLINKSCAN fecha em" || FAIL=1
 
 # 4. O compositor aceita legenda com sinal de igual. Este bug apareceu duas
 #    vezes identico, e o sintoma e "arquivo nao encontrado", que manda quem
@@ -122,7 +129,11 @@ A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
 B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     opt="front_shape:0.12" metrics=1 out=chk_o1.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
 say "opcao generica chega no mod" "sem opcao $A / com opcao $B"
-[ "$A" != "$B" ] || FAIL=1
+# Com guarda nos dois lados: sem ela, um run que MORRE deixa B vazio, "niveis 3"
+# difere de "", e a checagem fica verde afirmando que a opcao chegou. E o
+# harness morre de proposito em chave desconhecida (5c logo abaixo), entao
+# renomear uma chave do schema deixava 5b e 5c verdes ao mesmo tempo.
+medido "$A" && medido "$B" && [ "$A" != "$B" ] || FAIL=1
 
 # 5c. Chave desconhecida nao pode passar calada: um erro de digitacao vira
 #     "medi com a opcao desligada e nao percebi".
@@ -139,7 +150,7 @@ A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
 B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     opt="front_shape:0.22" metrics=1 out=chk_d2.png 2>&1 | grep "front  niveis" | grep -o "desvio [0-9.]*")
 say "estrutura tonal distingue forca" "0.12 -> $A / 0.22 -> $B"
-[ "$A" != "$B" ] || FAIL=1
+medido "$A" && medido "$B" && [ "$A" != "$B" ] || FAIL=1
 
 # 6. O LABORATORIO abre, e classifica as opcoes do lado certo.
 #
@@ -156,11 +167,20 @@ say "laboratorio abre" "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
 [ "$R" = "1" ] || FAIL=1
 
 SEM=$(echo "$LAB" | grep "sem efeito na malha:" | sed 's/.*malha: //')
+AQUI=$(echo "$LAB" | grep "^  aqui:" | sed 's/.*aqui: *//')
 FALTOU=""
 for k in breath sway lag footfall; do
-  echo "$SEM" | grep -q "\b$k\b" || FALTOU="$FALTOU $k"
+  echo "$SEM" | grep -q "\b$k\b" || FALTOU="$FALTOU -$k"
 done
-say "opcoes de matriz nao mexem na malha" \
+# OS DOIS LADOS. Checar so a lista "sem efeito" deixava passar a mutacao que
+# quebra o classificador inteiro: se buildGeometry falhar, labAssinatura devolve
+# "sem malha" para TODOS os niveis, nenhuma opcao muda, todas caem na lista
+# "sem efeito", o laboratorio fica sem controle nenhum e este gate fica verde.
+# Comparar vazio com vazio de novo, agora em forma de lista.
+for k in depth shape front_shape top_dome step_weight; do
+  echo "$AQUI" | grep -q "\b$k\b" || FALTOU="$FALTOU +$k"
+done
+say "classificador poe cada opcao do lado certo" \
     "$([ -z "$FALTOU" ] && echo ok || echo "FALHOU:$FALTOU")"
 [ -z "$FALTOU" ] || FAIL=1
 

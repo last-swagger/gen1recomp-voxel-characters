@@ -146,7 +146,7 @@ return function(game)
     { "top_edge", "TOP EDGE" }, { "front_shape", "FRONT SHAPE" },
     { "top_dome", "TOP DOME" }, { "step_weight", "STEP WEIGHT" },
     { "breath", "BREATH" }, { "sway", "SWAY" }, { "lag", "MOTION LAG" },
-    { "footfall", "FOOTFALL" },
+    { "footfall", "FOOTFALL" }, { "first_person", "FIRST PERSON" },
   }
   local faltando, foraDeOrdem, anterior = {}, {}, 0
   for _, esperada in ipairs(ESPERADAS) do
