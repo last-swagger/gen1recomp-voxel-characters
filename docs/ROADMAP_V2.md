@@ -80,17 +80,33 @@ nothing on screen is theirs.
 **Cost:** low per improvement, and each one is a line in the shot list rather
 than code.
 
-### 5. Grid mode
+### 5. RESOLVED BY MEASUREMENT: the grid is not ours to add
 
-**State:** not started. The host has a grid toggle and our characters ignore it.
+**Measured, and it inverted the plan.** The prediction was that our solid would
+get the wireframe for free, because the grid is the scene shader measuring
+distance to integer planes in MODEL space and our mesh goes through that shader.
+It does not: the grid changes 54700 samples with the mod on and 54701 with it
+off. It never touches us.
 
-**What changes:** our solids stop looking like they belong to a different mod
-when the player turns the grid on. Two questions decide the shape of the work,
-and both are measurements rather than opinions: does the host expose the grid
-state where we can read it, and does its grid apply per mesh or per scene. If
-per mesh, we can follow it for free; if per scene, we need our own.
+The reason is in the host, and it is a decision rather than an oversight.
+`VoxelScene.drawCast` calls `Voxel3D.seams(false)` around the character pass,
+and the comment above it says why:
 
-**Cost:** small if the state is readable, and the answer arrives in an hour.
+> Characters carry no wireframe out here, whatever the V-GRID row says. The
+> seams are what makes the WORLD read as built out of voxels, and the people
+> walking around in it are the one thing that should read as drawn instead. A
+> grid over a 16x16 sprite lands a line every couple of display pixels and turns
+> a face into a mesh.
+
+So our mod already behaves correctly, by inheritance, and turning the grid ON
+for characters would not be filling a gap: it would be contradicting the host's
+author on a point he thought about. It remains a possible product option with a
+stated cost, and the cost is specific: the solid's side and top faces carry no
+art at all, so seams over them emphasise exactly the invented surface.
+
+**What changed instead:** `tools/ingame/probe_grid.lua` now guards the contract.
+If the wireframe ever starts appearing on characters, somebody changed something
+and we find out the same day. Cost of the whole item: one measurement.
 
 ### 6. First-person depth
 
