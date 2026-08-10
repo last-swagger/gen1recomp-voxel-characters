@@ -411,7 +411,32 @@ local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
 -- below) to decide whether the body search comes into play. It stays as
 -- its own constant, outside the generic option system, because those two
 -- functions sit in the middle of mesh construction, not in the menu.
-local DEFAULT_SIDE_COLOR = "body"
+-- REFACTOR (main chunk locals, roadmap item 0): this used to be nineteen
+-- separate chunk-level constants, DEFAULT_SIDE_COLOR through
+-- BLINK_CLOSED_SECONDS, one `local` each. Same problem and same fix as the
+-- OPTIONS/optionState refactor above (main.lua:53): every function gets
+-- its OWN separate budget against LuaJIT's 200 chunk locals, so a constant
+-- read by exactly one function costs nothing if it lives as a local inside
+-- that function's body instead of out here. Fifteen of the nineteen moved
+-- that way; follow the name to find it again:
+--   TOP_EDGE_SHADE, SIDE_INSET, RUN_UV_INSET, FRONT_SHAPE_STEPS,
+--     TOP_DOME_STEPS -> buildSlabMesh
+--   PITCH_BUCKET -> quantizeCorrection and pitchKey (duplicated: it is
+--     `math.pi / 180`, a unit conversion that cannot drift, not a tunable)
+--   MAX_MESHES -> rememberMesh
+--   AO_STRENGTH, AO_GROUND, AO_RISE -> shadeAtHeight
+--   BODY_SEARCH_LIMIT -> bodyTexelInFrame
+--   CARVED_PLUS_RECESS_STEPS -> buildCarvedMesh
+--   POSE_OFFSET_DX_RANGE, POSE_OFFSET_DY_RANGE -> poseOffsetScan
+--   BLINK_CLOSED_SECONDS -> blinkClosedForBase
+-- The other four (SHARED.OBJ_SHADE, SHARED.DEFAULT_SIDE_COLOR, SHARED.DRAW_WINDOW_SIZE,
+-- SHARED.LUMA_EPSILON) are each read by TWO OR MORE functions, so none of them has
+-- a single home to move into; they stay here, gathered into one table
+-- instead of four chunk locals. LIFE_CELL joins this same table further
+-- down (main.lua, near the LIFE tuning block), where its own comment
+-- lives, because it is shared by lifeCellKey, lifeInstance and
+-- lifeDrawWrap the same way.
+--
 -- DECISION: Dramatic Shape's light comes from the southeast. Front and top
 -- stay light, back and bottom darken by facing away from the light, and the
 -- sides use a middle ground so the slab reads as volume without relying on
@@ -420,29 +445,11 @@ local DEFAULT_SIDE_COLOR = "body"
 -- frame before calling SpriteBillboards.mesh(def, frame) and applies the
 -- mirror afterward on the matrix (VoxelScene.lua:234-241, 287-295). Since
 -- the shade already comes baked into the vertex, different values for
--- east/west would swap sides on mirrored sheets.
-local OBJ_SHADE = { front = 0.90, back = 0.68, side = 0.78, top = 1.0, bottom = 0.55 }
-local TOP_EDGE_SHADE = 0.82
--- Exposed SLAB faces sit at the real pixel boundary. The old inset was
--- hiding z-fighting between internal faces that are no longer emitted now.
-local SIDE_INSET = 0
-local RUN_UV_INSET = 0.05
--- DECISION v1.6.0: three shade steps is the same number of tones the
--- artist already uses for volume in the source Gen 1 sprites. A continuous
--- gradient was prototyped before and read as a bright stripe floating over
--- the art, because hard-pixel art and smooth gradients fight each other;
--- constant shade per pixel, quantized into these steps, is what matches
--- the rest of the drawing.
-local FRONT_SHAPE_STEPS = 3
--- Same reasoning as FRONT_SHAPE_STEPS: three tones is what the artist
--- already uses for volume in the source Gen 1 sprites, and a step aligned
--- to the pixel, not a continuous gradient (main.lua, DECISION above
--- FRONT_SHAPE_STEPS).
-local TOP_DOME_STEPS = 3
-local PITCH_BUCKET = math.pi / 180
-local MAX_MESHES = 64
+-- east/west would swap sides on mirrored sheets. Read by both buildSlabMesh
+-- and buildCarvedMesh.
+--
 -- DECISION v1.4.2, fine-tooth comb (item 1): STATUS decides by PROPORTION
--- over a sliding window of the last DRAW_WINDOW_SIZE draw results, not by
+-- over a sliding window of the last SHARED.DRAW_WINDOW_SIZE draw results, not by
 -- an unbroken streak. A count of CONSECUTIVE failures is defeatable by
 -- interleaving: if the player's sprite draws fine every frame while NPCs
 -- with broken sheets fail interleaved on the same screen, every `ok` from
@@ -452,24 +459,20 @@ local MAX_MESHES = 64
 -- is failures; a single bad sheet isolated among several good ones never
 -- gets close to that (in the worst distribution within the window, 1 bad
 -- sheet for every 4 good ones occupies at most 2 of the 8 slots), but
--- strict good/bad alternation (half the screen failing) escalates.
-local DRAW_WINDOW_SIZE = 8
-local AO_STRENGTH = 2.4
-local AO_GROUND = 0.12 * AO_STRENGTH
-local AO_RISE = 6
--- DECISION: four pixels covers the thick outlines of Gen 1 sprites without
--- letting a search on custom art cross over into another part of the body.
-local BODY_SEARCH_LIMIT = 4
-local LUMA_EPSILON = 0.00001
-local CARVED_PLUS_RECESS_STEPS = 2
--- DECISION v1.4.2: the poseOffset scan window. The step measured on
--- red.png is one row; dy goes up to 3 for custom art sheets with a wider
--- step, dx to 2 because there is no report of horizontal displacement and
--- a bigger window would only cost O(cell^2) per extra candidate for no
--- reason.
-local POSE_OFFSET_DX_RANGE = 2
-local POSE_OFFSET_DY_RANGE = 3
-local BLINK_CLOSED_SECONDS = 0.12
+-- strict good/bad alternation (half the screen failing) escalates. Read by
+-- pushDrawWindow and statusValue.
+--
+-- LUMA_EPSILON is read by frameTexel, eyeMarkTransfers and buildCarvedMesh.
+local SHARED = {
+  OBJ_SHADE = { front = 0.90, back = 0.68, side = 0.78, top = 1.0, bottom = 0.55 },
+  DEFAULT_SIDE_COLOR = "body",
+  DRAW_WINDOW_SIZE = 8,
+  LUMA_EPSILON = 0.00001,
+  -- The game's walking grid, in px. Read by lifeCellKey, lifeInstance and
+  -- lifeDrawWrap (main.lua, LIFE section), which is why it lives here
+  -- instead of as a local inside just one of them.
+  LIFE_CELL = 16,
+}
 
 local EYE_MARKS = {
   agatha = { { 5, 7 }, { 6, 7 }, { 9, 7 }, { 10, 7 } },
@@ -638,7 +641,7 @@ local installedMesh
 local lastDrawResult = "ok"
 -- Sliding window: drawWindow[i] holds the failure TYPE (mask_failed,
 -- build_failed or exception) of the i-th most recent result (modulo
--- DRAW_WINDOW_SIZE), or nil when it was a success. drawWindowFailures and
+-- SHARED.DRAW_WINDOW_SIZE), or nil when it was a success. drawWindowFailures and
 -- drawWindowKindCounts are kept incrementally (without scanning the array
 -- on every STATUS read). v1.4.2, fine-tooth comb (item 2): the STATUS
 -- error label uses the DOMINANT cause in the window (drawWindowKindCounts),
@@ -936,10 +939,16 @@ end
 -- for 96 to 144 meshes. The LRU prevents unbounded growth, but it can
 -- recycle meshes during tweens with many different NPCs on screen.
 local function quantizeCorrection(angle)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals). Duplicated
+  -- in pitchKey below rather than shared: this is `math.pi / 180`, a unit
+  -- conversion that cannot drift, not a tunable that needs one source of
+  -- truth.
+  local PITCH_BUCKET = math.pi / 180
   return math.floor(((angle or 0) / PITCH_BUCKET) + 0.5) * PITCH_BUCKET
 end
 
 local function pitchKey(angle)
+  local PITCH_BUCKET = math.pi / 180
   return tostring(math.floor(((angle or 0) / PITCH_BUCKET) + 0.5))
 end
 
@@ -954,6 +963,9 @@ local function touchMeshKey(key)
 end
 
 local function rememberMesh(key, mesh)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local MAX_MESHES = 64
   meshes[key] = mesh
   touchMeshKey(key)
   while #meshOrder > MAX_MESHES do
@@ -973,7 +985,7 @@ local function frameTexel(m, frame, lx, ly)
   local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
   if not r or (a or 0) < 0.5 then return false end
   local outline = m.outlineLuma
-    and math.abs(luminance(r, g, b) - m.outlineLuma) <= LUMA_EPSILON
+    and math.abs(luminance(r, g, b) - m.outlineLuma) <= SHARED.LUMA_EPSILON
   return true, outline
 end
 
@@ -992,7 +1004,12 @@ local function referenceFramesForRole(frame, frames, role)
 end
 
 local function bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
-  if sideColor ~= DEFAULT_SIDE_COLOR then return lx, ly, true end
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here. DECISION: four pixels covers the thick outlines of Gen 1 sprites
+  -- without letting a search on custom art cross over into another part of
+  -- the body.
+  local BODY_SEARCH_LIMIT = 4
+  if sideColor ~= SHARED.DEFAULT_SIDE_COLOR then return lx, ly, true end
   local opaque, outline = frameTexel(m, frameIndex, lx, ly)
   if not (opaque and outline) then return lx, ly, opaque and not outline end
   for step = 1, BODY_SEARCH_LIMIT do
@@ -1032,6 +1049,14 @@ end
 -- same tie-break). It is the "trading flicker for stutter" risk the
 -- original spec named, avoidable for free.
 local function poseOffsetScan(m, fromFrame, toFrame)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here. DECISION v1.4.2: the poseOffset scan window. The step measured on
+  -- red.png is one row; dy goes up to 3 for custom art sheets with a wider
+  -- step, dx to 2 because there is no report of horizontal displacement and
+  -- a bigger window would only cost O(cell^2) per extra candidate for no
+  -- reason.
+  local POSE_OFFSET_DX_RANGE = 2
+  local POSE_OFFSET_DY_RANGE = 3
   local cellW, cellH = m.cellW, m.cellH
   local fromOpaque = {}
   for ly = 0, cellH - 1 do
@@ -1159,6 +1184,9 @@ local function blinkTiming(baseName)
 end
 
 local function blinkClosedForBase(baseName)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local BLINK_CLOSED_SECONDS = 0.12
   if not (love and love.timer and love.timer.getTime) then return false end
   local ok, now = pcall(love.timer.getTime)
   if not ok then return false end
@@ -1172,7 +1200,7 @@ local function blinkBodyTexel(m, frameIndex, lx, ly)
   }
   for _, dir in ipairs(dirs) do
     local bx, by, found = bodyTexelInFrame(m, frameIndex, lx, ly, dir[1],
-      dir[2], DEFAULT_SIDE_COLOR)
+      dir[2], SHARED.DEFAULT_SIDE_COLOR)
     if found and (bx ~= lx or by ~= ly) then return bx, by end
   end
 end
@@ -1196,7 +1224,7 @@ local function eyeMarkTransfers(m, refFrame, rx, ry, walkFrame, wx, wy)
   local refLuma = eyeTexelLuma(m, refFrame, rx, ry)
   local walkLuma = eyeTexelLuma(m, walkFrame, wx, wy)
   if not (refLuma and walkLuma) then return false end
-  return math.abs(refLuma - walkLuma) <= LUMA_EPSILON
+  return math.abs(refLuma - walkLuma) <= SHARED.LUMA_EPSILON
 end
 
 local function rowsForUv(rows, first, uv4)
@@ -1241,6 +1269,11 @@ local function applyBlinkUv(mesh)
 end
 
 local function shadeAtHeight(shade, y, groundShade)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local AO_STRENGTH = 2.4
+  local AO_GROUND = 0.12 * AO_STRENGTH
+  local AO_RISE = 6
   if groundShade ~= "on" or y >= AO_RISE then return shade end
   local t = math.max(0, y) / AO_RISE
   return shade * (1 - AO_GROUND * (1 - t))
@@ -1249,6 +1282,27 @@ end
 local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
                              groundShade, baseName, topEdge, frontShape,
                              topDome, stepWeight)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals; see the
+  -- REFACTOR comment above SHARED, main.lua). Every one of these five is
+  -- only ever read inside this function, so it costs nothing here: this
+  -- function's locals do not count against LuaJIT's 200 chunk locals.
+  local TOP_EDGE_SHADE = 0.82
+  -- Exposed SLAB faces sit at the real pixel boundary. The old inset was
+  -- hiding z-fighting between internal faces that are no longer emitted now.
+  local SIDE_INSET = 0
+  local RUN_UV_INSET = 0.05
+  -- DECISION v1.6.0: three shade steps is the same number of tones the
+  -- artist already uses for volume in the source Gen 1 sprites. A continuous
+  -- gradient was prototyped before and read as a bright stripe floating over
+  -- the art, because hard-pixel art and smooth gradients fight each other;
+  -- constant shade per pixel, quantized into these steps, is what matches
+  -- the rest of the drawing.
+  local FRONT_SHAPE_STEPS = 3
+  -- Same reasoning as FRONT_SHAPE_STEPS: three tones is what the artist
+  -- already uses for volume in the source Gen 1 sprites, and a step aligned
+  -- to the pixel, not a continuous gradient (DECISION above
+  -- FRONT_SHAPE_STEPS).
+  local TOP_DOME_STEPS = 3
   m = m or maskFor(def)
   if not m then return nil end
   frame = tonumber(frame) or 0
@@ -1296,8 +1350,8 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   end
 
   local function topShade()
-    if topEdge == "on" then return OBJ_SHADE.top * TOP_EDGE_SHADE end
-    return OBJ_SHADE.top
+    if topEdge == "on" then return SHARED.OBJ_SHADE.top * TOP_EDGE_SHADE end
+    return SHARED.OBJ_SHADE.top
   end
 
   -- TOP DOME FEATURE (v1.6.0): the top face already comes out as one quad
@@ -1559,7 +1613,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     local sy = cellBottom - ly
     local run = sideRuns[key]
     if run and run.lastLy + 1 == ly and sameUvTable(run.uv4, uv4)
-        and run.shade == OBJ_SHADE.side then
+        and run.shade == SHARED.OBJ_SHADE.side then
       run.lastLy = ly
       run.minY = math.min(run.minY, sy)
       run.maxY = math.max(run.maxY, sy + 1)
@@ -1568,7 +1622,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     finishSideRun(key)
     sideRuns[key] = {
       px = px, side = side, lastLy = ly, minY = sy, maxY = sy + 1,
-      uv4 = uv4, shade = OBJ_SHADE.side,
+      uv4 = uv4, shade = SHARED.OBJ_SHADE.side,
     }
   end
 
@@ -1662,13 +1716,13 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
             local rx, rw = a, b - a + 1
             quad(p(rx, y, z1), p(rx + rw, y, z1),
                  p(rx + rw, y + 1, z1), p(rx, y + 1, z1),
-                 rectUv(a, ly, b), OBJ_SHADE.front)
+                 rectUv(a, ly, b), SHARED.OBJ_SHADE.front)
             return
           end
           for sx = a, b do
             local t = math.abs(sx - runCenter) / runHalf
             local level = math.floor(t * (FRONT_SHAPE_STEPS - 0.001))
-            local sh = OBJ_SHADE.front
+            local sh = SHARED.OBJ_SHADE.front
               * (1 - frontStep * level / (FRONT_SHAPE_STEPS - 1))
             quad(p(sx, y, z1), p(sx + 1, y, z1),
                  p(sx + 1, y + 1, z1), p(sx, y + 1, z1),
@@ -1682,7 +1736,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
             local openUv = sameUv(sx, ly)
             local first = quad(p(sx, y, z1), p(sx + 1, y, z1),
               p(sx + 1, y + 1, z1), p(sx, y + 1, z1),
-              openUv, OBJ_SHADE.front)
+              openUv, SHARED.OBJ_SHADE.front)
             addEyeQuad(first, openUv, eyeClosedUv(sx, ly))
             cursor = sx + 1
           end
@@ -1690,7 +1744,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
         emitFrontRun(cursor, lx2)
         quad(p(x + w, y, z0), p(x, y, z0), p(x, y + 1, z0),
              p(x + w, y + 1, z0), rectUv(lx, ly, lx2, "back"),
-             OBJ_SHADE.back)
+             SHARED.OBJ_SHADE.back)
         for sx = lx, lx2 do
           if not at(sx, ly - 1) then
             quad(p(sx, y + 1 - SIDE_INSET, z0),
@@ -1704,7 +1758,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
                  p(sx + 1, y + SIDE_INSET, z1),
                  p(sx + 1, y + SIDE_INSET, z0),
                  p(sx, y + SIDE_INSET, z0),
-                 verticalUv(sx, ly, -1), OBJ_SHADE.bottom)
+                 verticalUv(sx, ly, -1), SHARED.OBJ_SHADE.bottom)
           end
           -- FIX v1.4.1: sides also need to be exposed faces. Within a
           -- horizontal run, a column's left side is coplanar with its
@@ -1777,6 +1831,9 @@ end
 
 local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shape,
                                groundShade)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local CARVED_PLUS_RECESS_STEPS = 2
   m = m or maskFor(def)
   if not (m and m.frames >= 3) then return nil end
   local pose = carvedFrames(frame, m.frames)
@@ -1866,7 +1923,7 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
           for lx = 0, m.cellW - 1 do
             local luma = frameLuma(frameIndex, lx, ly)
             if luma and not (m.outlineLuma
-                and math.abs(luma - m.outlineLuma) <= LUMA_EPSILON) then
+                and math.abs(luma - m.outlineLuma) <= SHARED.LUMA_EPSILON) then
               reliefMinLuma = reliefMinLuma and math.min(reliefMinLuma, luma) or luma
               reliefMaxLuma = reliefMaxLuma and math.max(reliefMaxLuma, luma) or luma
             end
@@ -1934,7 +1991,7 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
     if not frameTexel(m, pose.back, backXFor(lx), ly) then return false end
     if not frameTexel(m, pose.side, sx, ly) then return false end
     if carvedPlus and reliefMinLuma and reliefMaxLuma
-        and reliefMaxLuma > reliefMinLuma + LUMA_EPSILON then
+        and reliefMaxLuma > reliefMinLuma + SHARED.LUMA_EPSILON then
       local luma = frameLuma(frontFrameA, frontX, ly)
         or frameLuma(frontFrameB, frontX, ly)
       if luma then
@@ -2088,28 +2145,28 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
           if not solid(lx, ly, sx - 1) then
             quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y1, z0),
                  p(x0, y1, z0), sameUv(opaqueFrame(pose.front, widthFrame, lx, ly), lx, ly),
-                 OBJ_SHADE.front)
+                 SHARED.OBJ_SHADE.front)
           end
           if not solid(lx, ly, sx + 1) then
             quad(p(x1, y0, z1), p(x0, y0, z1), p(x0, y1, z1),
                  p(x1, y1, z1), sameUv(opaqueFrame(pose.back, widthFrame, lx, ly), lx, ly),
-                 OBJ_SHADE.back)
+                 SHARED.OBJ_SHADE.back)
           end
           if not solid(lx - 1, ly, sx) then
             quad(p(x0, y0, z1), p(x0, y0, z0), p(x0, y1, z0),
-                 p(x0, y1, z1), sideUv(sx, ly), OBJ_SHADE.side)
+                 p(x0, y1, z1), sideUv(sx, ly), SHARED.OBJ_SHADE.side)
           end
           if not solid(lx + 1, ly, sx) then
             quad(p(x1, y0, z0), p(x1, y0, z1), p(x1, y1, z1),
-                 p(x1, y1, z0), sideUv(sx, ly), OBJ_SHADE.side)
+                 p(x1, y1, z0), sideUv(sx, ly), SHARED.OBJ_SHADE.side)
           end
           if not solid(lx, ly - 1, sx) then
             quad(p(x0, y1, z1), p(x1, y1, z1), p(x1, y1, z0),
-                 p(x0, y1, z0), topUv(lx, ly, 1), OBJ_SHADE.top)
+                 p(x0, y1, z0), topUv(lx, ly, 1), SHARED.OBJ_SHADE.top)
           end
           if not solid(lx, ly + 1, sx) then
             quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y0, z1),
-                 p(x0, y0, z1), topUv(lx, ly, -1), OBJ_SHADE.bottom)
+                 p(x0, y0, z1), topUv(lx, ly, -1), SHARED.OBJ_SHADE.bottom)
           end
         end
       end
@@ -2231,7 +2288,7 @@ end
 -- array: if the slot being overwritten was a failure, it removes it from
 -- both counts before writing the new value on top.
 local function pushDrawWindow(kind)
-  local slot = (drawWindowPos % DRAW_WINDOW_SIZE) + 1
+  local slot = (drawWindowPos % SHARED.DRAW_WINDOW_SIZE) + 1
   local old = drawWindow[slot]
   if old then
     drawWindowFailures = drawWindowFailures - 1
@@ -2267,13 +2324,14 @@ local function recordDrawFailure(kind, message)
   end
 end
 
-local DRAW_FAILURE_KIND_PRIORITY = { "mask_failed", "build_failed", "exception" }
-
 -- v1.4.2, fine-tooth comb (item 2): the window's DOMINANT cause, not the
 -- most recent one. Only swaps the best candidate when the count is
--- strictly greater, so a tie breaks by the fixed order above
+-- strictly greater, so a tie breaks by the fixed order below
 -- (deterministic), never by the order the failures arrived in.
 local function dominantFailureKind()
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local DRAW_FAILURE_KIND_PRIORITY = { "mask_failed", "build_failed", "exception" }
   local bestKind, bestCount = nil, 0
   for _, kind in ipairs(DRAW_FAILURE_KIND_PRIORITY) do
     local count = drawWindowKindCounts[kind] or 0
@@ -2291,12 +2349,6 @@ local function warnReplacedMesh()
     "installed; another mod replaced it after patching")
 end
 
-local STATUS_FAILURE_LABELS = {
-  mask_failed = "MASK ERROR",
-  build_failed = "BUILD ERROR",
-  exception = "DRAW ERROR",
-}
-
 -- v1.4.2, AngelusRole/Tyler Durden/TwoTracks: the STATUS row exists
 -- because none of the three reports had a way to know, just by looking at
 -- the game, why characters were not drawing as voxel. Precedence order
@@ -2304,10 +2356,17 @@ local STATUS_FAILURE_LABELS = {
 -- every draw; DEPTH: OFF and first person by live state read, because
 -- they are uniform choices that apply to the whole frame, not per sprite;
 -- only then the failure proportion in the sliding window of the last
--- DRAW_WINDOW_SIZE draws, which only escalates to an error when HALF OR
+-- SHARED.DRAW_WINDOW_SIZE draws, which only escalates to an error when HALF OR
 -- MORE of the window is failures (item C: a single bad sheet, isolated or
 -- interleaved with good sheets, cannot leave STATUS stuck at error).
 local function statusValue()
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local STATUS_FAILURE_LABELS = {
+    mask_failed = "MASK ERROR",
+    build_failed = "BUILD ERROR",
+    exception = "DRAW ERROR",
+  }
   -- v1.4.2, fine-tooth comb: `patched`, never `SpriteBillboards ~= nil`. A
   -- patch that started but did not finish (host table refused a write)
   -- never gets to mark `patched`, so this still reads NO HOST instead of
@@ -2327,7 +2386,7 @@ local function statusValue()
     local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
     if fp ~= "solid" or installedDraw == nil then return "FIRST PERSON" end
   end
-  if drawWindowFailures * 2 >= DRAW_WINDOW_SIZE then
+  if drawWindowFailures * 2 >= SHARED.DRAW_WINDOW_SIZE then
     return STATUS_FAILURE_LABELS[dominantFailureKind()] or "ACTIVE"
   end
   return "ACTIVE"
@@ -2401,44 +2460,6 @@ local function lifeStatusRow()
 end
 
 -- ====================================================== CAMERA PRESET
---
--- MEASURED, not chosen. The harness rendered the red frame 0 at every
--- host camera rung against every menu thickness, and counted what
--- fraction of the drawn pixels come from the artist's art (front and back
--- faces) versus surface this mod invented (top, sides, bottom):
---
---                 rung 15   rung 35   rung 50   rung 75
---     depth  1     76.3      88.4      92.8      97.6
---     depth  2     62.2      80.0      86.9      95.5
---     depth  3     52.4      73.4      81.6      93.3
---     depth  5     40.1      62.9      73.8      89.1
---     depth 10     26.0      49.6      62.1      81.0
---
--- The criterion was not invented: it is what IS ALREADY THE DEFAULT. rung
--- 35 with depth 3 gives 73.4% art, and that is the configuration the
--- community has seen, used and approved. So for every rung the
--- recommendation is the largest thickness that still stays at that level.
--- Out comes 1, 3, 5, 10, and the monotonicity is a consequence of the
--- table, not a rounding of ours.
---
--- THE INTERESTING RESULT: with these thicknesses the composition stays
--- nearly constant at every rung (art between 73 and 81%). A more level
--- camera looks more toward the top, and the preset compensates for
--- exactly that by removing thickness. That is why it does NOT touch FRONT
--- SHAPE or TOP DOME: once the thickness is right, the ratio between the
--- front face and the top one is already the same everywhere, so there is
--- no measured reason to vary the shading along with it.
---
--- And the reverse also holds: at rung 75 you can use the menu's MAXIMUM
--- thickness and still have more art on screen than today's default
--- configuration has. Anyone playing at that camera is leaving volume on
--- the table without knowing it.
-local CAMERA_PRESET = {
-  { rung = 15, depth = 1 },
-  { rung = 35, depth = 3 },
-  { rung = 50, depth = 5 },
-  { rung = 75, depth = 10 },
-}
 
 -- The current rung in degrees, the way the host measures it (0 lays the
 -- card flat on the ground, 90 raises it). Returns nil when there is no way
@@ -2453,6 +2474,46 @@ local function cameraRung()
 end
 
 local function presetParaAgora()
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  --
+  -- MEASURED, not chosen. The harness rendered the red frame 0 at every
+  -- host camera rung against every menu thickness, and counted what
+  -- fraction of the drawn pixels come from the artist's art (front and back
+  -- faces) versus surface this mod invented (top, sides, bottom):
+  --
+  --                 rung 15   rung 35   rung 50   rung 75
+  --     depth  1     76.3      88.4      92.8      97.6
+  --     depth  2     62.2      80.0      86.9      95.5
+  --     depth  3     52.4      73.4      81.6      93.3
+  --     depth  5     40.1      62.9      73.8      89.1
+  --     depth 10     26.0      49.6      62.1      81.0
+  --
+  -- The criterion was not invented: it is what IS ALREADY THE DEFAULT. rung
+  -- 35 with depth 3 gives 73.4% art, and that is the configuration the
+  -- community has seen, used and approved. So for every rung the
+  -- recommendation is the largest thickness that still stays at that level.
+  -- Out comes 1, 3, 5, 10, and the monotonicity is a consequence of the
+  -- table, not a rounding of ours.
+  --
+  -- THE INTERESTING RESULT: with these thicknesses the composition stays
+  -- nearly constant at every rung (art between 73 and 81%). A more level
+  -- camera looks more toward the top, and the preset compensates for
+  -- exactly that by removing thickness. That is why it does NOT touch FRONT
+  -- SHAPE or TOP DOME: once the thickness is right, the ratio between the
+  -- front face and the top one is already the same everywhere, so there is
+  -- no measured reason to vary the shading along with it.
+  --
+  -- And the reverse also holds: at rung 75 you can use the menu's MAXIMUM
+  -- thickness and still have more art on screen than today's default
+  -- configuration has. Anyone playing at that camera is leaving volume on
+  -- the table without knowing it.
+  local CAMERA_PRESET = {
+    { rung = 15, depth = 1 },
+    { rung = 35, depth = 3 },
+    { rung = 50, depth = 5 },
+    { rung = 75, depth = 10 },
+  }
   local graus = cameraRung()
   if not graus then return nil end
   local melhor, distancia = nil, math.huge
@@ -2564,62 +2625,20 @@ end
 -- y does not drag the foot. That is what makes this read as a body and not
 -- a sticker sliding around.
 
--- Amplitudes and rhythms. Seconds and fraction of cell height.
-local BREATH_PERIOD = 3.1      -- calm breathing of a standing adult
-local SWAY_PERIOD = 6.2        -- half the rate, so they never beat together
-local LAG_STIFFNESS = 90       -- secondary motion's spring
-local LAG_DAMPING = 12         -- below critical: overshoots and comes back
-local LAG_REFERENCE_SPEED = 60 -- px/s of a normal walk (16 px / 16 frames)
-local LIFE_CELL = 16           -- the game's walking grid
-local LIFE_MATCH_RADIUS = 24   -- px: how far an instance may have walked
--- DERIVED, never hand-written. The neighbor scan needs to reach EVERY cell
--- that could contain a point within the radius, and that relation is
--- geometric: a 24 px radius over 16 px cells reaches TWO cells, not one
--- (px' = 15 is in cell 0, px = 32 in cell 2, and the distance between them
--- is 17, well within 24).
---
--- The first version only scanned the eight adjacent cells with the radius
--- at 24, and independent review caught it: in that gap the instance was
--- not found and was reborn with a new phase, which is exactly the phase
--- slipping this tracker exists to prevent. Deriving the cell reach from
--- the radius makes the two numbers unable to diverge anymore.
-local LIFE_MATCH_CELLS = math.ceil(LIFE_MATCH_RADIUS / 16)
-local LIFE_FORGET_SECONDS = 2  -- without showing up, the instance is forgotten
-local LIFE_MAX_INSTANCES = 512
-
--- PER-SHEET PERSONALITY (roadmap step 7). Multipliers on top of what the
--- menu chose: rate, breath amplitude, sway amplitude. Absent from the
--- table = 1, 1, 1. Same shape as EYE_MARKS, which already has 112 entries
--- and proved that a hand-written table ages well in this mod.
---
--- This does NOT invent new movement: it only says that a sitting old man
--- breathes slowly and barely sways, and that a swimmer standing in water
--- sways more than a guard at attention. No new pixel was drawn for this.
-local LIFE_PERSONALITY = {
-  -- sleeping or sitting: slow and nearly still
-  gambler_asleep   = { rate = 0.45, breath = 1.35, sway = 0.0 },
-  sleeping_boy     = { rate = 0.45, breath = 1.35, sway = 0.0 },
-  -- standing at attention: normal rate, no sway
-  guard            = { rate = 1.00, breath = 0.80, sway = 0.15 },
-  officer_jenny    = { rate = 1.00, breath = 0.80, sway = 0.20 },
-  scientist        = { rate = 1.05, breath = 0.85, sway = 0.30 },
-  -- in the water or standing for a long time: more sway
-  swimmer          = { rate = 1.15, breath = 1.10, sway = 1.60 },
-  fisher           = { rate = 0.85, breath = 1.05, sway = 1.25 },
-  -- children and restless people: fast and short
-  youngster        = { rate = 1.30, breath = 0.90, sway = 1.20 },
-  girl             = { rate = 1.25, breath = 0.90, sway = 1.15 },
-  little_girl      = { rate = 1.40, breath = 0.85, sway = 1.30 },
-  -- carrying weight
-  super_nerd       = { rate = 0.90, breath = 1.15, sway = 0.75 },
-  gambler          = { rate = 0.95, breath = 1.10, sway = 0.85 },
-  -- OBJECTS. An item ball does not breathe. Without this entry, the
-  -- poke_ball on the ground would end up pulsing, which is the most
-  -- obvious defect this feature could possibly have.
-  poke_ball        = { rate = 1, breath = 0, sway = 0, lag = 0 },
-  boulder          = { rate = 1, breath = 0, sway = 0, lag = 0 },
-  snorlax          = { rate = 0.40, breath = 1.60, sway = 0.0 },
-}
+-- REFACTOR (main chunk locals, roadmap item 0): this used to be eleven
+-- separate chunk-level constants, BREATH_PERIOD through LIFE_PERSONALITY,
+-- one `local` each (same fix as the OPTIONS/optionState refactor, see
+-- main.lua:53: a function's own locals do not count against the chunk's
+-- 200). Nine of the eleven moved to a local inside the single function
+-- that reads them, comment and value both unchanged:
+--   BREATH_PERIOD, SWAY_PERIOD, LIFE_PERSONALITY -> lifeDrawWrap
+--   LAG_STIFFNESS, LAG_DAMPING, LAG_REFERENCE_SPEED -> lifeAdvance
+--   LIFE_MATCH_RADIUS, LIFE_MATCH_CELLS -> lifeInstance
+--   LIFE_FORGET_SECONDS, LIFE_MAX_INSTANCES -> lifeForget
+-- LIFE_CELL is the odd one out: it is read by THREE functions
+-- (lifeCellKey, lifeInstance, lifeDrawWrap), so it moved into SHARED
+-- instead (main.lua, near OBJ_SHADE) as SHARED.LIFE_CELL, the same table
+-- that already holds the other constants shared by more than one function.
 
 -- Instance tracker.
 --
@@ -2637,8 +2656,8 @@ local lifeInstances = {}
 local lifeCount = 0
 
 local function lifeCellKey(sheet, px, py)
-  return sheet .. "\1" .. math.floor(px / LIFE_CELL) ..
-    "\1" .. math.floor(py / LIFE_CELL)
+  return sheet .. "\1" .. math.floor(px / SHARED.LIFE_CELL) ..
+    "\1" .. math.floor(py / SHARED.LIFE_CELL)
 end
 
 -- Initial phase for a new instance. Deterministic (the same sheet in the
@@ -2653,6 +2672,10 @@ local function lifeSeedPhase(px, py)
 end
 
 local function lifeForget(now)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local LIFE_FORGET_SECONDS = 2  -- without showing up, the instance is forgotten
+  local LIFE_MAX_INSTANCES = 512
   if lifeCount <= LIFE_MAX_INSTANCES then return end
   for key, inst in pairs(lifeInstances) do
     if now - inst.seen > LIFE_FORGET_SECONDS then
@@ -2673,6 +2696,21 @@ end
 --      the character that just crossed a cell boundary while walking.
 --   3. a new instance.
 local function lifeInstance(sheet, px, py, now)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here. px: how far an instance may have walked.
+  local LIFE_MATCH_RADIUS = 24
+  -- DERIVED, never hand-written. The neighbor scan needs to reach EVERY cell
+  -- that could contain a point within the radius, and that relation is
+  -- geometric: a 24 px radius over 16 px cells reaches TWO cells, not one
+  -- (px' = 15 is in cell 0, px = 32 in cell 2, and the distance between them
+  -- is 17, well within 24).
+  --
+  -- The first version only scanned the eight adjacent cells with the radius
+  -- at 24, and independent review caught it: in that gap the instance was
+  -- not found and was reborn with a new phase, which is exactly the phase
+  -- slipping this tracker exists to prevent. Deriving the cell reach from
+  -- the radius makes the two numbers unable to diverge anymore.
+  local LIFE_MATCH_CELLS = math.ceil(LIFE_MATCH_RADIUS / 16)
   local key = lifeCellKey(sheet, px, py)
   local inst = lifeInstances[key]
   if not inst then
@@ -2680,7 +2718,7 @@ local function lifeInstance(sheet, px, py, now)
     for dx = -LIFE_MATCH_CELLS, LIFE_MATCH_CELLS do
       for dy = -LIFE_MATCH_CELLS, LIFE_MATCH_CELLS do
         if dx ~= 0 or dy ~= 0 then
-          local k = lifeCellKey(sheet, px + dx * LIFE_CELL, py + dy * LIFE_CELL)
+          local k = lifeCellKey(sheet, px + dx * SHARED.LIFE_CELL, py + dy * SHARED.LIFE_CELL)
           local c = lifeInstances[k]
           -- `c.seen < now` prevents stealing an instance that was ALREADY
           -- seen this frame: that is a different person, not this one.
@@ -2720,6 +2758,11 @@ end
 -- is what frees this code from needing to know where a frame begins and
 -- ends.
 local function lifeAdvance(inst, px, py, now, rate)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local LAG_STIFFNESS = 90       -- secondary motion's spring
+  local LAG_DAMPING = 12         -- below critical: overshoots and comes back
+  local LAG_REFERENCE_SPEED = 60 -- px/s of a normal walk (16 px / 16 frames)
   local dt = now - inst.seen
   if dt <= 0 then return end
   -- A huge dt means the instance disappeared and came back (map switch,
@@ -2886,17 +2929,6 @@ end
 -- (billboardMatrix, cardBlend > 0 branch) and px stops being recoverable.
 -- There this mod already returns the flat card on purpose, so the
 -- animation drops out too.
--- Conservative character radius from the matrix's anchor: half a cell in
--- x and z, plus the maximum depth the menu offers. Used to ask about the
--- CLOSEST vertex instead of the center, which is what decides whether any
--- corner crosses the near plane.
-local FP_RAIO = 14
--- Margin above the near plane (1 unit when eye and focus are together).
--- Two is the smallest number that still leaves room for breath and
--- inertia to move the body after this math, since they touch the matrix
--- and not the pull.
-local FP_FOLGA = 2
-
 -- THE FIX. `pull` is a depth bias: the shader pushes every vertex toward
 -- the eye by that distance. Too close, and this throws the vertex behind
 -- the eye and what shows up is a black spike.
@@ -2906,6 +2938,19 @@ local FP_FOLGA = 2
 -- less depth bias, and the bias's reason to exist (not fighting in z with
 -- terrain FAR away) does not apply to something glued to the camera.
 local function fpPullSeguro(model, pull)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  --
+  -- Conservative character radius from the matrix's anchor: half a cell in
+  -- x and z, plus the maximum depth the menu offers. Used to ask about the
+  -- CLOSEST vertex instead of the center, which is what decides whether any
+  -- corner crosses the near plane.
+  local FP_RAIO = 14
+  -- Margin above the near plane (1 unit when eye and focus are together).
+  -- Two is the smallest number that still leaves room for breath and
+  -- inertia to move the body after this math, since they touch the matrix
+  -- and not the pull.
+  local FP_FOLGA = 2
   if type(pull) ~= "number" or pull <= 0 then return pull end
   local eye = Voxel3D and Voxel3D.eye
   if type(eye) ~= "table" then return pull end
@@ -2951,17 +2996,55 @@ end
 -- noticed the pokeballs on Oak's table do not sway. That is not this rule at
 -- work. Those pokeballs are map art, not object events, so they never reach
 -- SpriteBillboards.mesh and were never ours to animate.
-local STILL_OBJECTS = {
-  boulder = true, clipboard = true, fossil = true, old_amber = true,
-  paper = true, poke_ball = true, pokedex = true,
-}
-
 local function lifeAlive(info)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local STILL_OBJECTS = {
+    boulder = true, clipboard = true, fossil = true, old_amber = true,
+    paper = true, poke_ball = true, pokedex = true,
+  }
   if not info then return false end
   return not STILL_OBJECTS[info.base]
 end
 
 local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here. Amplitudes and rhythms. Seconds and fraction of cell height.
+  local BREATH_PERIOD = 3.1      -- calm breathing of a standing adult
+  local SWAY_PERIOD = 6.2        -- half the rate, so they never beat together
+  -- PER-SHEET PERSONALITY (roadmap step 7). Multipliers on top of what the
+  -- menu chose: rate, breath amplitude, sway amplitude. Absent from the
+  -- table = 1, 1, 1. Same shape as EYE_MARKS, which already has 112 entries
+  -- and proved that a hand-written table ages well in this mod.
+  --
+  -- This does NOT invent new movement: it only says that a sitting old man
+  -- breathes slowly and barely sways, and that a swimmer standing in water
+  -- sways more than a guard at attention. No new pixel was drawn for this.
+  local LIFE_PERSONALITY = {
+    -- sleeping or sitting: slow and nearly still
+    gambler_asleep   = { rate = 0.45, breath = 1.35, sway = 0.0 },
+    sleeping_boy     = { rate = 0.45, breath = 1.35, sway = 0.0 },
+    -- standing at attention: normal rate, no sway
+    guard            = { rate = 1.00, breath = 0.80, sway = 0.15 },
+    officer_jenny    = { rate = 1.00, breath = 0.80, sway = 0.20 },
+    scientist        = { rate = 1.05, breath = 0.85, sway = 0.30 },
+    -- in the water or standing for a long time: more sway
+    swimmer          = { rate = 1.15, breath = 1.10, sway = 1.60 },
+    fisher           = { rate = 0.85, breath = 1.05, sway = 1.25 },
+    -- children and restless people: fast and short
+    youngster        = { rate = 1.30, breath = 0.90, sway = 1.20 },
+    girl             = { rate = 1.25, breath = 0.90, sway = 1.15 },
+    little_girl      = { rate = 1.40, breath = 0.85, sway = 1.30 },
+    -- carrying weight
+    super_nerd       = { rate = 0.90, breath = 1.15, sway = 0.75 },
+    gambler          = { rate = 0.95, breath = 1.10, sway = 0.85 },
+    -- OBJECTS. An item ball does not breathe. Without this entry, the
+    -- poke_ball on the ground would end up pulsing, which is the most
+    -- obvious defect this feature could possibly have.
+    poke_ball        = { rate = 1, breath = 0, sway = 0, lag = 0 },
+    boulder          = { rate = 1, breath = 0, sway = 0, lag = 0 },
+    snorlax          = { rate = 0.40, breath = 1.60, sway = 0.0 },
+  }
   local info = ourMeshes[mesh]
   if not info or type(model) ~= "table" then
     return originalDraw(mesh, texture, model, pull, sunModel)
@@ -3008,7 +3091,7 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     return originalDraw(mesh, texture, model, pull, sunModel)
   end
 
-  local px = espelhado and (model[4] - LIFE_CELL) or model[4]
+  local px = espelhado and (model[4] - SHARED.LIFE_CELL) or model[4]
   local py = model[12] - 8
   local pessoa = LIFE_PERSONALITY[info.base]
   local rate = pessoa and pessoa.rate or 1
@@ -3026,10 +3109,10 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     -- reach the extreme together, which is what would make the character
     -- look like a metronome instead of a person.
     local a = (inst.phase * BREATH_PERIOD / SWAY_PERIOD + 0.25) * 2 * math.pi
-    kx = amp * math.sin(a) / LIFE_CELL
+    kx = amp * math.sin(a) / SHARED.LIFE_CELL
   end
   if lag ~= "off" then
-    -- DIVIDING BY LIFE_CELL, same as SWAY right above, and the reason is
+    -- DIVIDING BY SHARED.LIFE_CELL, same as SWAY right above, and the reason is
     -- written here because missing it slipped past every numeric gate.
     --
     -- `amp` is HEAD displacement in world pixels. The shear is x' = x +
@@ -3040,16 +3123,16 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     -- checks passed anyway, because
     -- they all asked "did it change?" and none asked "by how much?". What
     -- caught it was watching the clip.
-    local amp = lag * (pessoa and pessoa.lag or 1) / LIFE_CELL
+    local amp = lag * (pessoa and pessoa.lag or 1) / SHARED.LIFE_CELL
     kx = kx + amp * inst.lagX
     kz = kz + amp * inst.lagZ
   end
   local sx = 1
   if footfall ~= "off" then
-    local amp = footfall * (pessoa and pessoa.footfall or 1) / LIFE_CELL
+    local amp = footfall * (pessoa and pessoa.footfall or 1) / SHARED.LIFE_CELL
     -- cosine of the footfall's phase: +1 on impact, -1 at the top of the
     -- step. One full cycle per cell walked.
-    local pulso = math.cos((inst.andado / LIFE_CELL) * 2 * math.pi)
+    local pulso = math.cos((inst.andado / SHARED.LIFE_CELL) * 2 * math.pi)
     local achata = amp * (inst.velocidade or 0) * pulso
     s = s - achata
     -- Volume preserved: what disappears in height shows up in width.
@@ -3283,7 +3366,6 @@ end
 -- costs a whole version where the mod does nothing for whoever migrated.
 -- From now on the version never rejects a host: it is just information,
 -- always logged, and a warning when it is out of the known range.
-local REQUIRED_MODULES = { "Voxel3D", "ImageCache", "SpriteBillboards" }
 
 -- ROADMAP STEP 2. OPTIONAL capabilities: their absence does NOT reject
 -- the host, it only turns off the feature that depends on it.
@@ -3319,6 +3401,9 @@ end
 -- whose require blows up) has to be rejected cleanly, without taking down
 -- the whole mod's loading (same class of defect as round 2).
 local function probeHost(handle)
+  -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
+  -- here.
+  local REQUIRED_MODULES = { "Voxel3D", "ImageCache", "SpriteBillboards" }
   if not (handle.exports and handle.exports.lib) then
     return nil, "exports.lib is missing"
   end
