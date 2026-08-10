@@ -223,6 +223,8 @@ for linha in "${LINHAS[@]}"; do
     # So the harness measures what the critic had to notice by eye.
     CONTA=$(bash "$AQUI/../love.sh" mods/voxel_characters/tools/render/compose \
       mode=conta "$SAIDA/par_${idx}_A.png" "$SAIDA/par_${idx}_B.png" 2>/dev/null)
+    BA=$(printf '%s' "$CONTA" | grep -oE 'borda_a [0-9]+' | grep -oE '[0-9]+')
+    BB=$(printf '%s' "$CONTA" | grep -oE 'borda_b [0-9]+' | grep -oE '[0-9]+')
     CA=$(printf '%s' "$CONTA" | grep -oE 'conteudo_a [0-9]+' | grep -oE '[0-9]+')
     CB=$(printf '%s' "$CONTA" | grep -oE 'conteudo_b [0-9]+' | grep -oE '[0-9]+')
     DIF=$(printf '%s' "$CONTA" | grep -oE 'diferenca [0-9]+' | grep -oE '[0-9]+')
@@ -234,7 +236,17 @@ for linha in "${LINHAS[@]}"; do
     # These two thresholds are a first guess and are worth revisiting the day
     # the calibration numbers stop making sense.
     PISO=$(( MENOR / 20 ))
-    if [ "$MENOR" -lt 2000 ]; then
+    # CROPPED SIDES ARE NOT A TASTE QUESTION. The critic flagged SIX of sixteen
+    # pairs where one side's extrusion runs off the top of the frame, and said
+    # the obvious thing: they are still art questions but they are not CLOSE
+    # ones, so they burn a slot on a foregone conclusion. `mode=conta` already
+    # reported borda_a / borda_b and this harness was ignoring both.
+    if [ "${BA:-0}" != "${BB:-0}" ]; then
+      echo "  pair $idx dropped: one side is cropped by the frame"
+      rm -f "$SAIDA/par_${idx}_A.png" "$SAIDA/par_${idx}_B.png"
+      grep -v "^${idx} " "$SAIDA/gabarito.txt" > "$SAIDA/gab.tmp" 2>/dev/null \
+        && mv "$SAIDA/gab.tmp" "$SAIDA/gabarito.txt"
+    elif [ "$MENOR" -lt 2000 ]; then
       echo "  pair $idx dropped: a side rendered almost empty ($CA / $CB)"
       rm -f "$SAIDA/par_${idx}_A.png" "$SAIDA/par_${idx}_B.png"
       grep -v "^${idx} " "$SAIDA/gabarito.txt" > "$SAIDA/gab.tmp" 2>/dev/null \
@@ -260,6 +272,40 @@ for linha in "${LINHAS[@]}"; do
       && mv "$SAIDA/gab.tmp" "$SAIDA/gabarito.txt"
   fi
 done
+
+# DEDUPLICATE ACROSS PAIRS. The critic found that pairs 18 and 19 were the
+# same comparison with the sides swapped, byte for byte, and that 1 and 2 were
+# too, and that 3 and 4 shared a reference image. Kim's choice list contains
+# repeated questions, which is fine for fitting a model and wasteful for
+# grading a critic: it spends judgements re-asking something already asked.
+python3 - "$SAIDA" <<'DEDUP'
+import hashlib, os, sys, re
+d = sys.argv[1]
+def h(p):
+    return hashlib.sha1(open(p, 'rb').read()).hexdigest()
+vistos, mortos = {}, []
+idxs = sorted(int(m.group(1)) for f in os.listdir(d)
+              for m in [re.match(r'par_(\d+)_A\.png$', f)] if m)
+for i in idxs:
+    a, b = f"{d}/par_{i}_A.png", f"{d}/par_{i}_B.png"
+    if not (os.path.exists(a) and os.path.exists(b)):
+        continue
+    # A pair and its mirror are the same question, so the key is order free.
+    chave = tuple(sorted((h(a), h(b))))
+    if chave in vistos:
+        mortos.append(i)
+        os.remove(a); os.remove(b)
+    else:
+        vistos[chave] = i
+if mortos:
+    print("  dropped as duplicates of an earlier pair: "
+          + ", ".join(str(m) for m in mortos))
+    gab = f"{d}/gabarito.txt"
+    if os.path.exists(gab):
+        linhas = [l for l in open(gab)
+                  if l.strip() and int(l.split()[0]) not in mortos]
+        open(gab, "w").writelines(linhas)
+DEDUP
 
 USAVEIS=$(ls "$SAIDA"/par_*_A.png 2>/dev/null | wc -l | tr -d ' ')
 echo ""
