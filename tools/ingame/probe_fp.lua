@@ -321,16 +321,39 @@ return function(game)
     local bA, imgA = amostraEm(alvo, "card")
     local bF, imgF = amostraEm(alvo, "card")
     local bS, imgS = amostraEm(alvo, "solid")
+    -- A SAMPLE WHOSE OWN FLOOR IS LARGE MEASURES THE SCENE, NOT THE OPTION.
+    --
+    -- Matching blends was the only discard rule, and it is necessary but not
+    -- sufficient. Measured across four runs of an unchanged build, P4 failed
+    -- twice: once with floor 51679 and signal 61280, once with floor 48568 and
+    -- signal 51328, against runs where the floor was 0 and the signal 5206.
+    -- The blends matched in all of them. Something else moved.
+    --
+    -- When the CARD-CARD control already differs by half the frame, the
+    -- CARD-SOLID number from the same sample is that same movement plus
+    -- whatever the option did, and there is no way to separate them
+    -- afterwards. So the sample is thrown away rather than reasoned about.
+    --
+    -- 5% is far above the 0 a settled scene produces and far below the ~55%
+    -- the bad samples produced, so it is not a threshold tuned to make
+    -- anything pass: nothing sits near it.
+    local PISO_MAX = total() * 0.05
     if math.abs(bA - bF) > 0.03 or math.abs(bA - bS) > 0.03 then
       descartadas = descartadas + 1
       nota("  descartada: blends %.2f / %.2f / %.2f nao bateram", bA, bF, bS)
     else
       local p = difere(imgA, imgF)
       local d = difere(imgA, imgS)
-      usadas = usadas + 1
-      if d > piorSinal then piorSinal, piorBlend, piorPiso = d, bA, p end
-      nota("  blend %.2f   piso %d (%.1f%%)   CARD-SOLID %d (%.1f%%)",
-           bA, p, p / total() * 100, d, d / total() * 100)
+      if p > PISO_MAX then
+        descartadas = descartadas + 1
+        nota("  descartada: blend %.2f com piso %d (%.1f%%), a cena nao estava"
+             .. " parada", bA, p, p / total() * 100)
+      else
+        usadas = usadas + 1
+        if d > piorSinal then piorSinal, piorBlend, piorPiso = d, bA, p end
+        nota("  blend %.2f   piso %d (%.1f%%)   CARD-SOLID %d (%.1f%%)",
+             bA, p, p / total() * 100, d, d / total() * 100)
+      end
     end
   end
   sai(); U.wait(60)

@@ -172,11 +172,36 @@ the card about its feet toward the camera as the blend rises, easing the lean
 out as the yaw eases in. A settled first-person view is therefore head-on, which
 is exactly where depth shows nothing.
 
-**So the open question is now sharper than the one I started with: what does
-FIRST PERSON: SOLID actually buy at full blend?** The in-game probe measures at
-blend 0.58, mid-transition, where the lean has not finished easing out and depth
-is still visible; it found 1664 differing samples there. Nobody has measured the
-settled case with a character guaranteed in frame.
+**The open question was: what does FIRST PERSON: SOLID actually buy at full
+blend? ANSWERED 2026-08-10, and the answer is nothing.**
+
+`probe_fp` sweeps eight blends and prints each one. The shape is unambiguous
+and it reproduces byte for byte across four runs:
+
+```
+blend 0.13   CARD-SOLID   579   (0.7%)
+blend 0.21                633
+blend 0.31                624
+blend 0.42                674
+blend 0.53                936
+blend 0.64               2091   (2.4%)
+blend 0.74               5206   (5.9%)   <-- the peak
+blend 0.83                  0   (0.0%)   <-- gone
+```
+
+The effect grows through the transition, peaks at blend 0.74, and is **exactly
+zero** by 0.83. That is the host hiding the player's own card as the blend
+completes, which it does deliberately.
+
+**So the value of FIRST PERSON: SOLID is entirely in the transition**, and that
+has to be said plainly in the release notes rather than implying a solid you
+can walk around. It is honest and it is still worth having: 5.9% of the frame
+at the peak is the player's own body, which used to collapse to a flat card
+exactly when the camera was closest to it.
+
+It also settles the depth question that item 6 sharpened. A settled first
+person view shows nothing of the mod either way, so tuning depth for grazing
+angles in first person would be tuning something nobody sees.
 
 **What changes:** if the answer is "nothing at blend 1.0", the feature's value is
 entirely in the transition, which is honest and worth saying out loud in the
