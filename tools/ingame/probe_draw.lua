@@ -353,6 +353,13 @@ return function(game)
     end
     veredito("P6", ruins == 0, string.format(
       "%d de 7 degraus de camera mudaram o valor do NPC", ruins))
+  else
+    -- SEM NPC PARADO NAO HA VEREDITO, e antes disso a P6 simplesmente sumia:
+    -- o bloco inteiro vivia dentro de `if alvo then`, entao um mapa sem NPC
+    -- parado tirava a checagem do resumo e `todos` continuava verdadeiro. O
+    -- P4 logo acima ja trata o mesmo caso emitindo um veredito falso, que e o
+    -- certo: nao medir e um resultado, e nao a ausencia de um.
+    veredito("P6", false, "nao achei NPC parado para observar entre degraus")
   end
 
   -- ---------------------------------------------------------------- P7 e P8

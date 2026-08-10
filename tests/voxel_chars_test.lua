@@ -1514,11 +1514,18 @@ do
   loadWith(makeMod(handle, { depth = 2 }))
   local first = modules.SpriteBillboards.mesh({ image = "sheet-001.png",
                                                 frames = 1 }, 0)
+  local last
   for i = 2, 65 do
-    modules.SpriteBillboards.mesh({ image = ("sheet-%03d.png"):format(i),
-                                    frames = 1 }, 0)
+    last = modules.SpriteBillboards.mesh({ image = ("sheet-%03d.png"):format(i),
+                                           frames = 1 }, 0)
   end
   check(first.released, "LRU solta a malha mais antiga ao passar de 64 entradas")
+  -- E SO A MAIS ANTIGA. Sem este par, soltar a cada insercao passa: o teste so
+  -- perguntava se a primeira caiu, nunca se a ultima ficou. Um cache que solta
+  -- tudo tem taxa de acerto zero e reconstroi malha por personagem por quadro,
+  -- que e exatamente o custo que o cache existe para evitar.
+  check(last ~= nil and not last.released,
+        "LRU nao solta a mais recente junto: soltar tudo tambem passaria acima")
 end
 
 do
