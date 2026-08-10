@@ -1,0 +1,51 @@
+# WHAT COUNTS AS TOOL SURFACE, AND WHAT IS DEFERRED (roadmap T1.5).
+#
+# Read by tools/en_us_sweep.lua. First matching rule wins, so a specific path
+# can sit above a broad one.
+#
+#   <path prefix>   <zone>   <reason>
+#
+# ZONES
+#
+#   surface                 text a human reads coming out of the tool, and the
+#                           tool can be validated without a display. Must be
+#                           en-US. A Portuguese string here fails the gate.
+#
+#   deferred-needs-love     the output is only exercised, or only parsed, by
+#                           something that needs LOVE and a display. Converting
+#                           it blind means changing text that a gate greps and
+#                           not being able to run that gate.
+#
+#   deferred-full-battery   convertible, but the gate for the change is a full
+#                           battery run.
+#
+#   deferred-api            not prose. Option values and command-line keys that
+#                           a rename would break for anyone with a script or a
+#                           saved command. A translation here is an API change
+#                           and needs its own decision.
+#
+#   internal                identifiers, internal test names and fixtures.
+#                           Nobody reads these as product text.
+#
+# A deferred rule that stops matching anything FAILS the gate, on purpose: an
+# exemption nobody removed silently covers the next regression.
+#
+# ---------------------------------------------------------------------------
+
+# --- the harness and the drivers: output is parsed by gates that need LOVE ---
+mods/voxel_characters/tools/ingame          deferred-needs-love  in-game drivers; bateria greps their PASSOU/FALHOU verdicts and only LOVE can exercise them
+mods/voxel_characters/tools/render          deferred-needs-love  harness output is parsed by check.sh, the ruler, which needs a display
+
+# --- convertible, but the gate is a full battery ---
+mods/voxel_characters/tools/bateria.sh      deferred-full-battery  the BATERIA OK / VERMELHA banner is quoted in 8 places across 4 docs and its gate is a full battery run
+# mutantes.sh was listed here and the gate rejected the entry: its output is
+# already en-US ("MUTANTES OK: the suite killed all ..."). The exemption had
+# been written from a crude grep that counted IDENTIFIERS, not printed text,
+# which is the same mistake this sweep exists to avoid making.
+
+# --- internal ---
+mods/voxel_characters/tools/so_comentarios_test.lua  internal  test names and fixtures for the comment gate, not product text
+
+# --- everything else under tools/ is surface ---
+mods/voxel_characters/tools                 surface  offline tools whose text a contributor reads and which can be checked without a display
+mods/voxel_characters/Laboratorio.command   surface  the one clickable entry point, so the first file a curious contributor opens

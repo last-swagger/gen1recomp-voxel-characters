@@ -104,12 +104,12 @@ LINHAS=$(python3 -c "import json;print(len(json.load(open('$TMP')).get('body',''
 TEM_MIDIA=$(python3 -c "
 import json,re
 b=json.load(open('$TMP')).get('body','')
-print('sim' if re.search(r'!\[|<img|<video|\.png|\.gif|\.mp4', b) else 'nao')
+print('yes' if re.search(r'!\[|<img|<video|\.png|\.gif|\.mp4', b) else 'no')
 " 2>/dev/null || echo "?")
 echo ""
 echo "body        $LINHAS lines, media: $TEM_MIDIA"
 [ "${LINHAS:-0}" -gt 40 ] && echo "  WARNING: over 40 lines; the agreed format is title, 3 to 5 bullets, media, install, credits"
-[ "$TEM_MIDIA" = "nao" ] && echo "  WARNING: no image or video; use the GIF from clip.sh or trailer.sh"
+[ "$TEM_MIDIA" = "no" ] && echo "  WARNING: no image or video; use the GIF from clip.sh or trailer.sh"
 
 ESPERADO="${VC_RELEASE_AUTHOR:-last-swagger}"
 AUTOR=$(python3 -c "import json,sys; print(json.load(open('$TMP')).get('author',{}).get('login',''))" 2>/dev/null)

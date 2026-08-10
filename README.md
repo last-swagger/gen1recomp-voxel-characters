@@ -57,7 +57,7 @@ identical from the outside, and none of them could tell which one they had.
 | `NO HOST` | No voxel mod is running that this one can attach to. Install one, or enable it. |
 | `OFF` | `VOXEL CHARS` is set to `OFF`. Set it to `3`. |
 | `ACTIVE` | It is working. If you still see no difference, your camera is at the flat 2D rung. Press `3` to cycle the voxel camera. |
-| `FIRST PERSON` | On purpose. A solid body does not belong in a first person camera, so we hand back the flat card while you are in one. |
+| `FIRST PERSON` | On purpose. We are handing back the flat card while a first person camera is blending, which is the default. Set the `FIRST PERSON` option to `SOLID` to keep the body through the blend. |
 | `REPLACED` | Another mod took over the same drawing function after we did. |
 | `MASK ERROR` / `BUILD ERROR` / `DRAW ERROR` | Something went wrong reading or building sprites. The characters fall back to flat cards instead of breaking. |
 
@@ -74,8 +74,8 @@ that fork.
 
 ## What you can turn on
 
-Sixteen rows under `OPTIONS`. The first two are read only, and the third is a
-button rather than a setting.
+There are 19 rows under `OPTIONS`. The first two are read only, and the third
+is a button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
 and `BREATH`, and both earned it: they were shipped off, people used them, and
@@ -103,6 +103,10 @@ BREATH         OFF / SUBTLE / NORMAL / STRONG    default SUBTLE they breathe
 SWAY           OFF / SUBTLE / NORMAL             default OFF    idle weight shift
 MOTION LAG     OFF / SUBTLE / NORMAL             default OFF    the body arrives after the step
 FOOTFALL       OFF / SUBTLE / NORMAL             default OFF    it compresses on each step
+ATTENTION      OFF / SUBTLE / CLEAR              default OFF    they lean toward you, never turn
+PART LAG       OFF / LOW / HIGH                  default OFF    the head arrives after the body
+
+FIRST PERSON   CARD / SOLID                      default CARD   solid through the first person blend
 ```
 
 **If you only try one thing, try `BREATH: SUBTLE`.** It is half a pixel of
@@ -113,6 +117,57 @@ pulse in unison. A few sheets have their own temperament: someone asleep
 breathes slowly and does not sway, a swimmer sways more, a guard at attention
 barely moves. Item balls and boulders do not breathe at all, for reasons that
 should be obvious the moment you picture the alternative.
+
+### ATTENTION leans, and never turns
+
+A character that notices you inclines toward you. It does not rotate to face
+you, and that is a hard rule rather than a shortcut: the side faces of a solid
+carry **0% of the artist's art**, because the artist drew these characters from
+the front and never from the side. The only reason nobody has ever seen that is
+that this game never turns a character. One that turned to look at you would
+show you the invented surface and nothing else, which is the opposite of being
+noticed.
+
+So the levels are a lean, measured as head displacement: `SUBTLE` is half a
+world pixel and `CLEAR` is one. `SWAY: NORMAL` is 0.45 for comparison, so
+`SUBTLE` is about the size of a breath. It also needs to decide slowly, or it
+reads as twitching instead of attention, so there is hysteresis on the way in
+and on the way out.
+
+### PART LAG needs something to delay
+
+The head and hair arrive late instead of the whole body moving as one rigid
+piece. The levels are the delay in seconds, 0.08 and 0.16: under about 0.05
+nothing is readable at 60 fps, and past about 0.2 the head stops looking
+attached.
+
+**It does nothing on its own, and the tooling is what caught that.** `PART LAG`
+delays the movement the other options produce, so with `MOTION LAG`, `SWAY` and
+`ATTENTION` all off there is nothing moving to arrive late, and a delayed
+standing pose is the same standing pose. The clip tool refused to publish a
+side-by-side of it for exactly that reason, which is how it was found rather
+than shipped. **Turn on `MOTION LAG`, `SWAY` or `ATTENTION` first.**
+
+### FIRST PERSON: SOLID is worth its transition, and nothing after it
+
+Since 1.3.0 this mod has handed back the flat card the moment a first person
+camera starts blending. That was a fix, not laziness: **Colonel_Aureliano**
+reported black spikes, and the cause is proximity rather than camera. The voxel
+shader pulls every vertex toward the eye, so on a solid the near corners cross
+the near plane before the far ones and what is left on screen is a spike. A
+flat card survives because all of its vertices cross together.
+
+`SOLID` keeps the body and removes the spikes by capping that pull instead of
+giving up the volume. **Be clear about what it buys, because it is easy to
+oversell.** Measured across eight blend values, reproducing byte for byte over
+four runs, the effect grows through the transition, peaks at blend 0.74 at 5.9%
+of the frame, and is **exactly zero by blend 0.83**, because the host hides your
+own card as the blend completes. That is deliberate on the host's side.
+
+So this is not a solid body you can walk around in first person. There is
+nothing to see at a settled first person view either way. What it is worth is
+the entry and the exit: your own body used to collapse to a flat card exactly
+when the camera came closest to it, and now it does not.
 
 ### CAMERA FIT, and why thickness is not one number
 
@@ -186,7 +241,10 @@ outside this game could start from.
 - **Battles.** They go through a different drawing path with only two views of
   each character, front and back. No side view means no depth information, so
   there is nothing to build a body out of.
-- **First person.** Handed back as a flat card on purpose.
+- **First person, by default.** Handed back as a flat card on purpose, because
+  a solid picks up spikes as the camera enters it. `FIRST PERSON: SOLID` keeps
+  the body through the blend, and buys nothing at a settled first person view,
+  where the host hides your card anyway.
 - **Furniture, terrain, buildings.** That is the voxel mod's job, not ours.
 
 It does cover item balls on the ground, because the game draws those as
@@ -217,7 +275,9 @@ rejecting hosts whose API was perfectly intact.
 ## Tests
 
 ```
-luajit mods/voxel_characters/tests/voxel_chars_test.lua     480 checks
+bash  mods/voxel_characters/tools/bateria.sh                the whole battery, in order
+bash  mods/voxel_characters/tools/bateria.sh --rapido       the half that needs no game
+luajit mods/voxel_characters/tests/voxel_chars_test.lua     620 checks
 bash mods/voxel_characters/tools/render/check.sh            the offline ruler, checking itself
 bash mods/voxel_characters/tools/ingame/run.sh <dir>        drives the real game, 11 screenshots
 bash mods/voxel_characters/tools/ingame/clip.sh <dir> <k=v> side by side video of any option

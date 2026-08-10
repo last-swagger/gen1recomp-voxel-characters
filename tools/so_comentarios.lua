@@ -20,7 +20,7 @@
 local function lerArquivo(caminho)
   local f = io.open(caminho, "rb")
   if not f then
-    io.stderr:write("nao consegui abrir: " .. tostring(caminho) .. "\n")
+    io.stderr:write("could not open: " .. tostring(caminho) .. "\n")
     os.exit(2)
   end
   local s = f:read("*a")
@@ -209,7 +209,7 @@ for k = 1, maior do
 end
 
 if #problemas == 0 then
-  print(string.format("SO COMENTARIOS: o codigo e identico (%d linhas de codigo)",
+  print(string.format("COMMENTS ONLY: the code is identical (%d lines of code)",
                       #antes))
   os.exit(0)
 end

@@ -90,17 +90,17 @@ awk -v v="$VERSAO" '
   dentro                 { print }
 ' "$MOD/CHANGELOG.md" > "$NOTAS"
 if [ ! -s "$NOTAS" ]; then
-  falha "CHANGELOG.md nao tem uma secao [$VERSAO].
-  Escreva a entrada antes de empacotar: ela e o texto da release."
+  falha "CHANGELOG.md has no [$VERSAO] section.
+  Write the entry before packaging: it IS the release text."
 fi
 LINHAS=$(grep -c . "$NOTAS")
-echo "  $LINHAS linhas de nota"
-[ "$LINHAS" -le 40 ] || echo "  AVISO: mais de 40 linhas. A pagina de release e" \
-  "lida em quinze segundos; o resto pertence ao changelog."
+echo "  $LINHAS lines of notes"
+[ "$LINHAS" -le 40 ] || echo "  WARNING: over 40 lines. A release page is read in" \
+  "fifteen seconds; the rest belongs in the changelog."
 
 # Named credit is a house rule, so the absence of any name is worth a word.
 grep -qiE 'thanks|reported by|@|found by' "$NOTAS" \
-  || echo "  AVISO: nenhum credito nominal na secao. Quem reportou entra por nome."
+  || echo "  WARNING: no named credit in the section. Whoever reported it goes in by name."
 
 # --------------------------------------------------------------- 4. packaging
 passo "4. o pacote"
@@ -136,10 +136,10 @@ for f in "$HOME/Library/Application Support/LOVE/compose/shading.png" \
   [ -f "$f" ] && MIDIA+=("$f") && echo "  $(basename "$f")"
 done
 if [ ${#MIDIA[@]} -eq 0 ]; then
-  echo "  nenhuma. Gere antes:"
+  echo "  none. Generate them first:"
   echo "    tools/render/card.sh tools/render/cards/<x>.card <x>.png"
   echo "    tools/ingame/trailer.sh $SAIDA"
-  echo "    tools/ingame/clip.sh $SAIDA <opcao>=<valor>"
+  echo "    tools/ingame/clip.sh $SAIDA <option>=<value>"
 fi
 
 # ------------------------------------------------------------- 6. the verdict
@@ -158,10 +158,10 @@ echo "  ---8<---"
 
 if [ "$MODO" != "--publicar" ]; then
   echo
-  echo "ENSAIO OK. Nada foi publicado."
-  echo "  Para publicar de verdade:  tools/release.sh $VERSAO --publicar"
-  echo "  Antes disso: GH_TOKEN tem que ser um token da conta $AUTOR_ESPERADO."
-  echo "  O autor de uma release NAO se edita depois de criada."
+  echo "REHEARSAL OK. Nothing was published."
+  echo "  To publish for real:  tools/release.sh $VERSAO --publicar"
+  echo "  Before that: GH_TOKEN must be a token from the $AUTOR_ESPERADO account."
+  echo "  A release author CANNOT be edited after creation."
   exit 0
 fi
 

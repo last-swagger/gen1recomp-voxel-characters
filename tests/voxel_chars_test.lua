@@ -5923,15 +5923,56 @@ do
   local probeHandle = makeVoxelHandle("1.6.0", probePixels, 16, 16,
     nil, nil, nil, nil, nil, true)
   local probeMod = loadWith(makeMod(probeHandle))
-  local ceilings = {
-    breath = maxNumericLevel(probeMod._schema, "breath"),
-    sway = maxNumericLevel(probeMod._schema, "sway"),
-    lag = maxNumericLevel(probeMod._schema, "lag"),
-    footfall = maxNumericLevel(probeMod._schema, "footfall"),
+  -- WHICH OPTIONS GET SWEPT, and the default is now INCLUDE.
+  --
+  -- item 16 fixed the NUMBERS: the maxima are read from the schema instead of
+  -- being copied here by hand. It did not fix the LIST. These four keys were
+  -- written out, and by the time ATTENTION and PART LAG shipped on this
+  -- branch, the "absolute ceiling no future level can break" was sweeping four
+  -- of six life options. The derived number was right and the set it applied
+  -- to was stale, which is the same defect one level up from the one item 16
+  -- closed.
+  --
+  -- So the set is derived too: every option that offers a numeric level, minus
+  -- the ones that move a VERTEX rather than the draw matrix. Those are named
+  -- explicitly below, which flips the failure mode: a new option is swept
+  -- unless somebody writes down why it is exempt, instead of escaping the
+  -- ceiling by nobody remembering this file exists.
+  local NOT_LIFE = {
+    depth = true,        -- extrudes the mesh; no matrix term
+    front_shape = true,  -- shade only, geometry identical at any strength
+    top_dome = true,     -- shade only
+    step_weight = true,  -- shears a vertex at build time, not at draw time
   }
-  for key in pairs(ceilings) do
-    assert(ceilings[key] ~= nil, "teto de seguranca: schema tem um maximo numerico para " .. key)
+  local ceilings = {}
+  for _, row in ipairs(probeMod._schema) do
+    if not NOT_LIFE[row.key] then
+      local m = maxNumericLevel(probeMod._schema, row.key)
+      if m then ceilings[row.key] = m end
+    end
   end
+  local sweptCount = 0
+  for key in pairs(ceilings) do
+    sweptCount = sweptCount + 1
+    assert(ceilings[key] ~= nil,
+      "safety ceiling: the schema offers a numeric maximum for " .. key)
+  end
+  -- If this ever reads fewer options than the mod has life levels, the sweep
+  -- shrank without anyone noticing, which is exactly how it got to four.
+  check(sweptCount >= 6,
+    "safety ceiling: sweeps every life option with a numeric level, not a hand-written subset")
+
+  -- WHAT THIS CEILING CAN AND CANNOT BOUND, both measured rather than argued.
+  --
+  -- It bounds AMPLITUDE. Raising ATTENTION's top level from 1.0 to 3.5 now
+  -- trips "|kx| * 16 stays under 3px"; 2.0 does not, which is right, since 2
+  -- is under the 3px bar. Before the eye was added above, neither did.
+  --
+  -- It cannot bound a DELAY, and PART LAG is a delay in seconds. Raising its
+  -- top level from 0.16 to 2.0 changes when the head arrives, not how far it
+  -- goes, so no amplitude assertion here reacts; what catches that is PART
+  -- LAG's own pair of tests, which fail because the bands stop differing.
+  -- Recorded so nobody reads "swept" as "bounded" for every option alike.
 
   local pixels = {}
   pixels[0] = 1
@@ -5939,6 +5980,22 @@ do
     nil, nil, nil, nil, nil, true)
   loadWith(makeMod(handle, ceilings))
   local mesh = modules.SpriteBillboards.mesh({ image = "swimmer.png", frames = 1 }, 0)
+
+  -- AN EYE STANDING NEXT TO THE CHARACTER, or ATTENTION contributes nothing
+  -- and sweeping it proves nothing.
+  --
+  -- Adding `attention` to the swept set above was necessary and not
+  -- sufficient: ATTENTION only leans when somebody is close, and this harness
+  -- never placed anyone. Measured while writing this, the option's level was
+  -- raised from 1.0 to 3.5 and every ceiling assertion still passed, because
+  -- the term was multiplied by an attention that never woke up. A branch
+  -- nothing exercises looks exactly like one that works.
+  --
+  -- 10 world units is the distance ATTENTION's own tests use for "close".
+  -- Nothing else in this sweep reads the eye, so this only adds the one term
+  -- that was missing.
+  modules.Voxel3D.eye = { 10, 0, 0 }
+
   local maxS, maxKx, maxKz, maxSx = 0, 0, 0, 0
   withDrivenClock(function(setClock)
     for frame = 0, 500 do
@@ -5952,10 +6009,10 @@ do
       maxSx = math.max(maxSx, math.abs(out[1] / model[1] - 1) * 16)
     end
   end)
-  check(maxS < 3, "teto de seguranca: |s - 1| * 16 fica abaixo de 3px mesmo no maximo")
-  check(maxKx < 3, "teto de seguranca: |kx| * 16 fica abaixo de 3px mesmo no maximo")
-  check(maxKz < 3, "teto de seguranca: |kz| * 16 fica abaixo de 3px mesmo no maximo")
-  check(maxSx < 3, "teto de seguranca: |sx - 1| * 16 fica abaixo de 3px mesmo no maximo")
+  check(maxS < 3, "safety ceiling: |s - 1| * 16 stays under 3px even at maximum")
+  check(maxKx < 3, "safety ceiling: |kx| * 16 stays under 3px even at maximum")
+  check(maxKz < 3, "safety ceiling: |kz| * 16 stays under 3px even at maximum")
+  check(maxSx < 3, "safety ceiling: |sx - 1| * 16 stays under 3px even at maximum")
 end
 
 do

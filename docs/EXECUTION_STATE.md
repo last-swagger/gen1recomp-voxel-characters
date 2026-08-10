@@ -1,8 +1,661 @@
 # Execution state
 
-Durable state for autonomous execution of `ROADMAP_V2.md`. Written so that a
-session that starts cold, or a second orchestrator, can pick up without asking
-anyone. Updated as work lands, not as work is planned.
+Durable state for autonomous execution. Written so that a session that starts
+cold, or a second orchestrator, can pick up without asking anyone. Updated as
+work lands, not as work is planned.
+
+Everything from `## Roadmap V2 execution` down is the V2 record and is history.
+The section directly below is the live one, and it tracks `ROADMAP_V3.md`.
+
+---
+
+# Roadmap V3 execution
+
+**Branch `vida-v2`, nothing pushed, nothing tagged, no credential used.**
+
+## Current state, measured
+
+**The FULL battery is green.** Run 2026-08-10 on the MBP with Kim's
+authorisation, against this working state synced over: every gate, including
+the ruler and all five in-game gates.
+
+```
+621/621 offline · lint clean · chunk-local headroom 75 of 200 (125 in use)
+modkit ok · option docs ok (16 options, 19 rows) · RUNNER SELFTEST OK (16 cases)
+execution state ok · en-US sweep ok · audio gate ok
+REGUA OK · in-game 20/16/16/8/6 passed, 0 failed
+BATERIA OK
+```
+
+Still not run anywhere: `mutantes.sh`. It refuses a dirty tree, and both trees
+were dirty for the whole session (this one by design, the MBP's by the sync).
+It is the one gate in the definition of done that has no result yet.
+
+## Workstreams
+
+| Item | Owner | Files owned | State | Evidence |
+|---|---|---|---|---|
+| T0.1 option docs | this session | `README.md`, `CHANGELOG.md`, `tools/options_documented.lua`, `tools/bateria.sh` | **landed** | gate green at 16 options / 19 rows; 4 broken states each proved to fail |
+| T0.2 controlled runner | this session | `tools/runner/**`, `tools/render/conf.lua`, `tools/bateria.sh` | **slice 1 landed** | `RUNNER SELFTEST OK`, 16 cases |
+| T0.2 slice 1.1 hygiene | this session | `tools/runner/runner.sh`, `tools/runner/README.md` | **landed** | the argv-flattening defect below, refused and covered by two new cases |
+| T0.2 slice 2 measurement | this session, run on the MBP with Kim's authorisation | `tools/runner/measure_delta.sh`, `tools/runner/window_probe/**`, `tools/runner/deltas.txt` | **measured** | output delta ZERO (sha256 identical, floor identical); window NOT hidden, macOS clamped it back on screen |
+| T0.3 execution state | this session | `docs/EXECUTION_STATE.md`, `tools/execution_state_gate.lua`, `tools/bateria.sh` | **landed** | gate green at 6 required sections / 5 rows; found 3 real gaps on its first run, listed under T0.3 below |
+| T1.3 audio gate | this session | `tools/audio_gate.sh`, `tools/bateria.sh` | **landed** | `AUDIO GATE SELFTEST OK`, 7 cases; fixtures measured at -91.0 / -18.1 / -3.1 dBFS |
+| T1.5 en-US, slice 1 | this session | `tools/lint_asserts.lua`, `tools/hooks/pre-commit` | **landed** | lint output en-US; hook summary went from 4 of 8 gates to 8 of 8 |
+| T1.5 en-US, slice 2 | this session | `tools/en_us_sweep.lua`, `tools/en_us_scope.txt`, `release.sh`, `release_check.sh`, `so_comentarios.{lua,sh}`, `audio_gate.sh`, `runner/runner.sh` | **landed** | surface 22 lines to 0; 101 deferred lines declared with reasons; 4 broken states proved to fail |
+| T1.5 en-US, slice 3 (`ajusta.lua`) | Codex desktop, verified by this session | `tools/juiz/ajusta.lua`, `tools/en_us_scope.txt` | **landed** | `--autoteste` green; `--estados` TSV intact at 171 rows x 4 cols; sweep surface 0 |
+| item 16 follow-up: life ceiling | this session | `tests/voxel_chars_test.lua` | **landed** | 621/621; ceiling now sweeps 6 life options and reacts to ATTENTION at 3.5 where it did not before |
+
+## Blocked on Kim
+
+Mirrors `ROADMAP_V3.md` section 4. **Agents do not work around this table.**
+Nothing in it is waiting on engineering, and nothing below it should be
+"unblocked" by finding a clever substitute.
+
+| # | What is needed | Why nobody else can | State of the rest |
+|---|---|---|---|
+| K1 | A personal access token for `last-swagger` | Credential. A release author is set at creation and cannot be edited afterwards, so this only fixes forward. | `release.sh` built and rehearsed; `--publicar` required to publish |
+| K2 | His eye on the options that ship OFF: `FOOTFALL`, `CAMERA FIT`, `FRONT SHAPE`, `TOP DOME`, `STEP WEIGHT`, `PART LAG`, `ATTENTION`, `FIRST PERSON` | Taste, and he is the one who ships it | every one has a clip recipe; `monta.sh` can assemble them |
+| K3 | The judge against critic call on `FRONT SHAPE` and `TOP DOME` | A taste question dressed as a measurement, and both sides are measured | both arguments written up in `tools/juiz/dados/NOTAS_DO_CRITICO.md` |
+| K4 | Explicit approval to push, tag, publish or post | Outward facing and not reversible | local commits on a feature branch are routine |
+| K5 | Unpausing the battle probe | He paused it | nothing, deliberately |
+
+**Not on this table, and worth the distinction:** the `native-offscreen`
+measurement was never blocked on Kim, only on a free display. It ran on the MBP
+on 2026-08-10 with his authorisation and is now answered. See "Gate deltas".
+
+## T0.1, what landed
+
+`tools/options_documented.lua` loads `main.lua` under the outer repository's
+love stub and captures the schema the mod hands to `mod.options:define`, which
+is the same door the offline suite uses. So the list of options is read from the
+code and a new option is covered the moment it enters `OPTIONS`, with no edit to
+the gate. It checks four things: every option has a README row, the row lists
+every level, the row's stated default equals the registered default, and the
+CHANGELOG names the option together with one of its levels.
+
+The level requirement is what makes the CHANGELOG check mean something.
+`FIRST PERSON` appeared twice in `CHANGELOG.md` while the option was
+undocumented, both times as a value of the read-only `STATUS` row, so a plain
+substring search would have passed it.
+
+**Documented as a consequence:** `FOOTFALL`, `ATTENTION`, `PART LAG` and
+`FIRST PERSON`, plus the `[Unreleased]` preamble that claimed nothing changed
+for a player, the README's row count (16 stated, 19 real) and its advertised
+check count (480 stated, 620 real). Two places where the README contradicted
+itself once `FIRST PERSON: SOLID` existed were fixed too: the `STATUS` table row
+and the "What it does not do" bullet both said the flat card comes back always.
+
+**Proved it fails** on four broken states, each mutated, run, and restored with
+a checksum: an option in the schema documented nowhere; a README default that
+disagrees with the code; a README row missing a level; a CHANGELOG entry that
+no longer names its option. All four exited 1. `shasum -a 256 -c` confirmed
+`main.lua`, `README.md` and `CHANGELOG.md` byte identical afterwards.
+
+**Named hole, so nobody assumes it is covered:** the gate does not check the
+README's advertised check count, because deriving that means running the suite
+it is a step alongside.
+
+## T0.2, what landed and what it deliberately does not claim
+
+`tools/runner/runner.sh` with three subcommands: `probe`, `selftest`, `run`.
+Every run gets `${VC_RUNS:-/tmp/vc-runs}/<stamp>-<label>/` holding `meta.txt`
+(backend, delta state, host, mod revision, command), `stdout.log`,
+`verdict.txt` and `artifacts/`. Outside the repository on purpose, so a run can
+never dirty the tree that `release.sh` refuses to publish from.
+
+Three refusals, and the selftest proves all three:
+
+- **No empty green.** Exit 0 with no verdict is "no measurement", not a pass.
+- **No silent fallback.** An unusable backend refuses AND does not execute the
+  command. The selftest proves the non-execution with a sentinel file, because
+  refusing after running is not refusing.
+- **No shared LOVE.** LOVE-backed backends take the existing reentrant lock.
+
+**Backends and their honest state:**
+
+| Backend | Available here | Delta vs native |
+|---|---|---|
+| `native` | yes | reference, by definition |
+| `native-offscreen` | yes | **ZERO on output**, but it does not hide the window |
+| `docker` | image not built | **UNMEASURED** |
+
+`native-offscreen` parks the harness window at -4000,-4000 through
+`tools/render/conf.lua` when `VC_RUNNER_OFFSCREEN=1`. Only the position moves;
+size, depth and vsync decide the output and are untouched. It is refused for
+`tools/ingame/*`, which capture the presented back buffer and would photograph
+nothing off the visible area.
+
+## T0.2 slice 1.1, the runner ran a different command than it recorded
+
+Found by review, reproduced, fixed. The runner documented
+`run <backend> [options] -- <command...>` and then executed
+`/bin/sh -c "$*"`, which flattens the argument vector into a string that `sh`
+splits again on whitespace. Reproduced exactly:
+
+```
+-- bash -c 'echo TESTE PASSOU'
+```
+
+became `sh -c "bash -c echo TESTE PASSOU"`, which runs `bash -c echo` with
+`TESTE` as `$0` and `PASSOU` as `$1`, printed one empty line, and left a 1-byte
+`stdout.log`. `meta.txt` recorded `command bash -c echo TESTE PASSOU`, so **the
+record of what ran was wrong in the same way the run was**, which is the part
+that matters: a wrapper built to refuse empty green cannot execute something
+other than what it logged.
+
+The trap is that some multi-argument forms survive the flattening by luck
+(`-- env FOO=1 bash x.sh` happens to re-parse identically) while others quietly
+run something else. So the fix is the conservative one: **the contract is
+exactly one shell command string, and more than one argument is a usage error**
+refused before the backend gate, the run directory or the lock. Preserving argv
+properly was the alternative and was rejected: it would keep two ways to say
+the same thing, and the failure mode of the wrong one is silent.
+
+The refusal prints the correctly requoted command. That detail was itself a
+second defect: the first version suggested `-- "$*"`, the flattened string,
+which is exactly the broken command it had just refused. An error message that
+tells you to run the wrong thing is worse than one that only says no.
+
+Covered by two selftest cases, and both halves are needed: the negative proves
+several arguments refuse **without running** (sentinel file, because refusing
+after running is not refusing), and the positive proves the documented form with
+a nested subcommand still reaches the shell intact. Without the positive, the
+negative would keep passing even if `run` could no longer execute anything.
+
+**Proved without a display, which is worth more than the claim:** loading
+`conf.lua` under a fake `love` table and dumping the resulting config shows
+that with the flag unset the table is exactly what it was before this change
+(no `window.x`, no `window.y`), and with the flag set the ONLY difference is
+those two keys. Title, width, height, depth, vsync and every disabled module
+are byte identical in both. So the default path is untouched by construction,
+and the mode cannot be secretly changing the scene through some other field.
+That is a different claim from "the rendered pixels are identical", which was
+answered separately on the MBP: they are identical. See "Gate deltas".
+
+`docker` has a reviewable `Dockerfile` (Linux LOVE, xvfb, llvmpipe) and is not
+built. `probe docker` prints the build command as the next action.
+
+## T0.2 slice 2, the measurement, built here and RUN on the MBP
+
+**Why it needed a machine of its own.** Measuring this delta needs a `native`
+reference run, and `native` is the procedure with a real window: there is no
+version of it that hides. The `native-offscreen` run could not be assumed
+invisible either, which turned out to be the finding. So both sides of the
+experiment take the screen, and it ran on the MBP with Kim's authorisation
+rather than on the machine he was using.
+
+The measurement is one auditable command:
+
+- `tools/runner/measure_delta.sh`, with `--dry-run` that prints every step and
+  launches nothing.
+- `tools/runner/window_probe/`, a tiny LOVE game that asks the window where it
+  actually is and prints a `W1 PASSOU` / `W1 FALHOU` verdict.
+
+**Five steps, and step 2 is the one that makes it honest.** Native runs twice
+before anything is compared across backends, because a byte comparison only
+means something if the target is byte-deterministic to begin with. If the two
+native runs already differ, the script reports INCONCLUSIVE and writes nothing:
+a difference against the offscreen run would say nothing about the backend.
+The precedent that makes bytes the right instrument is the ruler's own check
+that the same card built twice is the same file.
+
+**The window probe has a control, for the same reason.** It runs under the
+offscreen flag AND under normal mode. Without the control, "off screen" could
+just be how this machine always reports, and the probe would be measuring
+nothing. Normal mode is expected to report the window ON a display; if it does
+not, the probe says so and proves nothing.
+
+**It cannot write a false ZERO.** Every render must have produced a non-empty
+file before any comparison happens, because two missing files compare equal and
+that is the exact defect `tools_bin.sh` records. Floor unstable means no
+verdict is written at all.
+
+One thing the script separates on purpose: output equivalence and window
+invisibility are two different claims. Identical bytes with a window that still
+appears is a real `ZERO` and a mode that buys nothing, so the script writes the
+`ZERO` and prints a warning pointing at a separate user session, Space or
+display instead.
+
+**Slice 2 hygiene, found by review before the measurement ever ran.** The
+writer appended and the reader took the FIRST matching line, so re-measuring a
+key would have left the superseded verdict in force. A stale `ZERO` is the worst
+version of that: it is the one that would let a threshold be trusted on a
+backend already shown to differ. Fixed on both sides so they cannot disagree
+about which measurement is current: `measure_delta.sh` keeps at most one line
+per backend+target by replacing, and `runner.sh` reads the last match anyway, in
+case a duplicate is ever added by hand. Covered by `measure_delta.sh
+--selftest`, text only, run from `runner.sh selftest` so the battery covers it.
+
+Worth noting because it is the second time in this item: both defects so far
+were in the bookkeeping rather than in the rendering, and both were found by
+reading the tool against its own contract rather than by running it.
+
+## T0.3, and the gate found three gaps in this very file
+
+`tools/execution_state_gate.lua`, battery step 7. It reads the required sections
+out of `ROADMAP_V3.md` section 9.7 and demands them here, so the contract lives
+in one place. Add a required section to the roadmap and the gate starts asking
+for it with no edit to the gate, which is the same principle
+`options_documented.lua` uses against the `OPTIONS` table.
+
+**What it found on its first run, none of it noticed by reading:**
+
+1. **The live section had no "Blocked on Kim".** The one section the roadmap
+   says agents may not work around. It went unnoticed because the V2 history
+   below has such a table and the eye finds it there, which is why the gate
+   scopes its search to the live window between the two H1 headings and treats
+   anything below the V2 heading as history.
+2. **No date anywhere in the live section.** A measured block with no date
+   cannot be told from a stale one.
+3. **The T0.3 workstream row had an empty evidence cell**, written by me one
+   turn earlier while adding the row.
+
+**Checks, and they are structural on purpose:** every required section present
+in the live window; the live window ahead of the history; a date; and every
+workstream row carrying an owner, a state and evidence that is not the word
+"done" (the roadmap asks for a commit or a measurement). It does not judge
+prose. A gate that fires on a legitimate edit gets waived by the second day.
+
+**Proved it fails** on five broken states, each mutated, run and restored under
+checksum: a required section renamed away; the date removed; an evidence cell
+emptied; evidence replaced with "done"; and a section ADDED to the roadmap's
+9.7, which the gate immediately started requiring. That last one is the case
+that proves it reads the contract rather than a copy of it.
+
+## T1.3, the audio gate exists before the audio does
+
+`tools/audio_gate.sh`, battery step 7b. Three checks, and the off path carries
+the most weight:
+
+- **A1** the off path is silent, at or below -60 dBFS.
+- **A2** the on path has signal, measured against **the off path from the same
+  run** rather than against a guessed constant.
+- **A3** the on path peaks under -6 dBFS, so a demo effect cannot blast over the
+  game.
+
+It refuses a file it could not measure, because an unmeasurable file is not a
+silent file and a tool that wrote no audio did not play anything. That is the
+same false green `tools_bin.sh` records, in a new medium.
+
+**The fixtures were measured, not assumed**, and that mattered: lavfi's `sine`
+peaks at **-18.1 dBFS** at default amplitude, not at 0, so a selftest built on
+the theoretical number would have been calibrated against nothing. Measured
+values now anchoring the tests: silence -91.0, a reasonable effect -18.1, too
+loud -3.1 dBFS.
+
+**Proved it fails** on six states: an off path that plays something, an on path
+with no signal, an on path over the ceiling, a missing file, an empty file, and
+one positive case. Plus a seventh that checks the MEASUREMENT itself tells the
+three fixtures apart, because if `medir` returned the same number for
+everything, all six verdicts would still land where they were expected.
+
+**Named holes.** -60 and -6 dBFS are defensible starting points, not
+measurements: the real ceiling should come from comparing against the game's own
+music and SFX levels, and there is nothing to compare with yet. A2's floor is
+not a guess, it comes from the off path in the same run. And this measures
+nothing about the mod today: it verifies the instrument only.
+
+## T1.5 first slice, and a defect it uncovered in my own earlier work
+
+**Checked the contract before renaming anything**, because the hazard on record
+is that renaming a verdict word breaks whatever greps for it. Result:
+`release.sh` and the pre-commit hook both gate on the **exit code**
+(`if ! bash ...`), not on any string. So the battery's output text is free to
+change and the contract is numeric.
+
+**Converted:** `tools/lint_asserts.lua`, the one Portuguese string the quick
+battery prints on a green run, plus its failure message. Its two citations in
+`ROADMAP_V3.md` were updated in the same pass, since the implementation is what
+made them false.
+
+**The defect this turned up, and it was mine, from three slices ago.** The
+pre-commit hook summarised a successful run by grepping a hardcoded list of step
+names, `(suite|lint|folga|modkit)`. Four gates were added to the quick battery
+since then, so the hook had quietly been reporting **four of eight**: a green
+commit showing half of what it ran. Fixed by matching the SHAPE `veredito`
+prints (three spaces, a padded label, then the verdict) instead of a list of
+names, so a gate added later appears without editing the hook. Verified: the old
+pattern matched 4 lines, the new one matches 8.
+
+**Deliberately deferred: the `BATERIA OK` / `BATERIA VERMELHA` banner.** It is
+quoted literally in eight places across four documents, including the roadmap's
+own statement of this problem, and T1.5's gate is a full battery run, which needs
+a display. Renaming a banner and rewriting its citations in a display-blocked
+turn is more churn than value. Filenames stay untouched for the same reason and
+should move in one commit with every reference, never file by file.
+
+## T1.5 slice 2: the scope, in data, and what it is not
+
+**The scope decision now lives in `tools/en_us_scope.txt` rather than in
+anyone's head**, one rule per path with a zone and a reason:
+
+| Zone | Meaning | Lines |
+|---|---|---|
+| `surface` | text a human reads, and the tool can be validated with no display. Must be en-US. | **0** |
+| `deferred-needs-love` | output only exercised or parsed by something needing LOVE (`tools/ingame`, `tools/render`) | 90 |
+| `deferred-full-battery` | convertible, but the gate for the change is a full battery (`bateria.sh` banner) | 3 |
+| `deferred-api` | option values and command-line keys; a rename is an API change, not a translation | 0 declared so far |
+| `internal` | identifiers, test names, fixtures. Nobody reads these as product text. | 5 |
+
+**Converted this slice, surface 22 lines to 0:** `release.sh` (10 strings),
+`release_check.sh` (the `sim`/`nao` sentinel, producer and consumer in the same
+file), `so_comentarios.lua` and `.sh`, `audio_gate.sh` (`PASSOU`/`FALHOU` to
+`PASSED`/`FAILED`, which the verdict regexes accept equally), and `runner.sh`'s
+usage examples.
+
+**What made the detector worth building.** The first exploratory grep reported
+`audio_gate.sh` and `measure_delta.sh` as the worst offenders. Both are mine and
+both are written in English: it was matching **identifiers** (`avalia`,
+`veredito`, `saida`), file names in string form (`card_antes.png`), and option
+values (`VC_CLIP_DEGRAU=alto`). So the sweep extracts the CONTENTS of string
+literals on lines that print, strips format specifiers, interpolations and
+paths, and only then looks for Portuguese. Identifiers never enter the
+comparison.
+
+**Two failure modes, both proved:** a Portuguese string in a surface path, and a
+deferred rule that no longer matches anything. The second one caught me
+immediately: I had exempted `mutantes.sh` on the strength of the crude grep, and
+its output is already en-US, so the gate rejected my own scope file. An
+exemption nobody removes is how a gate stops gating.
+
+**The per-line escape hatch requires a reason.** `# en-us: <why>` exempts the
+line or the statement below it, and a marker with no reason does not exempt
+anything (proved). It exists for one real case: the runner's selftest feeds
+`FALHOU` on purpose, because the verdict regexes accept `FALHOU|FAILED` and the
+Portuguese half is what the in-game drivers still emit. Testing only the English
+half would leave the branch that fires in production unexercised. That case now
+runs both halves, which is why the runner selftest went from 14 cases to 15.
+
+**Still deferred, and these are the reasons rather than a shrug:** the
+`BATERIA OK` banner (quoted in 8 places across 4 docs, gate is a full battery),
+everything under `tools/ingame` and `tools/render` (their output is parsed by
+gates that need a display, so converting blind means changing text a gate greps
+without being able to run that gate), and all filenames.
+
+## T1.5 slice 3: the judge fitter is no longer deferred
+
+`tools/juiz/ajusta.lua` was the largest single remaining display-free surface
+and already had its own `--autoteste`, so it did not belong behind the
+full-battery deferral once slice 2 made the sweep honest. Converted the printed
+surface and generated model-file comments to en-US while leaving the command
+names and input data keys alone: `--estados`, `--ajusta`, `--autoteste`,
+`--pesos`, `--pares`, `folha=`, `escolha=`, and the default `modelo.txt` remain
+API/data, not prose.
+
+**Validation:** `luajit mods/voxel_characters/tools/juiz/ajusta.lua --autoteste`
+passes and now prints in en-US. Removing the specific deferral for
+`juiz/ajusta.lua` from `tools/en_us_scope.txt` keeps the sweep green, with
+surface still at 0 and deferred lines now at 98.
+
+## A second writer touched this repo, and the contract says to say so
+
+`tools/juiz/ajusta.lua` was translated to en-US by **another session**, not this
+one, while this session was working. It was the exact slice queued up next here.
+The execution contract says a file has one owner at a time, and it had two.
+Nothing was lost, because the other session's work was good and this one had not
+started editing that file, but the near miss is the point: two sessions in one
+checkout is how a conflict gets discovered by a broken gate instead of by a plan.
+
+**Verified rather than accepted**, because a delegated result is not evidence:
+`--autoteste` passes; `--estados` still emits the TSV the harness consumes, 171
+rows of 4 tab-separated columns; the report guard for too little data still
+fires; the sweep finds no Portuguese left in the file. The scope entry that
+deferred it was removed too, correctly, and the sweep's stale-exemption check
+would have caught it if it had not been.
+
+**One thing it did not cover:** `tools/juiz/dados/modelo.txt` still carries a
+Portuguese header, because it is a committed ARTEFACT generated before the
+translation. The code that writes it is already en-US (`ajusta.lua:493`), so the
+header fixes itself the next time the judge is fitted, and that needs a display.
+
+**And it exposed a gap in my sweep:** the detector only looked at `print`,
+`echo` and `io.write`, so text written into a file with `handle:write(...)` was
+invisible. A file this project generates and keeps is as much its surface as a
+log line. Fixed, and it found 3 more deferred lines.
+
+## item 16 follow-up: the ceiling swept four of six, and two of them were inert
+
+The absolute life-safety ceiling reads its maxima from the schema, which is what
+item 16 fixed. **The list of keys it applied them to was still written by hand,
+with four entries**, and this branch ships six life options. So the "absolute
+ceiling no future level can break" had not been covering `ATTENTION` or
+`PART LAG` since the day they landed.
+
+Fixed by deriving the set as well: every option offering a numeric level, minus
+an explicit list of the ones that move a vertex rather than the draw matrix
+(`depth`, `front_shape`, `top_dome`, `step_weight`). **The failure mode flips**:
+a new option is swept unless somebody writes down why it is exempt, instead of
+escaping by nobody remembering the file exists. A check asserts the swept count
+never drops back below six.
+
+**Widening the set was necessary and not sufficient, and the proof is the
+interesting part.** With `ATTENTION` in the sweep, raising its top level from
+1.0 to 3.5 still tripped no ceiling assertion. The reason: ATTENTION only leans
+when somebody is close, and the ceiling harness never placed anyone, so the term
+was multiplied by an attention that never woke up. A branch nothing exercises
+looks exactly like one that works. Adding an eye at 10 units, the distance
+ATTENTION's own tests use for "close", makes the ceiling bind: 3.5 now fails
+`|kx| * 16 stays under 3px` and 2.0 correctly does not.
+
+**What it still cannot bound, measured and written down so nobody assumes
+otherwise:** `PART LAG` is a delay in seconds. Raising it from 0.16 to 2.0
+changes when the head arrives, not how far it travels, so no amplitude
+assertion reacts; PART LAG's own two tests are what fail. "Swept" does not mean
+"bounded" for every option alike.
+
+Suite went 620 to 621 checks. The shipped maxima all sit inside the ceiling with
+an eye present, which is now measured rather than assumed.
+
+## The full battery, with a baseline before it
+
+Run on the MBP, 2026-08-10. **Two runs, and the first one is why the second
+means anything.**
+
+**Baseline first, nothing copied.** The MBP's own checkout at `857f697`, its own
+code, its own battery: `BATERIA OK`, 607/607 offline, headroom 41, `REGUA OK`,
+in-game 20/16/16/8/6. Without that, a red in the second run could not be told
+from a machine that was already red.
+
+The baseline also revealed the two checkouts are further apart than the commit
+hashes suggested. **Headroom 41 on the MBP against 75 here**, and 607 checks
+against 621: the MBP predates roadmap item 0's refactor entirely. The
+bundle-and-amend workflow gives the same logical work different hashes, so
+comparing revisions was never going to show that. The measured numbers did.
+
+**Then this working state, synced over and run again:**
+
+| Step | Result |
+|---|---|
+| offline suite | 621/621 |
+| lint, headroom, modkit | ok, 75 free |
+| option docs, runner selftest, execution state, en-US sweep, audio gate | ok, all five new gates |
+| **the ruler** | **REGUA OK** |
+| **in-game**: probe_life, menu, probe_draw, probe_fp, probe_grid | **20 / 16 / 16 / 8 / 6 passed, 0 failed** |
+| verdict | **BATERIA OK** |
+
+**What this answers, and it was the open question:** the five gates added to the
+quick half did not disturb the ruler or the in-game gates. The in-game counts
+are **identical to the baseline**, and the ruler is green with the
+`native-offscreen` branch present in `conf.lua`. That branch being inert had
+only been proved by dumping the config table; it is now proved by the ruler
+itself, which is the instrument that would notice.
+
+The LOVE lock survived the new neighbours too: the runner selftest takes and
+releases it a dozen times immediately before the ruler asks for it, and the
+ruler got it.
+
+**The MBP was left exactly as found**, verified rather than assumed: `HEAD
+857f697`, `dirty 0`, matching the state recorded before the sync. Tracked files
+restored with `git checkout -- .`, and the 18 untracked paths removed from the
+list captured before anything was copied, never with a blanket clean.
+
+## Gate deltas: MEASURED, and the answer is split
+
+Run on the MBP on 2026-08-10 with Kim's explicit authorisation, dispatched into
+the GUI session because LOVE needs a window server and plain ssh has none.
+Host `Kims-MacBook-Pro`, LOVE 11.5, mod rev `857f697`.
+
+| Question | Answer |
+|---|---|
+| Is the target byte-deterministic? | **Yes.** native twice, sha256 identical, so bytes are a valid instrument here. |
+| Does `native-offscreen` change the output? | **No. ZERO.** sha256 identical to native. |
+| Does it stop the window appearing? | **No.** macOS clamped the requested -4000,-4000 to x=-280 y=60 on a 1512x982 display, leaving 40px of a 320px window visible. |
+
+**Both halves matter and they point opposite ways.** The rendering is safe: if a
+way is ever found to hide the window, the pixels will not move. But as built the
+mode buys nothing, because the window still shows. `deltas.txt` records `ZERO`
+for the output and spells the window result out in the same line, so nobody can
+read the verdict as permission to rely on the mode.
+
+**Nothing has been moved onto the backend, and no threshold changed.** The
+window probe's control did its job: normal mode reported the window on screen at
+x=596 y=391, which is what makes "on screen in both modes" a finding rather than
+a machine that always reports that way.
+
+**Next mechanism to try, since position does not work:** a separate macOS user
+session, a dedicated Space, or a second display. All three are outside what a
+`conf.lua` line can reach.
+
+Re-running the measurement is one command from the repo root:
+
+```
+bash mods/voxel_characters/tools/runner/measure_delta.sh
+```
+
+It writes its own line into `deltas.txt` with the evidence attached, so the
+record and the measurement cannot drift apart.
+
+## Three defects the MBP run found, all mine
+
+The measurement worked. Getting it to run is what exposed these.
+
+1. **Version skew broke the lock, and the error blamed the wrong thing.** The
+   MBP's `tools/tools_bin.sh` predates the reentrant lock (zero occurrences of
+   `VC_TRAVA_DONO`; this machine has three). `measure_delta.sh` takes the lock
+   once for the whole measurement so nothing interleaves between three renders
+   about to be compared byte for byte, and on that host the parent locked out
+   its own children: all three renders refused, and the log said "ANOTHER TOOL
+   IS USING LOVE" while naming this script's own pid. A misleading error is
+   worse than a missing one, because it sends you hunting a process that does
+   not exist. Now detected, reported with the real cause, and degraded to
+   per-run locking instead of failing.
+
+2. **`--collect` was broken for every path it will ever meet.** It expanded the
+   pattern with a bare `for f in $padrao`, which word-splits on spaces before
+   globbing, and LOVE writes to `~/Library/Application Support/LOVE/...`. The
+   pattern tore into `.../Application` and `Support/LOVE/...`, so the runner
+   reported "0 collected" for three files sitting right there. It passed the
+   selftest for slices because the fixture used a temp path with **no spaces**:
+   the test passed by avoiding the only condition that matters. Fixed, and the
+   new case fails against the old code, which is how it was proved.
+
+3. **The evidence label was backwards.** The variable held "on screen" and the
+   string said "off screen", so the first recorded line read
+   `window off screen=true` when the truth was the exact opposite. A record that
+   states the inverse of what happened is worse than no record. Renamed and
+   rewritten to `offscreen-mode window ON SCREEN=true`.
+
+The MBP was left exactly as found: `conf.lua` restored from a backup taken
+first, `tools/runner/` removed, temporary files deleted, `git status` clean.
+Nothing was committed, pushed, tagged or published on either machine.
+
+## Assumptions logged
+
+| Assumption | What would falsify it | Cost if wrong |
+|---|---|---|
+| An off-screen window does not change canvas output, because the harness renders into an FBO and encodes it | a delta run showing any pixel difference between `native` and `native-offscreen` on the same target | revert one env-var branch in `conf.lua`; nothing else depends on it |
+| `t.window.x/y = -4000` is honoured by LOVE 11.5 on macOS and does not clamp back onto the display | watching a run: if the window still appears, the mode buys nothing | the mode is inert, not wrong; delete it |
+| Docker is worth pursuing for the offline harness before the in-game tools | the save-path work turns out to cost more than a second macOS session would | drop the docker backend, keep `native-offscreen` and a separate user session |
+| The docker backend takes the same LOVE lock as native, conservatively | measuring that a container LOVE and a host LOVE genuinely do not interfere | a serialisation we did not need, costing wall clock only |
+| New tooling is named in en-US even though `tools/` is mostly Portuguese | T1.5 deciding to rename everything at once instead | three file names |
+| A structural gate on the state file will not cry wolf on Kim's own edits, because it checks presence and shape and never prose | the gate firing on an edit that was fine | loosen the check that fired, or drop it; it is four independent checks, not one |
+| Battery step order is still meaningful with two doc gates added before the ruler | a failure in step 5 or 7 masking something the ruler would have said first | reorder; both new steps are offline and cheap, so they can move anywhere in the fast half |
+
+## Next actions, in order
+
+**0. Tier 0 has nothing open that engineering can move.** T0.1, T0.3 and T0.5
+are landed with gates. **T0.2's measurement is done**: output delta ZERO, window
+not hidden, no gate moved onto the backend. T0.4 is `blocked-on-Kim` (K1). So
+the critical path now runs through Tier 1, and the next items there split
+cleanly:
+
+| Tier 1 item | Blocked by | Can start now |
+|---|---|---|
+| T1.1 lab motion preview | its gate compares against an in-game probe, needs a display | implementation yes, verification no |
+| T1.2 anchors and events | same, plus it touches `main.lua` | implementation yes, verification no |
+| T1.3 audio gate | nothing | **landed** |
+| T1.4 critic context | needs renders | no |
+| T1.5 en-US remainder | only display-validated tool output, the battery banner, and filenames remain | partly |
+| T1.6 release positioning | Kim's eye (K2) | no |
+
+**The honest read after T1.5 slice 3:** remaining Tier 1 work now needs either
+a display or Kim. Writing T1.1 or T1.2 blind is possible and it would mean
+landing visual maths nobody can check, which is the failure this project has
+the most scar tissue about. The remaining en-US work is intentionally tied to
+the full battery or to gates that need LOVE.
+
+1. **T0.2 measurement: done.** `native-offscreen` renders byte-identically to
+   `native` (floor established by running native twice), and it does **not**
+   hide the window: macOS clamped the requested -4000,-4000 to x=-280 y=60,
+   leaving 40 px of a 320 px window visible. No gate was moved onto the
+   backend and no threshold changed. Full evidence in "Gate deltas" above and
+   in `tools/runner/deltas.txt`.
+
+2. **The blocker moved, it did not clear.** Hiding the window is not something
+   a `conf.lua` position can do on this OS, so the next mechanism has to be one
+   of these, and all three are machine configuration rather than code:
+
+   - a separate macOS user session, driven with `launchctl asuser`;
+   - a dedicated Space the runner launches into;
+   - a second display, physical or virtual.
+
+   Each needs a decision from Kim about how his machines are set up, which is
+   why none of it is queued as autonomous work.
+
+3. **The other route to a contained runner is docker, and its first step is
+   display-free**: the macOS LOVE save path is hardcoded in five shell tools
+   (`card.sh`, `calibra.sh`, `clip.sh`, `trailer.sh`, `juiz.sh`). One resolver
+   replacing five literals. It cannot be validated without a display, because
+   every one of those tools needs LOVE to exercise, so it is written down here
+   rather than started blind.
+
+4. **Full battery: done, green, with a baseline.** See "The full battery" above.
+   The five new gates disturb neither the ruler nor the in-game gates.
+
+5. **`mutantes.sh` is the one gate with no result**, and it is blocked by
+   nothing but a clean tree: it refuses to run on a dirty one, on purpose,
+   since it mutates `main.lua` and restores from a trap. Everything in this
+   session is uncommitted, so it has had no clean tree to run on. It needs a
+   display as well, for the in-game half of what it verifies.
+
+6. **Escalating the measured target** from one render to `check.sh` is now
+   lower value than it looked. `native-offscreen` renders identically and does
+   not hide the window, so there is nothing to gain by hosting the ruler on it
+   until a real hiding mechanism exists. Park it behind that.
+
+## Commands
+
+```
+bash mods/voxel_characters/tools/bateria.sh --rapido        offline half, includes both new gates
+luajit mods/voxel_characters/tools/options_documented.lua   T0.1 gate alone
+bash mods/voxel_characters/tools/runner/runner.sh probe      what can run here
+bash mods/voxel_characters/tools/runner/runner.sh selftest   does the runner fail when it should
+bash mods/voxel_characters/tools/runner/runner.sh run native-offscreen \
+  --label ruler --verdict 'REGUA OK' -- "bash mods/voxel_characters/tools/render/check.sh"
+```
+
+The last one is the shape of a real controlled run, and it is still the right
+next escalation: one render has answered ZERO, the ruler has not. It needs a
+display, and running `native-offscreen` buys nothing over `native` until the
+window can actually be hidden, so there is no reason to prefer it yet.
+
+---
+
+# Roadmap V2 execution
+
+Durable state for autonomous execution of `ROADMAP_V2.md`. History from here
+down.
 
 **Started 2026-08-10. CLOSED the same day: 24 of 27 roadmap items.** Branch
 `vida-v2`, 100 commits since v1.6.0, nothing pushed.

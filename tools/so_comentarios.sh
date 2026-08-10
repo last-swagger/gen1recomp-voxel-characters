@@ -91,6 +91,6 @@ for f in "$@"; do
 done
 
 echo
-[ $FALHOU -eq 0 ] && echo "SO COMENTARIOS OK" \
+[ $FALHOU -eq 0 ] && echo "COMMENTS ONLY OK" \
                   || echo "NOT COMMENTS ONLY: the translation touched code"
 exit $FALHOU

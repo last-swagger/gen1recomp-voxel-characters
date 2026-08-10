@@ -1,0 +1,43 @@
+# Measured deltas of a runner backend against the NATIVE macOS procedure.
+#
+# This file is DATA. A backend becomes trustworthy for a threshold measurement
+# by somebody measuring it and writing a line here, never by editing
+# runner.sh. Absence of a line means UNMEASURED, and runner.sh says so on
+# every run.
+#
+# AT MOST ONE LINE PER backend+target. measure_delta.sh replaces an existing
+# line for the same key instead of appending beside it, and runner.sh reads the
+# LAST match, so the two agree that the newest measurement is the live one even
+# if a duplicate is ever added by hand. The bug this prevents: the writer used
+# to append and the reader used to take the FIRST match, so re-measuring a key
+# left a superseded verdict in force. A stale ZERO is the worst version of it,
+# being the one that would let a threshold be trusted on a backend already
+# shown to differ.
+#
+# Format, whitespace separated:
+#
+#   <backend>  <target-key>  <verdict>  <evidence>
+#
+#   backend     native | native-offscreen | docker
+#   target-key  the --label of the run, or `any` for a backend-wide statement
+#   verdict     ZERO      output is byte identical to native
+#               BOUNDED   output differs, and the difference is measured and
+#                         smaller than the gate's own floor (say which)
+#               DIFFERS   output differs enough that native thresholds do not
+#                         transfer. Look here, do not compare here.
+#   evidence    how it was measured, so the claim can be re-run
+#
+# WHAT COUNTS AS EVIDENCE, because this is the line the project keeps
+# re-learning: the same gate run under both backends, with its control floor
+# captured by the SAME procedure in each, and the delta reported. Not "it
+# looked the same". And a gate that SHOULD fail has to fail under the new
+# backend too, otherwise the backend is only proving it can produce output.
+#
+# native is the reference by definition and needs no line.
+#
+# ------------------------------------------------------------------------
+# backend            target-key    verdict     evidence
+# ------------------------------------------------------------------------
+# One line below. The mode is output-safe and does not yet hide anything: read
+# the evidence before treating "ZERO" as permission to move a gate onto it.
+native-offscreen   harness-red-slab ZERO      2026-08-10 MBP (Kims-MacBook-Pro, LOVE 11.5, mod rev 857f697). sha256 identical across native x2 and native-offscreen; floor identical so bytes are a valid instrument. BUT the offscreen-mode window was still ON SCREEN: macOS clamped the requested -4000,-4000 to x=-280 y=60 on a 1512x982 display, so 40px of a 320px window remained visible. Output is safe; the mode does not yet hide anything.

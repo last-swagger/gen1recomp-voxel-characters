@@ -139,7 +139,7 @@ end
 
 if total > 0 then
   print("")
-  print(string.format("%d checagem(ns) que nao checam. Envolva em check(...).", total))
+  print(string.format("%d check(s) that check nothing. Wrap them in check(...).", total))
   os.exit(1)
 end
-print("nenhuma checagem descartada")
+print("no discarded checks")

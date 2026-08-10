@@ -8,9 +8,75 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
-Nothing here changes what a player sees. This entry is tooling, tests and the
-project's own language, plus one defect in shipped behaviour that the tooling
-found.
+**Four new options, and all four are off until you turn them on.** Nothing here
+changes what a player sees by default; `ATTENTION`, `PART LAG` and `FOOTFALL`
+start at `OFF` and `FIRST PERSON` starts at `CARD`, per the house rule that a
+visual change the community has not seen yet ships off. The rest of this entry
+is tooling, tests and the project's own language, plus one defect in shipped
+behaviour that the tooling found.
+
+### Added
+
+- **`FOOTFALL: OFF / SUBTLE / NORMAL` squashes the solid on each footfall and
+  stretches it at the top of the step**, so the weight transfer the walk cycle
+  art already implies reaches the body without separating a single leg. The
+  phase comes from DISTANCE travelled rather than from the sprite frame: the
+  game walks 16 px per step, so every 16 px is a footfall, and that holds for
+  the player, for a wandering NPC and for anyone on a bike, which changes how
+  many frames a step takes and never how many pixels it has. The amplitude
+  comes from smoothed velocity, so the effect is born and dies on its own
+  instead of needing an "is walking" boolean that would snap on mid-scale.
+  The levels are maximum squash in world pixels.
+
+- **`ATTENTION: OFF / SUBTLE / CLEAR` leans a character toward the player when
+  the player is close, and never turns it.** The levels are head displacement
+  in world pixels, 0.5 and 1.0, against `SWAY: NORMAL` at 0.45. There is
+  hysteresis on the way in and out, because a reaction that snaps at an exact
+  radius reads as twitching rather than as attention.
+
+  **It is a lean because it has to be.** The side faces of a solid carry 0.0%
+  of the artist's art, since these characters were drawn from the front and
+  never from the side, and the only reason nobody has seen that is that this
+  game never turns a character. Turning one to look at the player would show
+  the invented surface and nothing else.
+
+- **`PART LAG: OFF / LOW / HIGH` delays the upper body behind the lower one**,
+  so the head and hair arrive late instead of the whole character moving as one
+  rigid piece. The levels are the delay in seconds, 0.08 and 0.16: under about
+  0.05 nothing is readable at 60 fps, and past about 0.2 the head stops looking
+  attached.
+
+  **It needs something to delay, and the clip guard is what caught that.** With
+  every other life option off the shear is constant, and a delayed constant is
+  the same constant, so `PART LAG` only shows up on top of `MOTION LAG`, `SWAY`
+  or `ATTENTION`. The clip tool refused to publish a side-by-side of it, which
+  is how this was found rather than shipped.
+
+  This is also the first thing here that needed the mesh to be addressable in
+  regions. Body-wide inertia was a single matrix applied to the whole mesh;
+  per-part motion needed vertical bands with their own state at draw time, cut
+  only along rows that already carry a cap face, because the host draws
+  characters with culling disabled and a cut anywhere else would expose the
+  inside of the back wall.
+
+- **`FIRST PERSON: CARD / SOLID` keeps characters solid through a first person
+  blend instead of falling back to the flat card.** Since 1.3.0 this mod has
+  handed back the card the moment the blend starts, which was a fix rather than
+  laziness: **Colonel_Aureliano** reported black spikes, and the cause turned
+  out to be proximity and not the camera. The shader pulls every vertex toward
+  the eye, so on a solid the near corners cross the near plane before the far
+  ones and a spike is what is left; a flat card survives because all of its
+  vertices cross together. `SOLID` caps the pull instead of giving up the
+  volume.
+
+  **What it buys, measured, because this one is easy to oversell.** Across
+  eight blend values, reproducing byte for byte over four runs, the effect
+  grows through the transition, peaks at blend 0.74 at 5.9% of the frame, and
+  is exactly zero by blend 0.83, where the host hides the player's own card as
+  the blend completes. So this is not a solid body you can walk around in first
+  person, and there is nothing to see at a settled first person view either
+  way. It is worth the entry and the exit: your own body used to collapse to a
+  flat card exactly when the camera came closest to it.
 
 ### Fixed
 

@@ -15,10 +15,26 @@
 #   3. chunk-local headroom, because exceeding it is a COMPILE error, so the
 #      symptom is not a broken feature, it is the mod failing to load for
 #      everyone;
-#   4. THE RULER, before any measurement is trusted. Ten defects in one session
+#   4. the option docs, because an option a player cannot find in the README is
+#      an option that did not ship, and release.sh builds the release body from
+#      CHANGELOG.md. Four options once landed on this branch documented
+#      nowhere. It runs in --rapido on purpose, so the pre-commit hook catches
+#      it while the option is still being written;
+#   5. the controlled runner's selftest, which needs no display and no docker.
+#      It only proves the RUNNER fails when it should; it does not run anything
+#      visual and it does not replace any gate below;
+#   6. the durable execution state, because a long autonomous run that loses its
+#      own state file is a run that starts over. Reads the required sections out
+#      of the roadmap rather than from a list here;
+#   7b. the audio gate's selftest. There is no audio in the mod yet, so this
+#      verifies the INSTRUMENT and nothing about the product: it exists before
+#      the sound does, which is the same order the ruler came in. Skipped with a
+#      reason if ffmpeg is missing, rather than turning an optional dependency
+#      into a red battery;
+#   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
-#   5. the in-game gates, which are slow and need the game, and are only worth
+#   9. the in-game gates, which are slow and need the game, and are only worth
 #      running once everything above is green.
 #
 # Only one LOVE runs at a time on a machine (tools_bin.sh holds a lock), so
@@ -57,16 +73,54 @@ passo "4. packaging: does the game accept the mod?"
 python3 "$RAIZ/tools/modkit.py" validate "$MOD" 2>&1 | tail -1
 veredito "modkit" "${PIPESTATUS[0]}"
 
+passo "5. option docs: can a player find every option?"
+"$LUAJIT" "$MOD/tools/options_documented.lua" 2>&1 | tail -10
+veredito "options_documented" "${PIPESTATUS[0]}"
+
+# The runner's own selftest, not a visual run. It proves the controlled runner
+# reports a problem when there is one (no verdict, no artifact, unusable
+# backend), which is the only claim it is allowed to make until a backend's
+# delta against native is measured. Nothing below has been moved onto it.
+passo "6. the controlled runner fails when it should"
+bash "$MOD/tools/runner/runner.sh" selftest 2>&1 | tail -3
+veredito "runner selftest" "${PIPESTATUS[0]}"
+
+# The state file is what a cold session, a compaction or a handoff lands on, so
+# it is gated like anything else. The required sections come from ROADMAP_V3.md
+# section 9.7, not from a list inside the gate.
+passo "7. the durable execution state is complete"
+"$LUAJIT" "$MOD/tools/execution_state_gate.lua" 2>&1 | tail -6
+veredito "execution_state" "${PIPESTATUS[0]}"
+
+# The instrument for T2.3's SFX, verified before there is any sound to verify.
+# It measures nothing about the mod today; it proves the ruler can tell silence
+# from signal and refuses a file it could not read.
+# The tool surface stays en-US. Scope and exemptions live in
+# tools/en_us_scope.txt as data, each deferral carrying a reason, and a deferral
+# that stops matching anything fails: a stale exemption covers the next
+# regression silently.
+passo "7a. the tool surface is en-US"
+"$LUAJIT" "$MOD/tools/en_us_sweep.lua" 2>&1 | tail -5
+veredito "en-US sweep" "${PIPESTATUS[0]}"
+
+passo "7b. the audio gate can tell silence from signal"
+if [ -n "${FFMPEG:-}" ] || command -v ffmpeg >/dev/null 2>&1; then
+  bash "$MOD/tools/audio_gate.sh" --selftest 2>&1 | tail -3
+  veredito "audio gate selftest" "${PIPESTATUS[0]}"
+else
+  printf "   %-44s SKIPPED (no ffmpeg)\n" "audio gate selftest"
+fi
+
 if [ "$MODO" = "--rapido" ]; then
   PULADOS="the ruler and the in-game gates"
 else
-  passo "5. THE RULER, before trusting any measurement"
+  passo "8. THE RULER, before trusting any measurement"
   bash "$MOD/tools/render/check.sh" 2>&1 | tail -2
   veredito "check.sh" "${PIPESTATUS[0]}"
 fi
 
 if [ "$MODO" = "tudo" ]; then
-  passo "6. in-game gates (slow, needs the game)"
+  passo "9. in-game gates (slow, needs the game)"
   # THE VERDICT IS COUNTED FROM BOTH SIDES, and that is the whole design of
   # this step. Every driver prints one `NAME PASSOU` or `NAME FALHOU` per
   # check. Grepping for a success word alone passes a run where the game never

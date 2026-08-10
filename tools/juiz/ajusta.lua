@@ -47,7 +47,7 @@ local function estadoCanonico(texto)
 end
 
 local function lerEscolhas(caminho)
-  local f = assert(io.open(caminho, "r"), "nao consegui abrir " .. caminho)
+  local f = assert(io.open(caminho, "r"), "could not open " .. caminho)
   local escolhas, pulos = {}, 0
   for linha in f:lines() do
     local folha = linha:match("folha=(%S+)")
@@ -72,7 +72,7 @@ local function lerEscolhas(caminho)
 end
 
 local function lerFeatures(caminho)
-  local f = assert(io.open(caminho, "r"), "nao consegui abrir " .. caminho)
+  local f = assert(io.open(caminho, "r"), "could not open " .. caminho)
   local nomes, mapa = nil, {}
   for linha in f:lines() do
     local campos = {}
@@ -166,7 +166,7 @@ end
 -- Beating this is the minimum for the model to have learned some combination
 -- instead of just reproducing the strongest column.
 local function melhorColuna(X, y, treinoIdx, testeIdx, nomes)
-  local melhor = { nome = "nenhuma", treino = 0, teste = 0 }
+  local melhor = { nome = "none", treino = 0, teste = 0 }
   for j = 1, #X[1] do
     for _, sinal in ipairs({ 1, -1 }) do
       local w = {}
@@ -175,7 +175,7 @@ local function melhorColuna(X, y, treinoIdx, testeIdx, nomes)
       local t = acerta(X, y, treinoIdx, w)
       if t > melhor.treino then
         melhor = { nome = (nomes and nomes[j] or ("col" .. j)) ..
-                     (sinal < 0 and " (negativa)" or ""),
+                     (sinal < 0 and " (negative)" or ""),
                    treino = t, teste = acerta(X, y, testeIdx, w) }
       end
     end
@@ -286,14 +286,14 @@ local function comandoEstados(caminho)
     end
   end
   for _, l in ipairs(saida) do print(l) end
-  io.stderr:write(string.format("%d escolhas, %d variantes unicas\n",
+  io.stderr:write(string.format("%d choices, %d unique variants\n",
     #escolhas, #saida))
 end
 
 local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
   local escolhas, pulos = lerEscolhas(caminhoEscolhas)
   local nomes, mapa = lerFeatures(caminhoFeatures)
-  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
+  if not nomes then print("features.tsv has no header"); os.exit(1) end
 
   local X, y, faltando, cegas = {}, {}, 0, {}
   for _, e in ipairs(escolhas) do
@@ -329,7 +329,7 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
     end
   end
 
-  print(string.format("escolhas usadas   %d", #X))
+  print(string.format("choices used      %d", #X))
   local nCegas, listaCegas = 0, {}
   for k, v in pairs(cegas) do
     nCegas = nCegas + v
@@ -337,29 +337,29 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
   end
   if nCegas > 0 then
     table.sort(listaCegas)
-    print(string.format("features cegas    %d  (%s)", nCegas,
+    print(string.format("blind features    %d  (%s)", nCegas,
       table.concat(listaCegas, ", ")))
-    print("                  os dois lados diferem na tela e NENHUMA feature")
-    print("                  distingue. Esta e a lista do que falta medir.")
+    print("                  the two sides differ on screen and NO feature")
+    print("                  distinguishes them. This is what remains to measure.")
   end
-  print(string.format("pulos             %d  (\"nao vejo diferenca\")", pulos))
+  print(string.format("skips             %d  (\"I see no difference\")", pulos))
   if faltando > 0 then
-    print(string.format("sem features      %d  (rode o extrator de novo)", faltando))
+    print(string.format("missing features  %d  (run the extractor again)", faltando))
   end
   if #X < 20 then
     print("")
-    print("POUCO DADO. Com menos de 20 escolhas o numero fora da amostra")
-    print("oscila mais do que a diferenca que ele deveria medir. O ajuste sai")
-    print("abaixo, mas nao decida nada com ele.")
+    print("TOO LITTLE DATA. With fewer than 20 choices, the out-of-sample")
+    print("number swings more than the difference it is supposed to measure.")
+    print("The fit is printed below, but do not decide anything from it.")
   end
   if #X < 5 then return end
 
   local r = M.ajusta(X, y, nomes)
   print("")
-  print(string.format("treino %d, teste %d (um em cada cinco, pela ordem)",
+  print(string.format("train %d, test %d (one in five, by order)",
     r.treino, r.teste))
   print("")
-  print("pesos, na escala padronizada (positivo puxa para o lado A):")
+  print("weights, on the standardised scale (positive pulls toward side A):")
   local ordem = {}
   for j = 1, #r.w do ordem[j] = j end
   table.sort(ordem, function(a, b) return math.abs(r.w[a]) > math.abs(r.w[b]) end)
@@ -367,9 +367,9 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
     print(string.format("  %-14s %+7.3f", nomes[j] or ("col" .. j), r.w[j]))
   end
   print("")
-  print(string.format("acuracia no treino          %.1f%%", r.acTreino * 100))
-  print(string.format("acuracia FORA da amostra    %.1f%%", r.acTeste * 100))
-  print(string.format("melhor coluna sozinha       %.1f%% fora (%s)",
+  print(string.format("training accuracy           %.1f%%", r.acTreino * 100))
+  print(string.format("out-of-sample accuracy      %.1f%%", r.acTeste * 100))
+  print(string.format("best single column          %.1f%% out (%s)",
     r.base.teste * 100, r.base.nome))
   print("")
 
@@ -381,41 +381,41 @@ local function comandoAjusta(caminhoEscolhas, caminhoFeatures)
   local cv = M.validaCruzado(X, y, nomes, 5)
   if not cv then
     if r.acTeste > r.base.teste then
-      print("O MODELO GANHA DA MELHOR COLUNA (holdout unico, poucos dados).")
+      print("THE MODEL BEATS THE BEST COLUMN (single holdout, little data).")
     else
-      print("O MODELO NAO GANHA DE UMA COLUNA SOZINHA, no holdout unico.")
+      print("THE MODEL DOES NOT BEAT A SINGLE COLUMN on the single holdout.")
     end
     return
   end
 
   local margem = (cv.modelo - cv.coluna) * 100
-  print(string.format("VALIDACAO CRUZADA, %d dobras, %d escolhas testadas:",
+  print(string.format("CROSS VALIDATION, %d folds, %d choices tested:",
     cv.k, cv.n))
   local partes = {}
   for _, a in ipairs(cv.folds) do
     partes[#partes + 1] = string.format("%.0f%%", a * 100)
   end
-  print(string.format("  modelo        %.1f%%  (por dobra: %s)",
+  print(string.format("  model         %.1f%%  (by fold: %s)",
     cv.modelo * 100, table.concat(partes, " ")))
-  print(string.format("  melhor coluna %.1f%%  (%s, em %d das %d dobras)",
+  print(string.format("  best column   %.1f%%  (%s, in %d of %d folds)",
     cv.coluna * 100, cv.nomeColuna, cv.vezes, cv.k))
-  print(string.format("  margem        %+.1f pontos", margem))
-  print(string.format("  desvio entre dobras %.1f pontos", cv.desvio * 100))
+  print(string.format("  margin        %+.1f points", margem))
+  print(string.format("  spread across folds %.1f points", cv.desvio * 100))
   print("")
 
   -- A margin smaller than the spread across folds is not a margin. Saying so
   -- out loud is the whole point: this project has published a difference that
   -- was inside its own noise before.
   if margem > cv.desvio * 100 then
-    print("O MODELO GANHA DA MELHOR COLUNA SOZINHA: ele aprendeu uma")
-    print("combinacao, e nao so a feature mais forte.")
+    print("THE MODEL BEATS THE BEST SINGLE COLUMN: it learned a")
+    print("combination, not just the strongest feature.")
   elseif margem > 0 then
-    print("A MARGEM E MENOR QUE O RUIDO ENTRE AS DOBRAS. O modelo esta na")
-    print("frente, mas nao o suficiente para afirmar que ganha.")
+    print("THE MARGIN IS SMALLER THAN THE SPREAD ACROSS FOLDS. The model")
+    print("is ahead, but not by enough to claim that it wins.")
   else
-    print("O MODELO NAO GANHA DE UMA COLUNA SOZINHA. Isso nao e juiz ainda.")
-    print("Duas causas, e elas pedem coisas opostas: ou faltam escolhas, ou o")
-    print("que decide a preferencia nao esta em nenhuma feature desta lista.")
+    print("THE MODEL DOES NOT BEAT A SINGLE COLUMN. This is not a judge yet.")
+    print("Two causes point in opposite directions: either more choices are")
+    print("needed, or the preference driver is not in this feature list.")
   end
 end
 
@@ -427,7 +427,7 @@ end
 -- rule that is really there, there is no point feeding it real data.
 local function comandoAutoteste()
   math.randomseed(20260809)
-  local nomes = { "topo", "arte", "quads", "ruido1", "ruido2" }
+  local nomes = { "top", "art", "quads", "noise1", "noise2" }
   -- The rule: whoever has LESS top and MORE art wins. The other three do not count.
   local verdade = { -2.0, 1.5, 0, 0, 0 }
   local X, y = {}, {}
@@ -440,12 +440,12 @@ local function comandoAutoteste()
     y[#y + 1] = (z + (math.random() - 0.5) * 0.4) > 0 and 1 or 0
   end
   local r = M.ajusta(X, y, nomes)
-  print("autoteste do juiz, 200 escolhas sinteticas")
-  print("  regra usada para gerar: topo -2.0, arte +1.5, o resto zero")
+  print("judge selftest, 200 synthetic choices")
+  print("  generating rule: top -2.0, art +1.5, the rest zero")
   for j = 1, #nomes do
-    print(string.format("    %-8s peso ajustado %+7.3f", nomes[j], r.w[j]))
+    print(string.format("    %-8s fitted weight %+7.3f", nomes[j], r.w[j]))
   end
-  print(string.format("  acuracia fora da amostra %.1f%%, melhor coluna %.1f%%",
+  print(string.format("  out-of-sample accuracy %.1f%%, best column %.1f%%",
     r.acTeste * 100, r.base.teste * 100))
   local ok = r.w[1] < -0.3 and r.w[2] > 0.2
     and math.abs(r.w[4]) < math.abs(r.w[1])
@@ -453,12 +453,12 @@ local function comandoAutoteste()
     and r.acTeste >= 0.8 and r.acTeste > r.base.teste
   print("")
   if ok then
-    print("AUTOTESTE OK: o ajuste recupera o sinal de quem manda, deixa o")
-    print("ruido perto de zero, e ganha da melhor coluna sozinha.")
+    print("SELFTEST OK: the fit recovers the sign that matters, keeps")
+    print("noise near zero, and beats the best single column.")
     os.exit(0)
   end
-  print("AUTOTESTE FALHOU: a maquinaria nao recupera nem uma regra que existe.")
-  print("Nao alimente com escolhas de verdade ate consertar.")
+  print("SELFTEST FAILED: the machinery cannot recover a rule that exists.")
+  print("Do not feed it real choices until it is fixed.")
   os.exit(1)
 end
 
@@ -469,7 +469,7 @@ end
 local function comandoPesos(caminhoEscolhas, caminhoFeatures, saida)
   local escolhas = lerEscolhas(caminhoEscolhas)
   local nomes, mapa = lerFeatures(caminhoFeatures)
-  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
+  if not nomes then print("features.tsv has no header"); os.exit(1) end
   local X, y = {}, {}
   for _, e in ipairs(escolhas) do
     local pre = e.folha .. "\t" .. e.frame .. "\t" .. e.clock .. "\t"
@@ -486,18 +486,18 @@ local function comandoPesos(caminhoEscolhas, caminhoFeatures, saida)
       end
     end
   end
-  if #X < 5 then print("poucas escolhas para exportar modelo"); os.exit(1) end
+  if #X < 5 then print("too few choices to export a model"); os.exit(1) end
   local r = M.ajusta(X, y, nomes)
   local f = assert(io.open(saida, "w"))
-  f:write("# modelo do juiz, gerado por ajusta.lua --pesos\n")
-  f:write(string.format("# %d escolhas, acuracia fora da amostra %.3f, "
-    .. "melhor coluna %.3f\n", #X, r.acTeste, r.base.teste))
+  f:write("# judge model, generated by ajusta.lua --pesos\n")
+  f:write(string.format("# %d choices, out-of-sample accuracy %.3f, "
+    .. "best column %.3f\n", #X, r.acTeste, r.base.teste))
   for j = 1, #r.w do
     f:write(string.format("%s\t%.8f\t%.8f\t%.8f\n",
       nomes[j], r.w[j], r.media[j], r.desvio[j]))
   end
   f:close()
-  print(string.format("modelo em %s (%d escolhas, fora da amostra %.1f%%)",
+  print(string.format("model in %s (%d choices, out-of-sample %.1f%%)",
     saida, #X, r.acTeste * 100))
 end
 
@@ -534,7 +534,7 @@ end
 -- separating the columns.
 local function comandoPares(caminhoFeatures, caminhoModelo, quantos)
   local nomes, mapa = lerFeatures(caminhoFeatures)
-  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
+  if not nomes then print("features.tsv has no header"); os.exit(1) end
   local modelo = caminhoModelo and lerModelo(caminhoModelo) or nil
 
   -- Agrupa por (folha, quadro, relogio): so faz sentido comparar variantes da
@@ -582,8 +582,8 @@ local function comandoPares(caminhoFeatures, caminhoModelo, quantos)
     local c = cand[i]
     print(c.g .. "\t" .. c.a .. "\t" .. c.b)
   end
-  io.stderr:write(string.format("%d pares de %d candidatos, criterio: %s\n",
-    n, #cand, modelo and "incerteza do modelo" or "maior distancia (sem modelo)"))
+  io.stderr:write(string.format("%d pairs from %d candidates, criterion: %s\n",
+    n, #cand, modelo and "model uncertainty" or "greatest distance (no model)"))
 end
 
 -- RANKING: what the model would choose, given a space of candidates.
@@ -604,9 +604,9 @@ end
 -- model that is not working, whatever its holdout number says.
 local function comandoRanking(caminhoFeatures, caminhoModelo, quantos)
   local nomes, mapa = lerFeatures(caminhoFeatures)
-  if not nomes then print("features.tsv sem cabecalho"); os.exit(1) end
-  local modelo = lerModelo(assert(caminhoModelo, "falta o modelo.txt"))
-  if not modelo then print("nao consegui ler o modelo"); os.exit(1) end
+  if not nomes then print("features.tsv has no header"); os.exit(1) end
+  local modelo = lerModelo(assert(caminhoModelo, "missing modelo.txt"))
+  if not modelo then print("could not read the model"); os.exit(1) end
 
   local linhas = {}
   for chave, v in pairs(mapa) do
@@ -619,7 +619,7 @@ local function comandoRanking(caminhoFeatures, caminhoModelo, quantos)
     linhas[#linhas + 1] = { folha = folha, frame = qf, clock = qt,
                             estado = estado, z = z }
   end
-  if #linhas == 0 then print("nenhum candidato"); os.exit(1) end
+  if #linhas == 0 then print("no candidates"); os.exit(1) end
   -- WITHIN A SHEET, AND HEAD TO HEAD. Two corrections, both of them cases of
   -- a number that reads like a finding and is not one.
   --
@@ -646,7 +646,7 @@ local function comandoRanking(caminhoFeatures, caminhoModelo, quantos)
 
   local duelo, total, mostradas = {}, 0, 0
   local n = tonumber(quantos) or 5
-  io.stderr:write("\n== O MELHOR E O PIOR DENTRO DE CADA FOLHA\n")
+  io.stderr:write("\n== BEST AND WORST WITHIN EACH SHEET\n")
   for _, f in ipairs(nomesFolha) do
     local lista = porFolha[f]
     table.sort(lista, function(a, b) return a.z > b.z end)
@@ -655,7 +655,7 @@ local function comandoRanking(caminhoFeatures, caminhoModelo, quantos)
       local topo, fundo = lista[1], lista[#lista]
       if mostradas < n then
         io.stderr:write(string.format(
-          "  %-16s melhor %+7.2f   pior %+7.2f   (%d variantes)\n",
+          "  %-16s best %+7.2f   worst %+7.2f   (%d variants)\n",
           f, topo.z, fundo.z, #lista))
         mostradas = mostradas + 1
       end
@@ -678,16 +678,16 @@ local function comandoRanking(caminhoFeatures, caminhoModelo, quantos)
   for k in pairs(duelo) do chaves[#chaves + 1] = k end
   table.sort(chaves)
   io.stderr:write(string.format(
-    "\n== CONFRONTO DIRETO: o melhor contra o pior, em %d folhas\n\n", total))
+    "\n== HEAD TO HEAD: best against worst, across %d sheets\n\n", total))
   if #chaves == 0 then
-    io.stderr:write("  o melhor e o pior nunca diferem numa opcao sozinha\n")
+    io.stderr:write("  the best and worst never differ in only one option\n")
   end
   for _, k in ipairs(chaves) do
     local pares = {}
     for par, c in pairs(duelo[k]) do pares[#pares + 1] = { par = par, c = c } end
     table.sort(pares, function(a, b) return a.c > b.c end)
     for i = 1, math.min(2, #pares) do
-      io.stderr:write(string.format("  %-14s %-26s %2d folhas\n",
+      io.stderr:write(string.format("  %-14s %-26s %2d sheets\n",
         i == 1 and k or "", pares[i].par, pares[i].c))
     end
   end
@@ -695,18 +695,18 @@ end
 
 local cmd = arg and arg[1]
 if cmd == "--ranking" then
-  comandoRanking(assert(arg[2], "falta o features.tsv"), arg[3], arg[4])
-elseif cmd == "--estados" then comandoEstados(assert(arg[2], "falta o escolhas.txt"))
+  comandoRanking(assert(arg[2], "missing features.tsv"), arg[3], arg[4])
+elseif cmd == "--estados" then comandoEstados(assert(arg[2], "missing escolhas.txt"))
 elseif cmd == "--ajusta" then
-  comandoAjusta(assert(arg[2], "falta o escolhas.txt"),
-                assert(arg[3], "falta o features.tsv"))
+  comandoAjusta(assert(arg[2], "missing escolhas.txt"),
+                assert(arg[3], "missing features.tsv"))
 elseif cmd == "--autoteste" then comandoAutoteste()
 elseif cmd == "--pesos" then
   comandoPesos(assert(arg[2]), assert(arg[3]), arg[4] or "modelo.txt")
 elseif cmd == "--pares" then
   comandoPares(assert(arg[2]), arg[3], arg[4])
 else
-  print("uso: ajusta.lua --estados <escolhas.txt>")
+  print("usage: ajusta.lua --estados <escolhas.txt>")
   print("     ajusta.lua --ajusta <escolhas.txt> <features.tsv>")
   print("     ajusta.lua --autoteste")
   os.exit(1)
