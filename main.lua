@@ -1,22 +1,23 @@
--- Voxel Characters: personagens como slabs de pixels, sem invadir o Voxel Mod.
+-- Voxel Characters: characters as pixel slabs, without invading the Voxel Mod.
 --
--- O Dramatic Shape desenha os personagens como cards planos. Isso e
--- uma escolha deliberada dele; este mod so troca a funcao publica que ja e
--- capturada por campo (`SpriteBillboards.mesh`) quando o jogador escolhe uma
--- espessura. A sombra e o fantasma continuam no alias original.
+-- Dramatic Shape draws characters as flat cards. That is a deliberate choice
+-- of its own; this mod only swaps the public function that is already
+-- captured by field (`SpriteBillboards.mesh`) once the player picks a
+-- thickness. The shadow and the ghost stay on the original alias.
 --
--- NAO PATCHEIE `shadowQuad`. Isso nao e economia, e requisito. A silhueta de
--- oclusao do jogador (`VoxelScene.drawGhost`) desenha essa malha com o teste
--- de profundidade INVERTIDO por `Voxel3D.beginGhost`, e o autor do Dramatic
--- Shape documenta o porque em VoxelScene.lua:390-396: "a mesh carrying both
+-- DO NOT PATCH `shadowQuad`. This is not an economy, it is a requirement. The
+-- player's occlusion silhouette (`VoxelScene.drawGhost`) draws that mesh with
+-- the depth test INVERTED by `Voxel3D.beginGhost`, and Dramatic Shape's
+-- author documents why in VoxelScene.lua:390-396: "a mesh carrying both
 -- front and back faces would read its own back faces as 'behind something'
--- and repaint the figure on open ground, occluded or not". Nosso slab tem
--- exatamente front e back. Trocar o shadowQuad por ele pinta o jogador como
--- fantasma em campo aberto e ainda borra em manchas por duplo blend.
+-- and repaint the figure on open ground, occluded or not". Our slab has
+-- exactly front and back. Swapping shadowQuad for it paints the player as a
+-- ghost in open ground and still smears in blotches from double blend.
 --
--- O preco de manter o card plano no passe de sol e a franja de auto-sombra
--- nas faces laterais e de fundo (README, secao "Sombra do slab"). E o lado
--- certo do trade: franja sutil contra jogador repintado na tela inteira.
+-- The price of keeping the flat card on the sun pass is the self-shadow
+-- fringe on the side and back faces (README, "Slab shadow" section). It is
+-- the right side of the trade: subtle fringe against the player repainted
+-- across the whole screen.
 
 local mod = ...
 
@@ -49,33 +50,33 @@ local HOSTS = {
     supported = ">=1.5.0 <2.0.0",
   },
 }
--- REFATORACAO (locais do chunk principal): main.lua chegou a 199 locais
--- contra o teto de 200 do LuaJIT (LUAI_MAXVARS) porque cada opcao de menu
--- trazia consigo um punhado de locais proprios no topo do arquivo (chave,
--- valores, rotulos, default, indice do default, a variavel de estado, e
--- quatro funcoes: indexOf/read/set/row). Sete opcoes depois o orcamento
--- tinha acabado e a proxima nao coube: erro de COMPILACAO, nao de
--- comportamento, porque o mod inteiro deixa de carregar.
+-- REFACTOR (main chunk locals): main.lua reached 199 locals against
+-- LuaJIT's ceiling of 200 (LUAI_MAXVARS) because every menu option brought
+-- along a handful of locals of its own at the top of the file (key,
+-- values, labels, default, default index, the state variable, and four
+-- functions: indexOf/read/set/row). Seven options later the budget had run
+-- out and the next one did not fit: a COMPILE error, not a behavior one,
+-- because the whole mod fails to load.
 --
--- A partir de agora existe UMA tabela de descricao de opcao (OPTIONS,
--- logo abaixo) e funcoes genericas que operam sobre qualquer entrada dela
--- (optionIndexOf/readOption/setOption/makeOptionRow, mais adiante), mais UM
--- local de estado (optionState, uma tabela indexada pela chave da opcao) no
--- lugar da variavel de estado dedicada de cada opcao. Acrescentar uma opcao
--- nova e acrescentar uma entrada nesta tabela: nenhum local novo no chunk
--- principal.
+-- From now on there is ONE option description table (OPTIONS, right
+-- below) and generic functions that operate on any entry of it
+-- (optionIndexOf/readOption/setOption/makeOptionRow, further down), plus
+-- ONE state local (optionState, a table indexed by the option's key) in
+-- place of each option's dedicated state variable. Adding a new option is
+-- adding an entry to this table: no new local in the main chunk.
 --
--- Cada entrada usa o mesmo formato de pares { ROTULO, valor } que STEP
--- WEIGHT ja usava sozinho antes desta rodada (o campo `levels` abaixo):
--- serve tanto para valores numericos com rotulo separado (FRONT SHAPE:
--- { "LOW", 0.12 }) quanto para strings (SIDE COLOR: { "BODY", "body" }),
--- sem caso especial. `defaultIndex` aponta a posicao default dentro de
--- `levels` (TOP EDGE e a unica que nao comeca na posicao 1: default ON,
--- ver comentario na propria entrada). `clears` diz o que `setOption` limpa
--- quando o valor muda: "full" (so DEPTH, que tambem invalida `masks`),
--- "mesh" (a maioria, que so precisa reconstruir a malha), ou omitido
--- (BLINK, que nunca limpa cache: e aplicado por malha a cada desenho em
--- applyBlinkUv, nao assado na geometria).
+-- Each entry uses the same { LABEL, value } pair format that STEP
+-- WEIGHT already used on its own before this round (the `levels` field
+-- below): it works both for numeric values with a separate label (FRONT
+-- SHAPE: { "LOW", 0.12 }) and for strings (SIDE COLOR: { "BODY", "body" }),
+-- with no special case. `defaultIndex` points to the default position
+-- inside `levels` (TOP EDGE is the only one that does not start at
+-- position 1: default ON, see the comment on that entry). `clears` says
+-- what `setOption` clears when the value changes: "full" (DEPTH only,
+-- which also invalidates `masks`), "mesh" (most of them, which only need
+-- to rebuild the mesh), or omitted (BLINK, which never clears cache: it is
+-- applied per mesh on every draw in applyBlinkUv, not baked into the
+-- geometry).
 local OPTIONS = {
   {
     key = "depth",
@@ -84,7 +85,7 @@ local OPTIONS = {
       { "OFF", "off" }, { "1", 1 }, { "2", 2 },
       { "3", 3 }, { "5", 5 }, { "10", 10 },
     },
-    defaultIndex = 4, -- posicao de 3
+    defaultIndex = 4, -- position of 3
     help = "Extrudes overworld character sprites. Depth 1-5 stays inside the voxel pull budget; 10 may clip into walls.",
     clears = "full",
   },
@@ -103,25 +104,26 @@ local OPTIONS = {
       { "SLAB", "slab" }, { "CARVED", "carved" }, { "CARVED+", "carved_plus" },
     },
     defaultIndex = 1,
-    -- OS TRES NAO SAO UMA ESCADA DE QUALIDADE, e o menu vinha sugerindo que sao.
+    -- THE THREE ARE NOT A QUALITY LADDER, and the menu had been suggesting they are.
     --
-    -- Medido no red frame 0: SLAB tem 104 quads, dos quais 16 sao de topo.
-    -- CARVED tem 1068, dos quais 216 sao de topo. Treze vezes mais superficie
-    -- virada para cima, e superficie de topo e por definicao superficie que o
-    -- artista nunca desenhou. Nesta camera, que olha de cima, e justamente ela
-    -- que o jogador ve.
+    -- Measured on the red frame 0: SLAB has 104 quads, of which 16 are top
+    -- faces. CARVED has 1068, of which 216 are top faces. Thirteen times
+    -- more upward-facing surface, and top surface is by definition surface
+    -- the artist never drew. On this camera, which looks down from above,
+    -- that is exactly the surface the player sees.
     --
-    -- Isso nao e ajuste, e a lei que explica as tres tentativas de profundidade
-    -- variavel que ja morreram aqui (relevo por tom, mapa por IA, profundidade
-    -- por linha): toda variacao de profundidade cria degrau, todo degrau expoe
-    -- topo, e topo nao carrega arte.
+    -- This is not a tuning note, it is the law that explains the three
+    -- variable-depth attempts that already died here (relief by tone, map by
+    -- AI, depth by line): every depth variation creates a step, every step
+    -- exposes top, and top carries no art.
     --
-    -- O que o CARVED compra em troca e silhueta correta de QUALQUER angulo. Num
-    -- jogo que gira a camera isso e tudo; neste, que nunca gira em yaw, e um
-    -- beneficio que a camera nunca cobra. Entao ele nao e o modo melhor nem o
-    -- pior: e o modo independente de camera, e e o unico dos dois que produz um
-    -- volume de verdade, que e o que serviria de base para qualquer coisa fora
-    -- deste jogo.
+    -- What CARVED buys in exchange is correct silhouette from ANY angle. In
+    -- a game that rotates the camera that is everything; in this one, which
+    -- never rotates in yaw, it is a benefit the camera never charges for. So
+    -- it is neither the better mode nor the worse one: it is the
+    -- camera-independent mode, and it is the only one of the two that
+    -- produces a real volume, which is what would serve as the base for
+    -- anything outside this game.
     help = "SLAB keeps the artist's front face flat and whole, which is what this game's camera looks at. CARVED builds real volume from three views: correct from any angle, but it trades the art for stair steps here. CARVED+ adds tone relief to CARVED.",
     clears = "mesh",
   },
@@ -137,12 +139,13 @@ local OPTIONS = {
     key = "blink",
     label = "BLINK",
     levels = { { "OFF", "off" }, { "ON", "on" } },
-    -- DECISAO DO KIM, 2026-08-09: ligado por padrao. A regra da casa e que toda
-    -- mudanca visual nova nasce desligada, e ela continua valendo para o que e
-    -- NOVO. Piscar nao e novo: saiu na v1.4.0, a comunidade usou e gostou, e
-    -- ninguem reportou que incomoda. O default conservador existe para nao
-    -- surpreender quem instala; depois que a feature foi vista e aprovada, o
-    -- conservador passa a ser entregar o que as pessoas ja escolheriam.
+    -- KIM'S DECISION, 2026-08-09: on by default. The house rule is that every
+    -- new visual change is born off, and it keeps holding for what is NEW.
+    -- Blinking is not new: it shipped in v1.4.0, the community used it and
+    -- liked it, and nobody reported it as bothersome. The conservative
+    -- default exists so people who install are not surprised; once the
+    -- feature has been seen and approved, the conservative choice becomes
+    -- shipping what people would already choose.
     defaultIndex = 2,
     help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
   },
@@ -150,12 +153,12 @@ local OPTIONS = {
     key = "top_edge",
     label = "TOP EDGE",
     levels = { { "OFF", "off" }, { "ON", "on" } },
-    -- DECISAO v1.4.2: OFF nao e neutro. Com SIDE COLOR: BODY, a face de
-    -- topo da linha mais alta pode buscar a cor do corpo abaixo e pintar
-    -- uma tampa clara acima do contorno escuro, como no bone do Red. TOP
-    -- EDGE ligado por padrao nao adiciona efeito: remove esse defeito de
-    -- leitura e preserva uma quina escura ajustavel para quem quiser
-    -- voltar ao host shade puro.
+    -- DECISION v1.4.2: OFF is not neutral. With SIDE COLOR: BODY, the top
+    -- face of the highest row can pull the body color from below and paint
+    -- a light cap above the dark outline, as on Red's hat. TOP EDGE on by
+    -- default adds no effect: it removes that reading defect and keeps an
+    -- adjustable dark edge for anyone who wants to go back to plain host
+    -- shade.
     defaultIndex = 2, -- "on"
     help = "Darkens only exposed SLAB top faces for a false top-down edge.",
     clears = "mesh",
@@ -163,20 +166,20 @@ local OPTIONS = {
   {
     key = "front_shape",
     label = "FRONT SHAPE",
-    -- DECISAO v1.6.0: os tres niveis sao forca de sombreamento em degraus
-    -- na face frontal, nao contagem de poligonos. A geometria (posicao de
-    -- vertice, logo IoU e contagem de quads) e identica para qualquer
-    -- forca > 0: emitFrontRun so usa a forca para escalar o multiplicador
-    -- de shade de cada degrau, nunca a posicao de um vertice. 0.12 e o
-    -- valor medido e validado por Kim (IoU 1.000 contra o card plano em
-    -- red, blue, snorlax, poke_ball e nurse, frames 0-5; 259 quads no
-    -- red.png frame 0, dentro do orcamento de 300) e e o primeiro nivel
-    -- ligado. 0.22 tambem foi medido e ja "pesa demais" na leitura do Kim,
-    -- mas fica disponivel como teto para quem preferir mais contraste.
-    -- 0.17 (MED) e o ponto medio entre os dois extremos medidos: como a
-    -- geometria independe da magnitude da forca, os dois numeros medidos
-    -- ja cobrem esse terceiro nivel por construcao, sem exigir uma rodada
-    -- extra de render.
+    -- DECISION v1.6.0: the three levels are stepped shading strength on the
+    -- front face, not polygon count. The geometry (vertex position, hence
+    -- IoU and quad count) is identical for any strength > 0: emitFrontRun
+    -- only uses the strength to scale each step's shade multiplier, never a
+    -- vertex position. 0.12 is the value measured and validated by Kim (IoU
+    -- 1.000 against the flat card on red, blue, snorlax, poke_ball and
+    -- nurse, frames 0-5; 259 quads on red.png frame 0, within the budget of
+    -- 300) and is the first level turned on. 0.22 was also measured and
+    -- already "weighs too much" in Kim's reading, but it stays available as
+    -- a ceiling for anyone who prefers more contrast. 0.17 (MED) is the
+    -- midpoint between the two measured extremes: since the geometry does
+    -- not depend on the magnitude of the strength, the two measured numbers
+    -- already cover this third level by construction, with no need for an
+    -- extra render round.
     levels = {
       { "OFF", "off" }, { "LOW", 0.12 }, { "MED", 0.17 }, { "HIGH", 0.22 },
     },
@@ -187,20 +190,20 @@ local OPTIONS = {
   {
     key = "top_dome",
     label = "TOP DOME",
-    -- DECISAO v1.6.0: TOP DOME segue o mesmo mecanismo de FRONT SHAPE
-    -- (degraus de shade por posicao no run, a forca so escala o
-    -- multiplicador de cada degrau, nunca a posicao de um vertice), mas
-    -- com dois niveis, nao tres: so 0.15 e 0.30 foram medidos (IoU 1.000
-    -- contra o card plano em red, blue, snorlax, poke_ball e nurse, frames
-    -- 0-5; contagem de quads identica a com a opcao desligada em qualquer
-    -- forca) e a cintilacao entre poses, o risco pre-registrado, nao
-    -- apareceu no gate. Ao contrario de FRONT SHAPE, nao ha um MED
-    -- interpolado aqui: a spec desta rodada so deu os dois pontos
-    -- medidos, e um terceiro nivel sem medicao seria chute.
+    -- DECISION v1.6.0: TOP DOME follows the same mechanism as FRONT SHAPE
+    -- (shade steps by position within the run, the strength only scales
+    -- each step's multiplier, never a vertex position), but with two
+    -- levels, not three: only 0.15 and 0.30 were measured (IoU 1.000
+    -- against the flat card on red, blue, snorlax, poke_ball and nurse,
+    -- frames 0-5; quad count identical to the option turned off at any
+    -- strength) and the flicker between poses, the pre-registered risk,
+    -- did not show up in the gate. Unlike FRONT SHAPE, there is no
+    -- interpolated MED here: this round's spec only gave the two measured
+    -- points, and a third level without measurement would be a guess.
     levels = { { "OFF", "off" }, { "LOW", 0.15 }, { "HIGH", 0.30 } },
-    -- Regra da casa: toda opcao de menu nova comeca com um default
-    -- conservador. TOP DOME muda uma leitura visual estabelecida (a tampa
-    -- chapada) e nao foi lancada ainda, entao OFF, como FRONT SHAPE.
+    -- House rule: every new menu option starts with a conservative default.
+    -- TOP DOME changes an established visual reading (the flat cap) and has
+    -- not shipped yet, so OFF, like FRONT SHAPE.
     defaultIndex = 1,
     help = "Steps the SLAB top face into pixel aligned shade tones toward each run's edges, for a domed cap instead of a flat one.",
     clears = "mesh",
@@ -208,80 +211,87 @@ local OPTIONS = {
   {
     key = "step_weight",
     label = "STEP WEIGHT",
-    -- DECISAO: STEP WEIGHT desloca VERTICE (cisalhamento em Z), nao shade,
-    -- entao ao contrario de FRONT SHAPE/TOP DOME a magnitude muda
-    -- geometria de verdade, na formula z = z + forca * (y / cellH). Essa
-    -- formula e linear na forca por construcao: nenhum degrau, nenhum
-    -- quantizador, so uma multiplicacao. Kim mediu o deslocamento de tela
-    -- numa celula de 300px em tres pontos (lean 0: +8px, so a arte; +0.5:
-    -- +13px; -0.5: +3px) e a silhueta a pitch 0 (IoU 1.000) em CINCO
-    -- pontos, -1.0 a +1.0, cobrindo folgadamente a faixa usada aqui. 0.5 e
-    -- o teto medido e tambem o teto que Kim julgou como o limite antes do
-    -- personagem parecer agachar em vez de andar (palpite dele, nao
-    -- contrariado por nenhuma medicao nova: a formula linear nao da
-    -- motivo para uma virada nao linear entre 0.25 e 0.5). 0.25 e
-    -- exatamente a metade dessa forca; a mesma linearidade que garante
-    -- metade do deslocamento medido garante metade do caminho ate
-    -- qualquer efeito colateral, sem exigir uma malha nova pra confirmar.
-    -- So o sinal positivo vira nivel: negativo achata o passo, um efeito
-    -- diferente e fora do escopo desta rodada.
+    -- DECISION: STEP WEIGHT displaces a VERTEX (shear in Z), not shade, so
+    -- unlike FRONT SHAPE/TOP DOME the magnitude changes real geometry, in
+    -- the formula z = z + strength * (y / cellH). This formula is linear in
+    -- the strength by construction: no step, no quantizer, just a
+    -- multiplication. Kim measured the screen displacement on a 300px cell
+    -- at three points (lean 0: +8px, art only; +0.5: +13px; -0.5: +3px) and
+    -- the silhouette at pitch 0 (IoU 1.000) at FIVE points, -1.0 to +1.0,
+    -- comfortably covering the range used here. 0.5 is both the measured
+    -- ceiling and the ceiling Kim judged as the limit before the character
+    -- starts to look like it is crouching instead of walking (his call, not
+    -- contradicted by any new measurement: the linear formula gives no
+    -- reason for a nonlinear turn between 0.25 and 0.5). 0.25 is exactly
+    -- half that strength; the same linearity that guarantees half the
+    -- measured displacement guarantees half the distance to any side
+    -- effect, with no need for a new mesh to confirm it. Only the positive
+    -- sign becomes a level: negative flattens the step, a different effect
+    -- that is out of scope for this round.
     levels = { { "OFF", "off" }, { "LOW", 0.25 }, { "HIGH", 0.5 } },
-    -- Regra da casa outra vez: STEP WEIGHT desloca vertice pela primeira
-    -- vez nesta branch (FRONT SHAPE e TOP DOME so mexem em shade), entao o
-    -- conservadorismo do default OFF vale ainda mais aqui.
+    -- House rule again: STEP WEIGHT displaces a vertex for the first time
+    -- in this branch (FRONT SHAPE and TOP DOME only touch shade), so the
+    -- conservatism of the OFF default matters even more here.
     defaultIndex = 1,
     help = "Shears the SLAB mesh toward the camera on walking frames only, proportional to height, so the solid's weight trails the art's own step.",
     clears = "mesh",
   },
-  -- ------------------------------------------------------------------ VIDA
-  -- As tres opcoes abaixo NAO tocam em malha. Elas pos-multiplicam a MATRIZ
-  -- que o host monta por personagem por quadro, dentro do nosso wrap de
-  -- Voxel3D.draw. Por isso nao tem `clears`: a geometria cacheada continua
-  -- valendo, e trocar de nivel tem efeito no quadro seguinte.
+  -- ------------------------------------------------------------------ LIFE
+  -- The three options below do NOT touch the mesh. They post-multiply the
+  -- MATRIX the host builds per character per frame, inside our
+  -- Voxel3D.draw wrap. That is why they have no `clears`: the cached
+  -- geometry keeps being valid, and switching level takes effect on the
+  -- next frame.
   --
-  -- Por que matriz e nao vertice: a malha e criada com dica "static"
-  -- (Voxel3D.newMesh) e COMPARTILHADA por todas as instancias da mesma folha.
-  -- Reescrever vertice todo quadro seria o mau uso que a dica existe para
-  -- evitar, e faria dois NPCs iguais respirarem em unissono. A matriz chega
-  -- recem alocada por instancia (medido: tools/ingame/probe_draw.lua, oito
-  -- propriedades, todas passaram), entao ela e o canal certo.
+  -- Why matrix and not vertex: the mesh is created with a "static" hint
+  -- (Voxel3D.newMesh) and SHARED by every instance of the same sheet.
+  -- Rewriting a vertex every frame would be the misuse that hint exists to
+  -- prevent, and it would make two identical NPCs breathe in unison. The
+  -- matrix arrives freshly allocated per instance (measured:
+  -- tools/ingame/probe_draw.lua, eight properties, all passed), so it is
+  -- the right channel.
   {
     key = "breath",
     label = "BREATH",
-    -- Escala em Y em torno dos PES. O pivo ja esta nos pes por construcao da
-    -- matriz do host, e S(1,s,1) comuta com o espelho e com o T(-8,0,0)
-    -- local, entao pos-multiplicar a matriz final da exatamente "o corpo
-    -- estica para cima a partir do chao" (conferido na algebra e confirmado
-    -- por revisao externa independente).
+    -- Scales in Y around the FEET. The pivot is already at the feet by
+    -- construction of the host's matrix, and S(1,s,1) commutes with the
+    -- mirror and with the local T(-8,0,0), so post-multiplying the final
+    -- matrix gives exactly "the body stretches upward from the ground"
+    -- (checked in the algebra and confirmed by independent external
+    -- review).
     --
-    -- Os numeros sao fracao da altura: a folha tem 16 px de altura, entao
-    -- 0.010 desloca o topo da cabeca em 0.16 px de mundo. Default OFF pela
-    -- regra da casa: toda mudanca visual nova entra como opcao desligada.
+    -- The numbers are a fraction of the height: the sheet is 16 px tall, so
+    -- 0.010 displaces the top of the head by 0.16 world px. Default OFF per
+    -- the house rule: every new visual change enters as an option turned
+    -- off.
     levels = {
       { "OFF", "off" }, { "SUBTLE", 0.010 }, { "NORMAL", 0.020 },
       { "STRONG", 0.035 },
     },
-    -- DECISAO DO KIM, 2026-08-09: ligado por padrao, no nivel MAIS BAIXO.
+    -- KIM'S DECISION, 2026-08-09: on by default, at the LOWEST level.
     --
-    -- E a primeira vez que este mod entrega movimento sem ninguem pedir, entao
-    -- vale registrar o que sustenta a escolha. SUBTLE desloca a cabeca em 0.16
-    -- px de mundo, menos de um pixel de tela na camera do jogo; o custo do
-    -- canal inteiro ficou abaixo do piso de ruido da regua; e o efeito some
-    -- sozinho num host sem o canal, sem quebrar nada. O que ele compra e a
-    -- ausencia da sensacao de estatua, que e o motivo de o mod existir.
+    -- This is the first time this mod ships movement without anyone asking
+    -- for it, so it is worth recording what backs the choice. SUBTLE
+    -- displaces the head by 0.16 world px, less than one screen pixel on
+    -- the game's camera; the whole channel's cost stayed below the
+    -- measuring rig's noise floor; and the effect disappears on its own on
+    -- a host without the channel, without breaking anything. What it buys
+    -- is the absence of the statue feeling, which is the reason this mod
+    -- exists.
     --
-    -- SUBTLE e nao NORMAL de proposito: o default certo para uma coisa que a
-    -- pessoa nao escolheu e o menor que ainda faz diferenca.
+    -- SUBTLE and not NORMAL on purpose: the right default for something the
+    -- person did not choose is the smallest one that still makes a
+    -- difference.
     defaultIndex = 2,
     help = "Breathes the solid by scaling it vertically from the feet, out of phase per character, so a room of NPCs stops reading as frozen.",
   },
   {
     key = "sway",
     label = "SWAY",
-    -- Cisalhamento em X proporcional a altura: x' = x + k*(y/cellH). Os pes
-    -- ficam cravados (y=0) e a cabeca desloca k px. O sinal e invertido
-    -- quando a folha esta espelhada, senao o balanco viraria de lado junto
-    -- com o personagem.
+    -- Shear in X proportional to height: x' = x + k*(y/cellH). The feet
+    -- stay pinned (y=0) and the head displaces k px. The sign is inverted
+    -- when the sheet is mirrored, otherwise the sway would flip sideways
+    -- along with the character.
     levels = { { "OFF", "off" }, { "SUBTLE", 0.20 }, { "NORMAL", 0.45 } },
     defaultIndex = 1,
     help = "Sways the solid side to side from the feet, at half the breath rate and its own phase, for idle weight shift.",
@@ -289,23 +299,24 @@ local OPTIONS = {
   {
     key = "lag",
     label = "MOTION LAG",
-    -- Inercia. Uma mola de segunda ordem por instancia persegue a velocidade do
-    -- personagem e cisalha o corpo NA DIRECAO CONTRARIA, proporcional a altura,
-    -- com passagem do ponto quando ele para.
+    -- Inertia. A second-order spring per instance chases the character's
+    -- velocity and shears the body in the OPPOSITE DIRECTION, proportional
+    -- to height, with overshoot when it stops.
     --
-    -- O QUE ISTO NAO E, e a honestidade importa aqui porque o nome engana
-    -- facil: nao e movimento secundario por parte. Uma matriz transforma a
-    -- malha inteira de um jeito so; ela nao consegue segurar a mochila
-    -- enquanto o tronco acompanha o passo. Revisao externa foi direta nesse
-    -- ponto e esta certa. O que sai daqui e o CORPO TODO inclinando a partir
-    -- dos pes, que le como peso e inercia, nao como cabelo esvoacando.
+    -- WHAT THIS IS NOT, and honesty matters here because the name is easy
+    -- to misread: it is not secondary motion by part. A single matrix
+    -- transforms the whole mesh one single way; it cannot hold the
+    -- backpack steady while the torso follows the step. External review
+    -- was direct on this point and is right. What comes out of this is the
+    -- WHOLE BODY leaning from the feet, which reads as weight and inertia,
+    -- not as hair flapping in the wind.
     --
-    -- Movimento secundario de verdade exige submalha por regiao (corpo,
-    -- cabeca, mochila) desenhada com matriz propria. Isso NAO esta feito, e
-    -- esta escrito assim no roadmap para ninguem achar que esta.
-    -- Os numeros sao deslocamento da CABECA em pixels de mundo na velocidade de
-    -- caminhada, a mesma unidade de SWAY. A mola passa do ponto em cerca de 8%,
-    -- entao o pico real fica um pouco acima do nivel escolhido.
+    -- Real secondary motion requires a submesh per region (body, head,
+    -- backpack) drawn with its own matrix. That is NOT done, and it is
+    -- written this way in the roadmap so nobody thinks it is.
+    -- The numbers are HEAD displacement in world pixels at walking speed,
+    -- the same unit as SWAY. The spring overshoots by about 8%, so the
+    -- real peak lands a bit above the chosen level.
     levels = { { "OFF", "off" }, { "SUBTLE", 0.6 }, { "NORMAL", 1.2 } },
     defaultIndex = 1,
     help = "Leans the whole solid back from its feet with a spring while it moves, and overshoots when it stops, so the body carries weight instead of sliding.",
@@ -313,23 +324,25 @@ local OPTIONS = {
   {
     key = "footfall",
     label = "FOOTFALL",
-    -- ACHATA NO IMPACTO DO PASSO e estica no meio dele, mantendo o volume:
-    -- o corpo baixa e alarga quando o pe bate, sobe e afina quando o passo
-    -- passa pelo alto. E a transferencia de peso que a arte do ciclo de
-    -- caminhada ja implica, levada para o solido sem separar perna nenhuma.
+    -- SQUASHES ON FOOTFALL IMPACT and stretches at the midpoint, keeping
+    -- volume constant: the body lowers and widens when the foot hits, rises
+    -- and thins when the step passes the top. It is the weight transfer the
+    -- walk cycle art already implies, carried over to the solid without
+    -- separating a single leg.
     --
-    -- A FASE vem da DISTANCIA percorrida, nao do frame do sprite. O jogo anda
-    -- 16 px por passo, entao cada 16 px e uma pisada, e isso vale igual para o
-    -- jogador, para NPC perambulando e para quem estiver de bicicleta (que so
-    -- muda quantos quadros o passo leva, nunca quantos pixels ele tem).
+    -- PHASE comes from DISTANCE traveled, not the sprite frame. The game
+    -- walks 16 px per step, so every 16 px is a footfall, and this holds
+    -- equally for the player, for an NPC wandering, and for anyone on a
+    -- bike (which only changes how many frames the step takes, never how
+    -- many pixels it has).
     --
-    -- A AMPLITUDE vem da velocidade suavizada, entao o efeito nasce e morre
-    -- sozinho quando o personagem comeca e para de andar. Sem isso seria
-    -- preciso um booleano "esta andando", que ligaria e desligaria de estalo no
-    -- meio de uma escala e apareceria como um tranco.
+    -- AMPLITUDE comes from smoothed velocity, so the effect is born and
+    -- dies on its own when the character starts and stops walking. Without
+    -- that it would need an "is walking" boolean, which would snap on and
+    -- off mid-scale and show up as a jolt.
     --
-    -- Os numeros sao o achatamento maximo em pixels de mundo, a mesma unidade
-    -- de SWAY e MOTION LAG.
+    -- The numbers are the maximum squash in world pixels, the same unit as
+    -- SWAY and MOTION LAG.
     levels = { { "OFF", "off" }, { "SUBTLE", 0.35 }, { "NORMAL", 0.7 } },
     defaultIndex = 1,
     help = "Squashes the solid on each footfall and stretches it at the top of the step, so the walk cycle's weight transfer reaches the body.",
@@ -339,41 +352,43 @@ local OPTIONS = {
     label = "FIRST PERSON",
     levels = { { "CARD", "card" }, { "SOLID", "solid" } },
     defaultIndex = 1,
-    -- POR QUE ISTO EXISTE, E POR QUE SO AGORA.
+    -- WHY THIS EXISTS, AND WHY ONLY NOW.
     --
-    -- Desde a v1.3.0 este mod devolve o card plano sempre que
-    -- FirstPerson.cardBlend() > 0. Nao foi preguica, foi conserto: o
-    -- Colonel_Aureliano reportou espetos pretos com Dramatic Shape 1.7.0 mais
-    -- Kanto First Person, e o card plano nao tem o defeito.
+    -- Since v1.3.0 this mod has returned the flat card whenever
+    -- FirstPerson.cardBlend() > 0. That was not laziness, it was a fix:
+    -- Colonel_Aureliano reported black spikes with Dramatic Shape 1.7.0
+    -- plus Kanto First Person, and the flat card does not have the defect.
     --
-    -- Lendo o host, o mecanismo e este e nao e "primeira pessoa":
+    -- Reading the host, the mechanism is this, and it is not "first
+    -- person":
     --
-    --   o shader move CADA VERTICE ao longo do proprio raio ate o olho, por
-    --   `pull` unidades (Voxel3D.lua:122-130);
-    --   primeira pessoa e o degrau 6, e ANGLES_DEG[7] = 75 graus, entao
-    --   VoxelScene.pull(rad 75) = 6 unidades de mundo, com o tile valendo 16;
-    --   o near plane fica em max(1, |olho-foco| * 0.05), ou seja 1 unidade
-    --   quando olho e foco estao juntos, que e o caso aqui.
+    --   the shader moves EVERY VERTEX along its own ray toward the eye, by
+    --   `pull` units (Voxel3D.lua:122-130);
+    --   first person is step 6, and ANGLES_DEG[7] = 75 degrees, so
+    --   VoxelScene.pull(rad 75) = 6 world units, with the tile worth 16;
+    --   the near plane sits at max(1, |eye-focus| * 0.05), that is, 1 unit
+    --   when eye and focus are together, which is the case here.
     --
-    -- Um vertice a distancia d do olho vai parar em d - 6: atravessa o near
-    -- plane com d < 7 e passa para TRAS do olho com d < 6. O card plano
-    -- sobrevive porque seus vertices estao todos a mesma distancia e cruzam
-    -- juntos; num solido os cantos estao a distancias diferentes, os da frente
-    -- cruzam primeiro, e o que sobra na tela e o espeto.
+    -- A vertex at distance d from the eye ends up at d - 6: it crosses the
+    -- near plane at d < 7 and passes BEHIND the eye at d < 6. The flat card
+    -- survives because all its vertices are at the same distance and cross
+    -- together; on a solid the corners are at different distances, the
+    -- front ones cross first, and what is left on screen is the spike.
     --
-    -- ENTAO O DEFEITO E DE PROXIMIDADE, NAO DE CAMERA. O caso catastrofico e o
-    -- card do proprio jogador durante a transicao, porque a camera esta
-    -- entrando na cabeca dele e d vai a zero; o host so esconde esse card
-    -- depois de blend > 0.9, entao toda entrada e toda saida passa pela faixa
-    -- quebrada. Um NPC a um tile esta a 16 unidades e nunca chega perto.
+    -- SO THE DEFECT IS ONE OF PROXIMITY, NOT CAMERA. The catastrophic case
+    -- is the player's own card during the transition, because the camera
+    -- is entering their head and d goes to zero; the host only hides that
+    -- card past blend > 0.9, so every entry and every exit passes through
+    -- the broken range. An NPC one tile away is 16 units out and never
+    -- gets close.
     --
-    -- Por isso desligar o solido na camera inteira sempre foi grosso demais, e
-    -- por isso a correcao mora no wrap de desenho e nao aqui: limitar o `pull`
-    -- que a gente repassa tira a travessia do near plane por construcao, sem
-    -- abrir mao do volume. Ver fpPullSeguro.
+    -- That is why turning off the solid for the whole camera was always
+    -- too blunt, and why the fix lives in the draw wrap and not here:
+    -- capping the `pull` we pass through removes the near plane crossing by
+    -- construction, without giving up the volume. See fpPullSeguro.
     --
-    -- Nasce em CARD pela regra da casa. Que os jogadores tenham pedido conta
-    -- como pedido, nao como aprovacao: ninguem viu ainda.
+    -- Born as CARD per the house rule. That players have asked for it
+    -- counts as a request, not as approval: nobody has seen it yet.
     help = "Keeps characters solid in first person instead of falling back to the flat card. Needs the host's draw channel.",
   },
 }
@@ -383,71 +398,75 @@ for _, opt in ipairs(OPTIONS) do
   OPTION_BY_KEY[opt.key] = opt
 end
 
--- As opcoes que dependem do SEGUNDO ponto de patch (Voxel3D.draw). Sem esse
--- canal elas nao aparecem no menu: ver registerOptionsRows.
--- FIRST PERSON entra aqui apesar de nao ser animacao: o que ela promete e o
--- pull limitado, que so existe se a gente conseguir envolver Voxel3D.draw.
--- Oferecer SOLID num host sem esse canal seria oferecer os espetos de volta.
+-- The options that depend on the SECOND patch point (Voxel3D.draw). Without
+-- that channel they do not show up in the menu: see registerOptionsRows.
+-- FIRST PERSON belongs here even though it is not animation: what it
+-- promises is the limited pull, which only exists if we can wrap
+-- Voxel3D.draw. Offering SOLID on a host without that channel would be
+-- offering the spikes back.
 local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
   footfall = true, first_person = true }
 
--- Sentinela de SIDE COLOR usado por bodyTexelInFrame/blinkBodyTexel (mais
--- abaixo) para decidir se a busca de corpo entra em jogo. Fica como
--- constante propria, fora do sistema de opcoes generico, porque essas duas
--- funcoes ficam no meio da construcao de malha, nao no menu.
+-- SIDE COLOR sentinel used by bodyTexelInFrame/blinkBodyTexel (further
+-- below) to decide whether the body search comes into play. It stays as
+-- its own constant, outside the generic option system, because those two
+-- functions sit in the middle of mesh construction, not in the menu.
 local DEFAULT_SIDE_COLOR = "body"
--- DECISAO: a luz do Dramatic Shape vem do sudeste. Frente e topo ficam
--- claros, tras e baixo escurecem por virarem contra a luz, e as laterais
--- usam um meio-termo para o slab ler como volume sem depender de sombra real.
--- A frente segue Voxel3D.FACE_SHADE.front = 0.90, nao 1.00. As laterais ficam
--- simetricas em 0.78 de proposito: o host resolve o frame antes de chamar
--- SpriteBillboards.mesh(def, frame) e aplica o mirror depois na matriz
--- (VoxelScene.lua:234-241, 287-295). Como o shade ja vem assado no vertice,
--- valores diferentes para leste/oeste trocariam de lado em folhas espelhadas.
+-- DECISION: Dramatic Shape's light comes from the southeast. Front and top
+-- stay light, back and bottom darken by facing away from the light, and the
+-- sides use a middle ground so the slab reads as volume without relying on
+-- a real shadow. The front follows Voxel3D.FACE_SHADE.front = 0.90, not
+-- 1.00. The sides stay symmetric at 0.78 on purpose: the host resolves the
+-- frame before calling SpriteBillboards.mesh(def, frame) and applies the
+-- mirror afterward on the matrix (VoxelScene.lua:234-241, 287-295). Since
+-- the shade already comes baked into the vertex, different values for
+-- east/west would swap sides on mirrored sheets.
 local OBJ_SHADE = { front = 0.90, back = 0.68, side = 0.78, top = 1.0, bottom = 0.55 }
 local TOP_EDGE_SHADE = 0.82
--- Faces SLAB expostas ficam no limite real do pixel. O inset antigo escondia
--- z-fighting entre faces internas que agora nao sao mais emitidas.
+-- Exposed SLAB faces sit at the real pixel boundary. The old inset was
+-- hiding z-fighting between internal faces that are no longer emitted now.
 local SIDE_INSET = 0
 local RUN_UV_INSET = 0.05
--- DECISAO v1.6.0: tres degraus de shade e o mesmo numero de tons que o
--- artista ja usa para volume nos sprites Gen 1 fonte. Um gradiente
--- continuo foi prototipado antes e leu como uma listra brilhante solta por
--- cima da arte, porque arte de pixel duro e degrade suave brigam entre si;
--- shade constante por pixel, quantizado nestes degraus, e o que combina
--- com o resto do desenho.
+-- DECISION v1.6.0: three shade steps is the same number of tones the
+-- artist already uses for volume in the source Gen 1 sprites. A continuous
+-- gradient was prototyped before and read as a bright stripe floating over
+-- the art, because hard-pixel art and smooth gradients fight each other;
+-- constant shade per pixel, quantized into these steps, is what matches
+-- the rest of the drawing.
 local FRONT_SHAPE_STEPS = 3
--- Mesmo raciocinio de FRONT_SHAPE_STEPS: tres tons e o que o artista ja usa
--- para volume nos sprites Gen 1 fonte, e degrau alinhado ao pixel, nao
--- gradiente continuo (main.lua, DECISAO acima de FRONT_SHAPE_STEPS).
+-- Same reasoning as FRONT_SHAPE_STEPS: three tones is what the artist
+-- already uses for volume in the source Gen 1 sprites, and a step aligned
+-- to the pixel, not a continuous gradient (main.lua, DECISION above
+-- FRONT_SHAPE_STEPS).
 local TOP_DOME_STEPS = 3
 local PITCH_BUCKET = math.pi / 180
 local MAX_MESHES = 64
--- DECISAO v1.4.2, pente fino (item 1): STATUS decide por PROPORCAO numa
--- janela deslizante dos ultimos DRAW_WINDOW_SIZE resultados de desenho, nao
--- por sequencia ininterrupta. Uma contagem de falhas SEGUIDAS e derrotavel
--- por intercalacao: se o sprite do jogador desenha bem a cada quadro
--- enquanto NPCs de fonte quebrada falham intercalados na mesma tela, todo
--- `ok` do jogador zera a sequencia antes dela chegar ao limite, e o STATUS
--- fica preso em ACTIVE pra sempre mesmo com a maioria dos personagens
--- caindo pra card plano todo quadro. Escala quando METADE OU MAIS da
--- janela e falha; uma folha ruim isolada entre varias boas nunca chega
--- perto disso (na pior distribuicao dentro da janela, 1 folha ruim a cada
--- 4 boas ocupa no maximo 2 dos 8 slots), mas alternancia estrita bom/ruim
--- (metade da tela falhando) escala.
+-- DECISION v1.4.2, fine-tooth comb (item 1): STATUS decides by PROPORTION
+-- over a sliding window of the last DRAW_WINDOW_SIZE draw results, not by
+-- an unbroken streak. A count of CONSECUTIVE failures is defeatable by
+-- interleaving: if the player's sprite draws fine every frame while NPCs
+-- with broken sheets fail interleaved on the same screen, every `ok` from
+-- the player resets the streak before it reaches the limit, and STATUS
+-- stays stuck at ACTIVE forever even with most characters falling back to
+-- the flat card every frame. It escalates when HALF OR MORE of the window
+-- is failures; a single bad sheet isolated among several good ones never
+-- gets close to that (in the worst distribution within the window, 1 bad
+-- sheet for every 4 good ones occupies at most 2 of the 8 slots), but
+-- strict good/bad alternation (half the screen failing) escalates.
 local DRAW_WINDOW_SIZE = 8
 local AO_STRENGTH = 2.4
 local AO_GROUND = 0.12 * AO_STRENGTH
 local AO_RISE = 6
--- DECISAO: quatro pixels cobre os contornos grossos de sprites Gen 1 sem
--- deixar uma busca em arte customizada atravessar para outra parte do corpo.
+-- DECISION: four pixels covers the thick outlines of Gen 1 sprites without
+-- letting a search on custom art cross over into another part of the body.
 local BODY_SEARCH_LIMIT = 4
 local LUMA_EPSILON = 0.00001
 local CARVED_PLUS_RECESS_STEPS = 2
--- DECISAO v1.4.2: a janela de varredura do poseOffset. O passo medido no
--- red.png e de uma linha; dy vai a 3 para folhas de arte customizada com um
--- passo mais largo, dx a 2 porque nao ha relato de deslocamento horizontal e
--- uma janela maior so custaria O(cell^2) por candidato extra sem motivo.
+-- DECISION v1.4.2: the poseOffset scan window. The step measured on
+-- red.png is one row; dy goes up to 3 for custom art sheets with a wider
+-- step, dx to 2 because there is no report of horizontal displacement and
+-- a bigger window would only cost O(cell^2) per extra candidate for no
+-- reason.
 local POSE_OFFSET_DX_RANGE = 2
 local POSE_OFFSET_DY_RANGE = 3
 local BLINK_CLOSED_SECONDS = 0.12
@@ -564,9 +583,9 @@ local EYE_SIDE_MARKS = {
   youngster = { { 5, 7 } },
 }
 
--- Gerado a partir de OPTIONS (acima): uma opcao nova ganha `type = "choice"`
--- e os campos `choices`/`default` derivados de `levels`/`defaultIndex` de
--- graca, sem precisar duplicar a tabela aqui.
+-- Generated from OPTIONS (above): a new option gets `type = "choice"` and
+-- the `choices`/`default` fields derived from `levels`/`defaultIndex` for
+-- free, with no need to duplicate the table here.
 do
   local schema = {}
   for _, opt in ipairs(OPTIONS) do
@@ -587,70 +606,72 @@ local VoxelState, FirstPerson, VoxelScene
 local originalMesh
 local meshes, masks = {}, {}
 local meshOrder = {}
--- Estado resolvido de toda opcao, indexado pela chave (opt.key). Substitui
--- as nove variaveis dedicadas de antes (depthValue, sideColorValue, ...):
--- ver a REFATORACAO acima de OPTIONS.
+-- Resolved state for every option, indexed by key (opt.key). Replaces the
+-- nine dedicated variables from before (depthValue, sideColorValue, ...):
+-- see the REFACTOR above OPTIONS.
 local optionState = {}
 local optionsRegistered = false
 local meshBlink = setmetatable({}, { __mode = "k" })
 local blinkVertexWarned = false
--- v1.4.2, pente fino: `patch()` monta tudo em locais e so faz commit destas
--- upvalues (SpriteBillboards e as outras, installedMesh, `patched`) depois
--- que TODAS as escritas arriscadas em cima da tabela do host tiverem
--- sucesso. Um host cuja tabela recusa escrita (__newindex congelado) faz
--- pcall(patch, host) segurar o erro sem nenhuma upvalue de modulo ter sido
--- tocada; sem isso, `SpriteBillboards` ficava setada sozinha e o STATUS
--- lia REPLACED (nenhuma outra funcao "roubou" o mesh; simplesmente a nossa
--- nunca chegou a ser instalada) em vez de refletir que o patch nao
--- completou. `statusValue` e `registerOptionsRows` checam `patched`, nunca
+-- v1.4.2, fine-tooth comb: `patch()` builds everything in locals and only
+-- commits these upvalues (SpriteBillboards and the others, installedMesh,
+-- `patched`) after ALL the risky writes onto the host's table have
+-- succeeded. A host whose table refuses writes (__newindex frozen) makes
+-- pcall(patch, host) hold the error with no module upvalue ever touched;
+-- without this, `SpriteBillboards` would end up set on its own and STATUS
+-- would read REPLACED (no other function "stole" the mesh; ours simply
+-- never got installed) instead of reflecting that the patch did not
+-- complete. `statusValue` and `registerOptionsRows` check `patched`, never
 -- `SpriteBillboards ~= nil`.
 local patched = false
--- v1.4.2, TwoTracks: a funcao que ESTE mod instalou em SpriteBillboards.mesh,
--- guardada para a row de STATUS detectar se outro mod substituiu depois
--- (REPLACED). warnChainedMesh so pega quem patcheia ANTES da gente.
+-- v1.4.2, TwoTracks: the function THIS mod installed in
+-- SpriteBillboards.mesh, kept so the STATUS row can detect whether another
+-- mod replaced it afterward (REPLACED). warnChainedMesh only catches
+-- whoever patches BEFORE us.
 local installedMesh
--- v1.4.2, TwoTracks: existem cinco caminhos que devolvem o card original em
--- silencio (DEPTH: OFF, primeira pessoa, mascara que falha, malha que falha,
--- excecao no wrapper mais externo) e sao indistinguiveis entre si e de "o
--- mod nunca patcheou nada". Estas variaveis guardam o resultado do ULTIMO
--- desenho para a row de STATUS reportar; sao so atribuicao, custo zero por
--- quadro.
+-- v1.4.2, TwoTracks: there are five paths that silently return the
+-- original card (DEPTH: OFF, first person, mask that fails, mesh that
+-- fails, exception in the outermost wrapper) and they are indistinguishable
+-- from each other and from "the mod never patched anything". These
+-- variables hold the result of the LAST draw for the STATUS row to report;
+-- they are just assignment, zero cost per frame.
 local lastDrawResult = "ok"
--- Janela deslizante: drawWindow[i] guarda o TIPO de falha (mask_failed,
--- build_failed ou exception) do i-esimo resultado mais recente (modulo
--- DRAW_WINDOW_SIZE), ou nil quando foi sucesso. drawWindowFailures e
--- drawWindowKindCounts sao mantidos incrementalmente (sem varrer o array a
--- cada leitura de STATUS). v1.4.2, pente fino (item 2): o rotulo de erro
--- do STATUS usa a causa DOMINANTE da janela (drawWindowKindCounts), nao a
--- mais recente: sete falhas de mascara e uma excecao isolada, mais
--- recente, numa folha diferente, tem que mostrar MASK ERROR, nao DRAW
--- ERROR. O rotulo e o produto desta row.
+-- Sliding window: drawWindow[i] holds the failure TYPE (mask_failed,
+-- build_failed or exception) of the i-th most recent result (modulo
+-- DRAW_WINDOW_SIZE), or nil when it was a success. drawWindowFailures and
+-- drawWindowKindCounts are kept incrementally (without scanning the array
+-- on every STATUS read). v1.4.2, fine-tooth comb (item 2): the STATUS
+-- error label uses the DOMINANT cause in the window (drawWindowKindCounts),
+-- not the most recent one: seven mask failures and one isolated exception,
+-- more recent, on a different sheet, has to show MASK ERROR, not DRAW
+-- ERROR. The label is this row's whole product.
 local drawWindow = {}
 local drawWindowPos = 0
 local drawWindowFailures = 0
 local drawWindowKindCounts = {}
 local warnedDrawCauses = {}
 local warnedReplacedMesh = false
--- Motivo de cada falha de malha cacheada, para uma folha ruim que ja falhou
--- uma vez continuar entrando na janela (e continuar logavel, ainda que so
--- uma vez) em toda chamada seguinte, nao so na primeira: meshes[key] ==
--- false so guarda "falhou", nao guarda por que.
+-- Reason for each cached mesh failure, so that a bad sheet that already
+-- failed once keeps entering the window (and stays logworthy, even if only
+-- once) on every following call, not just the first: meshes[key] == false
+-- only records "it failed", not why.
 local meshFailureReasons = {}
--- VIDA. `originalDraw` e a Voxel3D.draw do host; `installedDraw` a nossa, para
--- a row de LIFE detectar quem foi substituido depois de nos (mesma logica de
--- installedMesh). `drawPatched` so vira true depois da escrita ter sucesso, e
--- so quando a sonda de capacidade aprovou o canal: um host sem Voxel3D.draw
--- utilizavel perde a animacao e MANTEM o resto do mod funcionando.
+-- LIFE. `originalDraw` is the host's Voxel3D.draw; `installedDraw` is
+-- ours, for the LIFE row to detect who got replaced after us (same logic
+-- as installedMesh). `drawPatched` only becomes true after the write has
+-- succeeded, and only when the capability probe approved the channel: a
+-- host without a usable Voxel3D.draw loses the animation and KEEPS the
+-- rest of the mod working.
 local originalDraw, installedDraw, drawPatched = nil, nil, false
--- Malhas que ESTE mod construiu. Chave fraca: quando o LRU solta a malha, a
--- entrada some sozinha. E o unico discriminador exato de "isto e um
--- personagem nosso" dentro do wrap de draw, onde terreno, grama, sombra e
--- pokedex passam pela mesma funcao.
+-- Meshes THIS mod built. Weak key: when the LRU drops the mesh, the entry
+-- disappears on its own. It is the only exact discriminator of "this is
+-- one of our characters" inside the draw wrap, where terrain, grass,
+-- shadow and the pokedex all pass through the same function.
 local ourMeshes = setmetatable({}, { __mode = "k" })
 
--- Genericas: operam sobre qualquer entrada de OPTIONS (opt.levels e um
--- array de pares { ROTULO, valor }, opt.defaultIndex a posicao default
--- nesse array). Substituem os pares indexOf/readX dedicados de cada opcao.
+-- Generic: operate on any entry of OPTIONS (opt.levels is an array of
+-- { LABEL, value } pairs, opt.defaultIndex the default position in that
+-- array). Replace each option's dedicated indexOf/readX pair.
 local function optionIndexOf(opt, value)
   for i, level in ipairs(opt.levels) do
     if level[2] == value then return i end
@@ -679,13 +700,14 @@ local function clearCache()
   masks = {}
 end
 
--- Generica: substitui os nove setX dedicados. `opt.clears` decide o que
--- limpar quando o valor muda (ver comentario de campo em OPTIONS, acima):
--- "full" so para DEPTH (clearCache, que tambem derruba `masks`), "mesh"
--- para a maioria (clearMeshCache, libera as malhas velhas na hora em vez de
--- esperar o LRU reciclar -- o defeito que o Colonel_Aureliano reportou na
--- v1.4.0 quando a opcao mudava no menu sem mudar nada em tela), e nenhum
--- dos dois para BLINK.
+-- Generic: replaces the nine dedicated setX functions. `opt.clears`
+-- decides what to clear when the value changes (see the field comment in
+-- OPTIONS, above): "full" only for DEPTH (clearCache, which also drops
+-- `masks`), "mesh" for most of them (clearMeshCache, releases the old
+-- meshes right away instead of waiting for the LRU to recycle them, the
+-- defect Colonel_Aureliano reported in v1.4.0 when the option changed in
+-- the menu without changing anything on screen), and neither of the two
+-- for BLINK.
 local function setOption(opt, value)
   local nextValue = opt.levels[optionIndexOf(opt, value)][2]
   if optionState[opt.key] ~= nextValue then
@@ -724,9 +746,10 @@ local function writeOption(game, key, value)
   end
 end
 
--- Generica: substitui os nove rowX dedicados. Mesma forma que cada um
--- tinha (id/label fixos, value() le o rotulo do nivel atual, step() avanca
--- um nivel ciclicamente e passa pelo setOption/writeOption de sempre).
+-- Generic: replaces the nine dedicated rowX functions. Same shape each one
+-- had (fixed id/label, value() reads the current level's label, step()
+-- advances one level cyclically and goes through the usual
+-- setOption/writeOption).
 local function makeOptionRow(opt)
   return {
     id = mod.id .. ":" .. opt.key,
@@ -746,10 +769,10 @@ local function makeOptionRow(opt)
   }
 end
 
--- v1.4.2: recebe a tabela por parametro, nao pela upvalue de modulo, porque
--- patch() so pode fazer commit dessa upvalue DEPOIS que todas as escritas
--- arriscadas (main.lua, patch()) tiverem sucesso; ate la a upvalue
--- SpriteBillboards ainda nao existe.
+-- v1.4.2: receives the table as a parameter, not through the module
+-- upvalue, because patch() can only commit that upvalue AFTER all the
+-- risky writes (main.lua, patch()) have succeeded; until then the
+-- SpriteBillboards upvalue does not exist yet.
 local function warnChainedMesh(spriteBillboards)
   if spriteBillboards.__voxelCharactersOriginal then return end
   if spriteBillboards.shadowQuad
@@ -791,9 +814,10 @@ local function spriteLayout(def, sheetW, sheetH)
     return { frames = frames, w = frameW, h = frameH, columns = columns }
   end
 
-  -- Sem metadados de celula, so ha duas folhas derivaveis sem adivinhar:
-  -- uma coluna vertical como o motor vanilla, ou uma linha horizontal. Folhas
-  -- com padding ou grade ambigua degradam para o card original.
+  -- Without cell metadata, there are only two sheet layouts derivable
+  -- without guessing: a vertical column like the vanilla engine, or a
+  -- horizontal row. Sheets with padding or an ambiguous grid degrade to the
+  -- original card.
   local vertical = (sheetH % frames == 0)
     and { frames = frames, w = sheetW, h = sheetH / frames, columns = 1 }
   local horizontal = (sheetW % frames == 0)
@@ -878,10 +902,11 @@ local function maskFor(def)
   return out
 end
 
--- O lean real e `leanAngle()` da VoxelScene, que da precedencia a
--- `VoxelScene.spriteLean` sobre `VoxelState.angle` (VoxelScene.lua:283-285).
--- Hoje so o VR seta esse campo, para 75 graus (VR.lua:281); ler apenas o
--- `angle` deixaria o corpo tombado pela diferenca dentro do headset.
+-- The real lean is VoxelScene's `leanAngle()`, which gives precedence to
+-- `VoxelScene.spriteLean` over `VoxelState.angle` (VoxelScene.lua:283-285).
+-- Today only VR sets this field, to 75 degrees (VR.lua:281); reading only
+-- `angle` would leave the body tilted by the difference inside the
+-- headset.
 local function leanCorrection()
   local a = 0
   local pinned
@@ -903,13 +928,13 @@ local function leanCorrection()
   return (math.pi / 2 - a) * (1 - b)
 end
 
--- DECISAO: o tween de rung dura 0,25 s; a 60 fps ele gerava cerca de
--- 15 pitches distintos, cada um com chave propria. O bucket de 1 grau
--- reduz a transicao a 2 ou 3 buckets visiveis sem deslocamento perceptivel.
--- O cache continua deliberadamente pequeno: 8 tipos x 6 frames ja ocupam 48
--- entradas em um unico pitch, e um tween que cruza 2 ou 3 buckets pode pedir
--- 96 a 144 malhas. O LRU evita crescimento sem limite, mas pode reciclar
--- malhas durante tweens com muitos NPCs diferentes na tela.
+-- DECISION: the rung tween lasts 0.25 s; at 60 fps it generated around 15
+-- distinct pitches, each with its own key. The 1 degree bucket reduces the
+-- transition to 2 or 3 visible buckets with no perceptible displacement.
+-- The cache stays deliberately small: 8 types x 6 frames already take up
+-- 48 entries at a single pitch, and a tween crossing 2 or 3 buckets can ask
+-- for 96 to 144 meshes. The LRU prevents unbounded growth, but it can
+-- recycle meshes during tweens with many different NPCs on screen.
 local function quantizeCorrection(angle)
   return math.floor(((angle or 0) / PITCH_BUCKET) + 0.5) * PITCH_BUCKET
 end
@@ -978,33 +1003,34 @@ local function bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
   return lx, ly, false
 end
 
--- CORRECAO defeito do topo piscando ao andar (SLAB, v1.4.2): a pose andando e
--- a pose parada descida uma linha, um passo deliberado na arte (AngelusRole:
--- "when a character's head is set to use the body color, the top of the head
--- flickers while walking"). verticalUv e sideUv liam a referencia na MESMA
--- coordenada (lx, ly) do frame corrente, entao o topo da cabeca do frame 3
--- resolvia para o texel do frame 0 uma linha mais baixa, outra faixa do
--- boné. poseOffset mede, por sobreposicao de mascara opaca, o quanto a arte
--- se desloca entre dois frames, para a leitura da referencia buscar o texel
--- fisicamente correspondente, nao so o mesmo indice.
+-- FIX for the top-flickering-while-walking defect (SLAB, v1.4.2): the
+-- walking pose is the standing pose shifted down one row, a deliberate art
+-- step (AngelusRole: "when a character's head is set to use the body
+-- color, the top of the head flickers while walking"). verticalUv and
+-- sideUv were reading the reference at the SAME coordinate (lx, ly) as the
+-- current frame, so the top of the head in frame 3 resolved to frame 0's
+-- texel one row lower, a different stripe of the hat. poseOffset measures,
+-- by opaque mask overlap, how much the art shifts between two frames, so
+-- the reference lookup fetches the physically corresponding texel, not
+-- just the same index.
 --
--- DECISAO: desempate deterministico obrigatorio. |dx| + |dy| menor primeiro,
--- depois dy menor, depois dx menor. Sem uma ordem total explicita, folhas
--- simetricas empatam de verdade (teste "poseOffset desempata de forma
--- deterministica"), e o resultado passaria a depender da ordem de varredura
--- em vez do conteudo da folha; a malha cacheada mudaria de corrida para
--- corrida, o pior bug possivel aqui. `better` so troca o melhor candidato
--- quando ele e estritamente melhor por essas regras, entao o resultado
--- independe de como os loops de dx/dy sao percorridos.
+-- DECISION: deterministic tie-breaking is mandatory. Smaller |dx| + |dy|
+-- first, then smaller dy, then smaller dx. Without an explicit total
+-- order, symmetric sheets genuinely tie (test "poseOffset breaks ties
+-- deterministically"), and the result would end up depending on the scan
+-- order instead of the sheet's content; the cached mesh would change from
+-- run to run, the worst possible bug here. `better` only swaps the best
+-- candidate when it is strictly better by these rules, so the result does
+-- not depend on how the dx/dy loops are walked.
 --
--- DECISAO v1.4.2, pente fino (item 3): pre-computa a opacidade de
--- `fromFrame` num array local (flat, indexado por ly*cellW+lx) antes do
--- laco de candidatos. frameTexel(m, fromFrame, lx, ly) nao depende de dx
--- nem dy, mas a varredura recomputava ela para cada um dos ate 35
--- candidatos (7 valores de dy vezes 5 de dx); isso corta essa metade do
--- custo da primeira varredura de cada par, sem mudar nenhum resultado
--- (mesmos candidatos, mesmo desempate). E o risco "trocar flicker por
--- stutter" que a spec original nomeou, evitavel de graca.
+-- DECISION v1.4.2, fine-tooth comb (item 3): precomputes `fromFrame`'s
+-- opacity into a local array (flat, indexed by ly*cellW+lx) before the
+-- candidate loop. frameTexel(m, fromFrame, lx, ly) does not depend on dx
+-- or dy, but the scan was recomputing it for each of up to 35 candidates
+-- (7 values of dy times 5 of dx); this cuts that half of the cost of the
+-- first scan of each pair, without changing any result (same candidates,
+-- same tie-break). It is the "trading flicker for stutter" risk the
+-- original spec named, avoidable for free.
 local function poseOffsetScan(m, fromFrame, toFrame)
   local cellW, cellH = m.cellW, m.cellH
   local fromOpaque = {}
@@ -1054,35 +1080,35 @@ local function poseOffset(m, fromFrame, toFrame)
   fromFrame = tonumber(fromFrame) or 0
   toFrame = tonumber(toFrame) or 0
   if fromFrame == toFrame then return 0, 0 end
-  -- DECISAO CARVED (v1.4.2): so compensa entre frames do MESMO role (a
-  -- mesma vista: frente, cima ou perfil). CARVED reusa a textura de frente
-  -- (role 0) para colorir o topo em qualquer orientacao renderizada e a
-  -- textura de perfil (role 2) para colorir a lateral, entao um chamador
-  -- errado poderia pedir a sobreposicao entre a mascara de frente e a de
-  -- perfil. Isso nao mede deslocamento de passo, mede diferenca de
-  -- silhueta (o personagem de perfil e mais estreito que de frente por
-  -- natureza da arte), e devolveria um numero com cara de deslocamento que
-  -- na verdade e ruido. Todo chamador correto ja compara pose.front com
-  -- pose.front ou pose.side com pose.side, entao este branch nao deveria
-  -- disparar em uso correto; ele fica de cinto e suspensorio contra o
-  -- proximo lugar que chamar poseOffset com frames de roles diferentes.
+  -- CARVED DECISION (v1.4.2): only compensates between frames of the SAME
+  -- role (the same view: front, top or profile). CARVED reuses the front
+  -- texture (role 0) to color the top at any rendered orientation and the
+  -- profile texture (role 2) to color the side, so a wrong caller could ask
+  -- for the overlap between the front mask and the profile one. That does
+  -- not measure step displacement, it measures silhouette difference (the
+  -- character in profile is narrower than from the front by nature of the
+  -- art), and it would return a number that looks like a displacement but
+  -- is actually noise. Every correct caller already compares pose.front
+  -- with pose.front or pose.side with pose.side, so this branch should
+  -- never fire in correct use; it stays as belt and suspenders against the
+  -- next place that calls poseOffset with frames of different roles.
   if roleForFrame(fromFrame, m.frames) ~= roleForFrame(toFrame, m.frames) then
     return 0, 0
   end
 
-  -- DECISAO v1.4.2, pente fino (item 2): canonicaliza o par antes de
-  -- escanear, sempre do menor indice de frame pro maior, e nega quando o
-  -- pedido for na direcao oposta. Um empate genuino de score entre +dy e
-  -- -dy faz a regra "menor dy" escolher -1 nas DUAS direcoes se cada
-  -- chamada escaneasse pro seu proprio lado (poseOffset(A,B) e
-  -- poseOffset(B,A) sao duas varreduras independentes, cada uma aplicando
-  -- a MESMA regra "prefira dy negativo" sem saber da outra), quebrando
-  -- poseOffset(A,B) == -poseOffset(B,A). Isso importa de verdade: a
-  -- compensacao do olho pede poseOffset(refFrame, frame) e a geometria
-  -- pede poseOffset(frame, frameIndex), direcoes opostas do mesmo par.
-  -- Canonicalizando, so existe UMA varredura por par (memoizada por
-  -- lo:hi), nunca duas independentes, entao a simetria vale por
-  -- construcao, nao por sorte do desempate.
+  -- DECISION v1.4.2, fine-tooth comb (item 2): canonicalizes the pair
+  -- before scanning, always from the smaller frame index to the larger,
+  -- and negates when the request is in the opposite direction. A genuine
+  -- score tie between +dy and -dy makes the "smaller dy" rule pick -1 in
+  -- BOTH directions if each call scanned toward its own side
+  -- (poseOffset(A,B) and poseOffset(B,A) are two independent scans, each
+  -- applying the SAME "prefer negative dy" rule without knowing about the
+  -- other), breaking poseOffset(A,B) == -poseOffset(B,A). This matters for
+  -- real: eye compensation asks for poseOffset(refFrame, frame) and the
+  -- geometry asks for poseOffset(frame, frameIndex), opposite directions
+  -- of the same pair. By canonicalizing, there is only ONE scan per pair
+  -- (memoized by lo:hi), never two independent ones, so the symmetry holds
+  -- by construction, not by luck of the tie-break.
   local lo, hi, negate = fromFrame, toFrame, false
   if lo > hi then
     lo, hi, negate = hi, lo, true
@@ -1095,10 +1121,10 @@ local function poseOffset(m, fromFrame, toFrame)
     if lo < 0 or lo >= m.frames or hi < 0 or hi >= m.frames then
       cached = { 0, 0 }
     else
-      -- DECISAO: a varredura e O(cellW*cellH*janela) e roda dentro da
-      -- construcao de malha; memoizar em `m` (o mesmo objeto que ja
-      -- cacheia a mascara) garante no maximo uma varredura por par
-      -- canonico por folha, nao uma por face.
+      -- DECISION: the scan is O(cellW*cellH*window) and runs inside mesh
+      -- construction; memoizing on `m` (the same object that already
+      -- caches the mask) guarantees at most one scan per canonical pair
+      -- per sheet, not one per face.
       local dx, dy = poseOffsetScan(m, lo, hi)
       cached = { dx, dy }
     end
@@ -1159,12 +1185,13 @@ local function eyeTexelLuma(m, frameIndex, lx, ly)
   return luminance(r, g, b)
 end
 
--- CORRECAO defeito "so pisca parado" (v1.4.2): a marca de olho e sempre a do
--- frame de referencia (parado); para a pose andando, a coordenada e a marca
--- mais poseOffset, mas so conta se o tom realmente transferir. Sem isso a
--- v1.4.1 fechava o "olho" em cima de pele quando o frame 3 descia uma linha
--- (CHANGELOG v1.4.1: "the face shifts vertically on many sheets"), que e
--- exatamente o deslocamento que poseOffset mede.
+-- FIX for the "only blinks when standing" defect (v1.4.2): the eye mark is
+-- always the reference frame's (standing); for the walking pose, the
+-- coordinate is the mark plus poseOffset, but it only counts if the tone
+-- actually transfers. Without this, v1.4.1 closed the "eye" over skin when
+-- frame 3 shifted down one row (CHANGELOG v1.4.1: "the face shifts
+-- vertically on many sheets"), which is exactly the displacement
+-- poseOffset measures.
 local function eyeMarkTransfers(m, refFrame, rx, ry, walkFrame, wx, wy)
   local refLuma = eyeTexelLuma(m, refFrame, rx, ry)
   local walkLuma = eyeTexelLuma(m, walkFrame, wx, wy)
@@ -1231,30 +1258,30 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   local refFrameA, refFrameB = referenceFramesForRole(frame, m.frames)
 
   local z0, z1 = -depth, 0
-  -- CORRECAO defeito 2b (SLAB, v1.3.0): o eixo Y tinha o mesmo defeito que o
-  -- X, e a spec desta rodada afirmou que nao tinha. O host translada o card
-  -- para a altura do chao e pivota o lean ali (VoxelScene.lua:287-295), entao
-  -- y = 0 no espaco local e a linha de BAIXO da celula, nao a linha opaca
-  -- mais baixa da arte. Ancorar em m.maxY afunda no chao toda folha que tem
-  -- rodape vazio: 8 das 67, e entre elas poke_ball.png por 2 pixels, que e o
-  -- sprite de object event mais comum do jogo, alem de snorlax, pokedex,
-  -- fossil e old_amber. Para as 59 folhas cuja arte encosta em ly = cellH-1
-  -- a formula e identica a anterior, entao isto nao mexe em ninguem que ja
-  -- estava certo.
+  -- FIX for defect 2b (SLAB, v1.3.0): the Y axis had the same defect as X,
+  -- and this round's spec claimed it did not. The host translates the card
+  -- to ground height and pivots the lean there (VoxelScene.lua:287-295),
+  -- so y = 0 in local space is the BOTTOM row of the cell, not the art's
+  -- lowest opaque row. Anchoring on m.maxY sinks into the ground every
+  -- sheet that has an empty footer: 8 of 67, poke_ball.png among them by 2
+  -- pixels, which is the most common object event sprite in the game,
+  -- along with snorlax, pokedex, fossil and old_amber. For the 59 sheets
+  -- whose art touches ly = cellH-1 the formula is identical to the
+  -- previous one, so this does not touch anyone who was already correct.
   local cellBottom = m.cellH - 1
   local verts, idx = {}, {}
   local c, s = math.cos(correction or 0), math.sin(correction or 0)
 
-  -- CORRECAO defeito 1 (SLAB, v1.3.0): `at` respondia com `m.mask`, a uniao
-  -- de opacidade de TODOS os frames da folha (maskFor acumula sobre os
-  -- frames em main.lua:365-383). Isso funciona para frente/tras, que
-  -- amostram o frame corrente via rectUv e dependem do alpha discard do
-  -- shader para recortar a pose; nao funciona para topo/base/lateral, cujo
-  -- UV resolve de proposito para um texel opaco fixo (verticalUv, sideUv) e
-  -- nunca e descartado. O SLAB desenhava a silhueta da caminhada inteira em
-  -- cada pose (Pikon: "It kinda looks like all Red's sprites are appearing
-  -- at once when walking left to right"). Agora `at` consulta a opacidade
-  -- do FRAME CORRENTE, nao a uniao.
+  -- FIX for defect 1 (SLAB, v1.3.0): `at` used to answer with `m.mask`,
+  -- the union of opacity across ALL frames of the sheet (maskFor
+  -- accumulates over the frames in main.lua:365-383). That works for
+  -- front/back, which sample the current frame via rectUv and rely on the
+  -- shader's alpha discard to cut out the pose; it does not work for
+  -- top/bottom/side, whose UV resolves on purpose to a fixed opaque texel
+  -- (verticalUv, sideUv) and is never discarded. SLAB was drawing the
+  -- whole walking silhouette on every pose (Pikon: "It kinda looks like
+  -- all Red's sprites are appearing at once when walking left to right").
+  -- Now `at` queries the opacity of the CURRENT FRAME, not the union.
   local function at(lx, ly)
     if lx < m.minX or lx > m.maxX or ly < m.minY or ly > m.maxY then return false end
     return (frameTexel(m, frame, lx, ly))
@@ -1273,28 +1300,29 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     return OBJ_SHADE.top
   end
 
-  -- FEATURE TOP DOME (v1.6.0): a face de topo ja sai como um quad por pixel
-  -- (o ramo `if not at(sx, ly - 1)` mais abaixo), entao variar o shade pela
-  -- posicao dentro do run custa ZERO quad extra: e so trocar o valor de
-  -- shade que ja ia em cada quad, nunca adicionar um quad novo. Mesmo
-  -- mecanismo de FRONT SHAPE: TOP_DOME_STEPS tons constantes, alinhados ao
-  -- pixel, escolhidos pela distancia ate a borda do run, nao um gradiente
-  -- continuo (esse ja foi prototipado na face frontal e leu como uma
-  -- listra brilhante solta por cima da arte). `a` e `b` sao os limites do
-  -- run horizontal DESTA linha (lx, lx2 no laco principal), a mesma
-  -- referencia que emitFrontRun usa para o proprio degrau: relativos
-  -- apenas ao run, nunca a uma coordenada absoluta de tela, o que garante
-  -- a simetria em X exigida (o run espelha junto com o personagem, e o
-  -- shade espelha junto com ele). `base` vem de topShade(), entao TOP EDGE
-  -- e TOP DOME convivem por construcao: o degrau do domo e sempre um
-  -- multiplicador APLICADO SOBRE a base do TOP EDGE, nunca no lugar dela;
-  -- ligar um nao anula o outro.
+  -- TOP DOME FEATURE (v1.6.0): the top face already comes out as one quad
+  -- per pixel (the `if not at(sx, ly - 1)` branch further below), so
+  -- varying the shade by position within the run costs ZERO extra quads:
+  -- it is just swapping the shade value that was already going into each
+  -- quad, never adding a new quad. Same mechanism as FRONT SHAPE:
+  -- TOP_DOME_STEPS constant tones, pixel aligned, chosen by distance to
+  -- the run's edge, not a continuous gradient (that was already
+  -- prototyped on the front face and read as a bright stripe floating
+  -- over the art). `a` and `b` are the bounds of THIS row's horizontal run
+  -- (lx, lx2 in the main loop), the same reference emitFrontRun uses for
+  -- its own step: relative only to the run, never to an absolute screen
+  -- coordinate, which guarantees the required symmetry in X (the run
+  -- mirrors along with the character, and the shade mirrors along with
+  -- it). `base` comes from topShade(), so TOP EDGE and TOP DOME coexist
+  -- by construction: the dome's step is always a multiplier APPLIED ON TOP
+  -- of TOP EDGE's base, never in place of it; turning one on does not
+  -- cancel the other.
   local domoStep = tonumber(topDome) or 0
   local function topShadeDomo(sx, a, b)
     local base = topShade()
-    -- Runs com menos de 3 pixels nao tem um pixel "do meio" distinto das
-    -- duas bordas: nao ha degrau possivel, entao ficam no shade constante
-    -- de sempre, igual a opcao desligada.
+    -- Runs shorter than 3 pixels have no "middle" pixel distinct from the
+    -- two edges: no step is possible, so they stay at the usual constant
+    -- shade, same as the option turned off.
     if domoStep <= 0 or b - a < 2 then return base end
     local center = (a + b) / 2
     local half = (b - a) / 2
@@ -1315,14 +1343,15 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     return { u, v, u, v, u, v, u, v }
   end
 
-  -- CORRECAO defeito do topo piscando ao andar (SLAB, v1.4.2): `lx, ly` e a
-  -- coordenada da face no frame CORRENTE; `frameIndex` e o frame de
-  -- referencia. Antes de ler o corpo em `frameIndex`, compensamos pelo
-  -- deslocamento medido entre as duas poses (poseOffset), senao a leitura
-  -- cai na mesma linha do frame errado. Se a coordenada compensada sair da
-  -- celula ou nao achar corpo opaco no frame de referencia, degrada para a
-  -- coordenada sem compensar (o comportamento anterior a v1.4.2) antes de
-  -- desistir deste frame de referencia; nenhuma face fica sem UV resolvida.
+  -- FIX for the top-flickering-while-walking defect (SLAB, v1.4.2): `lx,
+  -- ly` is the face's coordinate in the CURRENT frame; `frameIndex` is the
+  -- reference frame. Before reading the body at `frameIndex`, we
+  -- compensate for the measured displacement between the two poses
+  -- (poseOffset), otherwise the lookup lands on the same row of the wrong
+  -- frame. If the compensated coordinate falls outside the cell or finds
+  -- no opaque body in the reference frame, it degrades to the uncompensated
+  -- coordinate (the pre-v1.4.2 behavior) before giving up on this reference
+  -- frame; no face is left with an unresolved UV.
   local function sideUv(lx, ly, dx)
     local function tryFrame(frameIndex)
       if not frameIndex then return nil end
@@ -1377,16 +1406,17 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     return rectFrameUv(frame, lx, ly, lx2, order)
   end
 
-  -- CORRECAO defeito "so pisca parado" (v1.4.2): as poses andando (3 e 5)
-  -- passam a piscar tambem. `refFrameA` (calculado acima) ja e a role do
-  -- frame corrente (0 frente, 1 costas, 2 perfil); costas nunca teve marca
-  -- de olho e continua sem piscar. Na pose parada (frame == refFrameA) a
-  -- marca vale na propria coordenada, como sempre. Na pose andando, cada
-  -- marca so entra em eyeLookup se o tom em (x+dx, y+dy) no frame andando
-  -- bater com o tom em (x, y) no frame de referencia; se QUALQUER marca da
-  -- folha nao transferir, a folha inteira fica de olho aberto NESTA pose,
-  -- nunca meio olho. Decidido aqui, medido folha a folha e pose a pose,
-  -- nunca por tabela escrita a mao.
+  -- FIX for the "only blinks when standing" defect (v1.4.2): the walking
+  -- poses (3 and 5) now blink too. `refFrameA` (computed above) is already
+  -- the current frame's role (0 front, 1 back, 2 profile); back never had
+  -- an eye mark and stays without a blink. On the standing pose (frame ==
+  -- refFrameA) the mark counts at its own coordinate, as always. On the
+  -- walking pose, each mark only enters eyeLookup if the tone at (x+dx,
+  -- y+dy) in the walking frame matches the tone at (x, y) in the
+  -- reference frame; if ANY mark on the sheet fails to transfer, the whole
+  -- sheet stays open-eyed on THIS pose, never half-closed. Decided here,
+  -- measured sheet by sheet and pose by pose, never by a hand-written
+  -- table.
   local blinkQuads = {}
   local canBlinkFrame = false
   local eyeLookup
@@ -1420,31 +1450,33 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     end
   end
 
-  -- DECISAO: SLAB tambem precisa fixar a classificacao de cor das faces novas
-  -- por role, nao pelo frame corrente. O bug medido no red.png vinha de usar
-  -- a caminhada diretamente: 49/180 posicoes de face de topo alternavam entre
-  -- parado e andando, 14 delas na regiao do bone. A causa direta e a linha 0
-  -- do frame 3 ficar vazia porque o sprite desce uma linha inteira. Topo,
-  -- base e laterais usam texel fixo por pixel para poder buscar corpo no
-  -- eixo certo sem misturar colunas de um run.
+  -- DECISION: SLAB also needs to fix the color classification of new faces
+  -- by role, not by the current frame. The bug measured on red.png came
+  -- from using the walk directly: 49/180 top face positions alternated
+  -- between standing and walking, 14 of them in the hat region. The direct
+  -- cause is row 0 of frame 3 being empty because the sprite shifts down a
+  -- whole row. Top, bottom and sides use a fixed texel per pixel so they
+  -- can search for body on the right axis without mixing columns of a run.
 
-  -- FEATURE STEP WEIGHT (v1.6.0): cisalhamento em Z proporcional a altura,
-  -- so nos frames de caminhada. Em Z de proposito: a pitch 0, a camera do
-  -- gate de conformidade, o eixo Z aponta para a camera, entao mexer nele
-  -- nao muda silhueta (Kim mediu IoU 1.000 em -1.0, -0.5, 0, +0.5 e +1.0).
-  -- Na camera do jogo, que olha de cima, o mesmo deslocamento em Z aparece
-  -- na vertical depois da rotacao de `correction` que `p()` ja aplicava.
-  -- Nada em X: o espelho do host nunca ve esta opcao.
+  -- STEP WEIGHT FEATURE (v1.6.0): shear in Z proportional to height, only
+  -- on walking frames. In Z on purpose: at pitch 0, the compliance gate's
+  -- camera, the Z axis points at the camera, so moving it does not change
+  -- silhouette (Kim measured IoU 1.000 at -1.0, -0.5, 0, +0.5 and +1.0).
+  -- On the game's camera, which looks down from above, that same Z
+  -- displacement shows up vertically after the `correction` rotation `p()`
+  -- already applied. Nothing in X: the host's mirror never sees this
+  -- option.
   --
-  -- "Frame de caminhada" e derivado do mesmo bucket que carvedFrames ja usa
-  -- para CARVED (main.lua, funcao carvedFrames abaixo), nao os literais 3,
-  -- 4 e 5 chutados: um frame acima de 5 dobra em bucket de 3 (frame % 3),
-  -- igual roleForFrame, e so entra no bucket "andando" (posicao 3) quando a
-  -- folha de fato tem seis frames. Isso cobre por construcao a restricao
-  -- "folhas com menos frames nao tem pose de caminhada": com m.frames < 6,
-  -- bucketFrame nunca chega a 3 dentro do intervalo valido de frame (ja
-  -- normalizado para [0, m.frames) no topo desta funcao), entao `andando`
-  -- fica falso e nenhuma folha de 1 ou 3 frames estoura.
+  -- "Walking frame" is derived from the same bucket carvedFrames already
+  -- uses for CARVED (main.lua, function carvedFrames below), not the
+  -- guessed literals 3, 4 and 5: a frame above 5 folds into a bucket of 3
+  -- (frame % 3), same as roleForFrame, and only enters the "walking"
+  -- bucket (position 3) when the sheet actually has six frames. That
+  -- covers by construction the constraint "sheets with fewer frames have
+  -- no walking pose": with m.frames < 6, bucketFrame never reaches 3
+  -- within the valid frame range (already normalized to [0, m.frames) at
+  -- the top of this function), so `andando` stays false and no 1 or
+  -- 3-frame sheet overflows.
   local stepWeightForce = tonumber(stepWeight) or 0
   local bucketFrame = frame
   if bucketFrame > 5 then bucketFrame = bucketFrame % 3 end
@@ -1452,13 +1484,13 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   local stepWeightZ = andando and stepWeightForce or 0
 
   local function p(x, y, z)
-    -- Zero exato quando a opcao esta desligada ou o frame nao e de
-    -- caminhada: soma de 0.0 preserva o valor de z bit a bit, entao a
-    -- malha continua identica a de hoje nesses dois casos.
+    -- Exact zero when the option is off or the frame is not a walking one:
+    -- adding 0.0 preserves the z value bit for bit, so the mesh stays
+    -- identical to today's in both those cases.
     if stepWeightZ ~= 0 then z = z + stepWeightZ * (y / m.cellH) end
-    -- A matriz do Dramatic Shape inclina o card no X, pivotando nos pes.
-    -- A malha solida chega contra-rotacionada no mesmo pivo; depois do lean
-    -- externo, o corpo volta a ficar de pe.
+    -- Dramatic Shape's matrix tilts the card in X, pivoting at the feet.
+    -- The solid mesh arrives counter-rotated at the same pivot; after the
+    -- outer lean, the body ends up standing again.
     return { x, y * c - z * s, y * s + z * c, y }
   end
 
@@ -1497,9 +1529,9 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     }
   end
 
-  -- CORRECAO defeito B (SLAB, v1.3.0): desde que `at()` passou a consultar o
-  -- frame corrente, as faces laterais podem ser runs verticais quando isso
-  -- preserva exatamente o mesmo UV e o mesmo shade dos quads por pixel.
+  -- FIX for defect B (SLAB, v1.3.0): since `at()` started querying the
+  -- current frame, side faces can be vertical runs when that preserves
+  -- exactly the same UV and the same shade as the per-pixel quads.
   local function sameUvTable(a, b)
     if not (a and b) then return false end
     for i = 1, 8 do
@@ -1554,27 +1586,27 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     end
   end
 
-  -- DECISAO: historicamente as laterais esquerda/direita do SLAB eram por
-  -- pixel porque a ocupacao vinha de `m.mask` (uniao de todos os frames) e so
-  -- o alpha discard do shader recortava a pose por cima. Se fossem runs, a
-  -- lateral deixaria rastro quando a silhueta andasse. Desde a v1.3.0, `at()`
-  -- consulta o frame corrente e a lateral ja nasce na silhueta certa, entao
-  -- faces adjacentes podem ser mescladas verticalmente quando isso e
-  -- lossless: mesmo X, mesmo lado, mesmo shade e mesmo UV resolvido. Onde o
-  -- UV muda, preservamos os quads separados. Frente e tras continuam em runs
-  -- horizontais com UV retangular e inset de 0,05 texel.
-  -- A comunidade mediu que 34/34 pixels de silhueta lateral de red.png vinham
-  -- no tom mais escuro, mas um passo para dentro so 16/34 ainda eram contorno.
-  -- Por isso BODY pinta faces novas com texel interno, enquanto frente e tras
-  -- continuam sendo a arte original. Topo/base sao por pixel como as laterais:
-  -- quando um pixel de contorno encosta numa linha vertical de corpo, o texel
-  -- novo vem desse corpo em vez de exigir que o run horizontal inteiro combine.
-  -- A partir da v1.2.2, essa decisao roda em frames de referencia fixos para
-  -- o SLAB nao piscar.
-  -- FRONT SHAPE (v1.6.0): forca constante para a malha inteira, lida uma
-  -- unica vez fora do laco. "off" vira 0 (tonumber("off") == nil), o mesmo
-  -- branch do quad unico de sempre dentro de emitFrontRun; qualquer forca >
-  -- 0 liga o escalonamento em degraus.
+  -- DECISION: historically SLAB's left/right sides were per pixel because
+  -- occupancy came from `m.mask` (the union of every frame) and only the
+  -- shader's alpha discard cut out the pose on top. If they were runs, the
+  -- side would leave a trail as the silhouette walked. Since v1.3.0,
+  -- `at()` queries the current frame and the side is already born with the
+  -- correct silhouette, so adjacent faces can be merged vertically when
+  -- that is lossless: same X, same side, same shade and same resolved UV.
+  -- Where the UV changes, we keep the quads separate. Front and back stay
+  -- as horizontal runs with rectangular UV and a 0.05 texel inset.
+  -- The community measured that 34/34 side silhouette pixels of red.png
+  -- came out in the darkest tone, but one step inward only 16/34 were
+  -- still outline. That is why BODY paints new faces with an interior
+  -- texel, while front and back stay as the original art. Top/bottom are
+  -- per pixel like the sides: when an outline pixel touches a vertical
+  -- line of body, the new texel comes from that body instead of requiring
+  -- the whole horizontal run to match. Starting in v1.2.2, this decision
+  -- runs on fixed reference frames so SLAB does not flicker.
+  -- FRONT SHAPE (v1.6.0): constant strength for the whole mesh, read once
+  -- outside the loop. "off" becomes 0 (tonumber("off") == nil), the same
+  -- branch as the usual single quad inside emitFrontRun; any strength > 0
+  -- turns on the stepped scaling.
   local frontStep = tonumber(frontShape) or 0
 
   for ly = m.minY, m.maxY do
@@ -1584,47 +1616,48 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
         local lx2 = lx
         while lx2 + 1 <= m.maxX and at(lx2 + 1, ly) do lx2 = lx2 + 1 end
 
-        -- CORRECAO defeito 2 (SLAB, v1.3.0): X saia relativo a bbox opaca
-        -- (`lx - m.minX`), nao a celula do sprite. O host ancora o card com
-        -- Mat4.translate(px+8, y, py+8) seguido de Mat4.translate(-8,0,0)
-        -- (VoxelScene.lua:287-295): o espaco local vai de x=0 a x=16 e o
-        -- pivo de yaw/espelho fica em x=8, o centro da CELULA, nao da bbox
-        -- da arte. 40 das 67 folhas tem minX=1, entao a arte inteira saia
-        -- 1 pixel a esquerda do card que ela substitui. X agora usa lx puro.
+        -- FIX for defect 2 (SLAB, v1.3.0): X used to come out relative to
+        -- the opaque bbox (`lx - m.minX`), not the sprite cell. The host
+        -- anchors the card with Mat4.translate(px+8, y, py+8) followed by
+        -- Mat4.translate(-8,0,0) (VoxelScene.lua:287-295): local space runs
+        -- from x=0 to x=16 and the yaw/mirror pivot sits at x=8, the center
+        -- of the CELL, not of the art's bbox. 40 of the 67 sheets have
+        -- minX=1, so the whole art used to come out 1 pixel to the left of
+        -- the card it replaces. X now uses raw lx.
         local x, y = lx, cellBottom - ly
         local w = lx2 - lx + 1
-        -- FEATURE FRONT SHAPE (v1.6.0): degraus alinhados ao pixel na face
-        -- frontal, no lugar do shade constante de sempre, quando a opcao
-        -- esta ligada. Um gradiente continuo foi prototipado antes disto e
-        -- leu como uma listra brilhante solta por cima da arte (arte de
-        -- pixel duro e degrade suave brigam entre si); aqui cada pixel do
-        -- run recebe um shade CONSTANTE, escolhido entre FRONT_SHAPE_STEPS
-        -- niveis pela distancia ate a borda do run, do mesmo jeito que o
-        -- artista ja faz volume nos sprites fonte.
+        -- FRONT SHAPE FEATURE (v1.6.0): pixel-aligned steps on the front
+        -- face, in place of the usual constant shade, when the option is
+        -- on. A continuous gradient was prototyped before this and read as
+        -- a bright stripe floating over the art (hard-pixel art and smooth
+        -- gradients fight each other); here every pixel of the run gets a
+        -- CONSTANT shade, chosen among FRONT_SHAPE_STEPS levels by the
+        -- distance to the run's edge, the same way the artist already
+        -- builds volume in the source sprites.
         --
-        -- CORRECAO (pente fino de olho novo): `runCenter` e `runHalf` vem
-        -- do RUN INTEIRO (`lx`, `lx2`), nunca do segmento `a..b` que
-        -- `emitFrontRun` recebe. Um olho no meio do run corta a CHAMADA em
-        -- pedacos (o laco `isEye` logo abaixo), mas nao corta o run: o
-        -- pixel do olho continua opaco e dentro de `lx..lx2`. Medir contra
-        -- o segmento fazia cada pedaco tratar a propria ponta, colada no
-        -- olho, como se fosse a borda real da silhueta, entao esse pixel
-        -- saia no mesmo tom escuro da borda verdadeira: um anel escuro em
-        -- volta de cada olho, em qualquer folha com marca de olho
-        -- (`EYE_MARKS`/`EYE_SIDE_MARKS`) e independente da opcao BLINK,
-        -- porque o corte por `isEye` nunca consulta o estado de BLINK. `lx` e
-        -- `lx2` espelham juntos como o resto do run, entao a simetria em X
-        -- exigida continua garantida por construcao: nunca uma coordenada
-        -- absoluta de tela, sempre os limites do proprio run.
+        -- FIX (fresh-eyes fine-tooth comb): `runCenter` and `runHalf` come
+        -- from the WHOLE RUN (`lx`, `lx2`), never from the `a..b` segment
+        -- `emitFrontRun` receives. An eye in the middle of the run cuts the
+        -- CALL into pieces (the `isEye` loop right below), but does not cut
+        -- the run: the eye pixel stays opaque and within `lx..lx2`.
+        -- Measuring against the segment made each piece treat its own tip,
+        -- glued to the eye, as if it were the silhouette's real edge, so
+        -- that pixel came out in the same dark tone as the true edge: a
+        -- dark ring around every eye, on any sheet with an eye mark
+        -- (`EYE_MARKS`/`EYE_SIDE_MARKS`) and independent of the BLINK
+        -- option, because the `isEye` cut never checks BLINK's state. `lx`
+        -- and `lx2` mirror together like the rest of the run, so the
+        -- required X symmetry stays guaranteed by construction: never an
+        -- absolute screen coordinate, always the run's own bounds.
         local runCenter = (lx + lx2) / 2
         local runHalf = (lx2 - lx) / 2
         local function emitFrontRun(a, b)
           if a > b then return end
-          -- Sem degrau possivel quando a opcao esta desligada OU o RUN
-          -- INTEIRO, nao o segmento, tem menos de 3 pixels: nao ha um
-          -- pixel "do meio" distinto das duas bordas reais. Um segmento
-          -- curto colado num olho, dentro de um run largo, ainda precisa
-          -- do degrau: por isso a guarda olha `lx2 - lx`, nao `b - a`.
+          -- No step is possible when the option is off OR the WHOLE RUN,
+          -- not the segment, is shorter than 3 pixels: there is no
+          -- "middle" pixel distinct from the two real edges. A short
+          -- segment glued to an eye, inside a wide run, still needs the
+          -- step: that is why the guard checks `lx2 - lx`, not `b - a`.
           if frontStep <= 0 or lx2 - lx < 2 then
             local rx, rw = a, b - a + 1
             quad(p(rx, y, z1), p(rx + rw, y, z1),
@@ -1673,10 +1706,10 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
                  p(sx, y + SIDE_INSET, z0),
                  verticalUv(sx, ly, -1), OBJ_SHADE.bottom)
           end
-          -- CORRECAO v1.4.1: laterais tambem precisam ser faces expostas.
-          -- Dentro de um run horizontal, a lateral esquerda de uma coluna e
-          -- coplanar com a direita da coluna vizinha; com inset, isso ainda
-          -- abria vao entre colunas. Emitimos so o contorno da silhueta.
+          -- FIX v1.4.1: sides also need to be exposed faces. Within a
+          -- horizontal run, a column's left side is coplanar with its
+          -- neighbor's right side; with an inset, that still opened a gap
+          -- between columns. We only emit the silhouette's outline.
           if not at(sx - 1, ly) then
             addSideRun(sx, ly, "left", sideUv(sx, ly, 1))
           end
@@ -1724,11 +1757,12 @@ end
 local function carvedFrames(frame, frames)
   frame = tonumber(frame) or 0
   if frame < 0 or frame >= frames then frame = 0 end
-  -- DECISAO: sprites Gen 1 usam buckets de tres vistas:
-  -- parado down/up/left e, quando existe, andando down/up/left. A auditoria
-  -- contou 20/73 sprites com so tres frames; eles tem as tres vistas completas
-  -- e devem usar CARVED. Frames acima de 5 caem explicitamente no bucket de
-  -- tres para nao transformar frame futuro em role silenciosamente invalido.
+  -- DECISION: Gen 1 sprites use buckets of three views: standing
+  -- down/up/left and, when it exists, walking down/up/left. The audit
+  -- counted 20/73 sprites with only three frames; they have all three
+  -- views complete and should use CARVED. Frames above 5 explicitly fall
+  -- into the bucket of three so a future frame does not silently become
+  -- an invalid role.
   local bucketFrame = frame
   if bucketFrame > 5 then bucketFrame = bucketFrame % 3 end
   local pose = (bucketFrame >= 3 and frames >= 6) and 3 or 0
@@ -1757,19 +1791,19 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   local widthBounds = frontBounds
   local widthFrameA, widthFrameB = referenceFramesForRole(frame, m.frames,
     0)
-  -- CORRECAO defeito do topo piscando ao andar, agora no CARVED (v1.4.2):
-  -- topUv tem a mesma estrutura de busca por frame de referencia que o
-  -- SLAB tinha, e o mesmo defeito (le lx, ly na coordenada do frame
-  -- corrente, sem compensar o passo). A compensacao entra aqui, uma vez por
-  -- malha, comparando pose.front (SEMPRE role 0, a vista de frente desta
-  -- folha) contra a referencia (tambem sempre role 0), nunca o `frame` bruto
-  -- recebido pela funcao: `frame` pode ser role 1 ou role 2, e comparar a
-  -- mascara de frente com uma de outro role mediria diferenca de silhueta,
-  -- nao deslocamento de passo (poseOffset ja se recusa e devolve 0,0 se as
-  -- roles nao baterem, mas o chamador tem que pedir a comparacao certa para
-  -- comecar). Calculado aqui, no espaco de textura, antes de qualquer
-  -- rotacao por role em p(): a compensacao nunca entra no espaco de
-  -- geometria.
+  -- FIX for the top-flickering-while-walking defect, now in CARVED
+  -- (v1.4.2): topUv has the same reference-frame lookup structure SLAB
+  -- had, and the same defect (reads lx, ly at the current frame's
+  -- coordinate, without compensating for the step). Compensation enters
+  -- here, once per mesh, comparing pose.front (ALWAYS role 0, this
+  -- sheet's front view) against the reference (also always role 0), never
+  -- the raw `frame` the function receives: `frame` can be role 1 or role
+  -- 2, and comparing the front mask against one of a different role would
+  -- measure silhouette difference, not step displacement (poseOffset
+  -- already refuses and returns 0,0 if the roles do not match, but the
+  -- caller has to ask for the right comparison to begin with). Computed
+  -- here, in texture space, before any per-role rotation in p(): the
+  -- compensation never enters geometry space.
   local widthOffsetAX, widthOffsetAY = poseOffset(m, pose.front, widthFrameA)
   local widthOffsetBX, widthOffsetBY = 0, 0
   if widthFrameB then
@@ -1785,8 +1819,8 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   local sideLineRecess = {}
 
   local function mirrorX(lx)
-    -- CORRECAO defeito A (CARVED, v1.3.0): o espelho de intersecao e a
-    -- rotacao por role derivam do mesmo eixo de celula.
+    -- FIX for defect A (CARVED, v1.3.0): the intersection mirror and the
+    -- per-role rotation derive from the same cell axis.
     return (m.cellW - 1) - lx
   end
 
@@ -1857,37 +1891,40 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
     end
   end
 
-  -- DECISAO: o frame lateral 2 e o personagem olhando para a esquerda.
-  -- Nas folhas Gen 1 essa borda esquerda e o rosto. Por isso a coluna
-  -- opaca mais a esquerda da vista lateral fica em z = 0, e as colunas
-  -- seguintes caminham para z negativo, em direcao a nuca. No red.png o
-  -- tronco medido e 14 colunas de frente e 11 de lado; a caixa opaca completa
-  -- da lateral tem 13 colunas por incluir pixels fora do tronco. Em ambos os
-  -- casos, profundidade vem da arte, nao do slider de slab.
+  -- DECISION: side frame 2 is the character looking left. On Gen 1 sheets
+  -- that left edge is the face. That is why the leftmost opaque column of
+  -- the side view sits at z = 0, and the following columns walk toward
+  -- negative z, toward the back of the head. On red.png the measured torso
+  -- is 14 columns from the front and 11 from the side; the side's full
+  -- opaque box has 13 columns because it includes pixels outside the
+  -- torso. In both cases, depth comes from the art, not from a slab
+  -- slider.
   --
-  -- DECISAO: v1.2.1 acrescentou a silhueta de costas na intersecao. Como
-  -- frente e costas sao vistas opostas, a coluna X da vista traseira entra
-  -- espelhada; sem esse espelho o casco perde quase tudo em sprites
-  -- assimetricos. O eixo nao pode vir do bbox global da folha: Kim mediu
-  -- 12/40 folhas de 6 frames em que a vista lateral alarga esse bbox
-  -- (biker 0..15 contra frente 1..14; bird 0..15 contra 2..13;
-  -- brunette_girl e cooltrainer_f 1..15 contra 2..13), cortando 3% a 8% dos
-  -- voxels legitimos em 7/8 sprites auditados. Tambem nao pode divergir do
-  -- eixo usado pela rotacao por role: desde a v1.3.0 a geometria e ancorada
-  -- na celula, entao o espelho de textura frente/costas usa o mesmo eixo da
-  -- celula para nao vazar fora do card em folhas assimetricas.
-  -- No role 1 esse espelho nao pode inverter de novo o espaco logico do casco:
-  -- p() ja transforma lx em m.cellW - x para apresentar a vista de costas.
-  -- Espelhar tambem aqui valida a opacidade em uma coluna e desenha em outra.
+  -- DECISION: v1.2.1 added the back silhouette to the intersection. Since
+  -- front and back are opposite views, the back view's X column enters
+  -- mirrored; without that mirror the hull loses almost everything on
+  -- asymmetric sprites. The axis cannot come from the sheet's global
+  -- bbox: Kim measured 12/40 six-frame sheets where the side view widens
+  -- that bbox (biker 0..15 versus front 1..14; bird 0..15 versus 2..13;
+  -- brunette_girl and cooltrainer_f 1..15 versus 2..13), clipping 3% to 8%
+  -- of legitimate voxels on 7/8 audited sprites. It also cannot diverge
+  -- from the axis used by the per-role rotation: since v1.3.0 the geometry
+  -- is anchored to the cell, so the front/back texture mirror uses the
+  -- same cell axis to avoid leaking outside the card on asymmetric
+  -- sheets. On role 1 that mirror cannot flip the hull's logical space a
+  -- second time: p() already transforms lx into m.cellW - x to present the
+  -- back view. Mirroring here too would validate opacity on one column and
+  -- draw on another.
   --
-  -- DECISAO: CARVED+ recua a superficie frontal por tom em so 2 passos. red.png
-  -- tem 3 tons opacos de corpo alem do contorno; mais degraus so fingiriam uma
-  -- precisao que a arte nao tem. A mesma arte usa tom para contorno e volume:
-  -- onde o artista escureceu so para separar bone da testa, o relevo vira sulco.
-  -- Por isso e um degrau proprio, nao o default. O recuo tambem e limitado pela
-  -- profundidade real de cada linha lateral: sempre sobra pelo menos uma camada,
-  -- porque sprite fino de mod externo nao pode virar um buraco atravessando o
-  -- personagem.
+  -- DECISION: CARVED+ recesses the front surface by tone in only 2 steps.
+  -- red.png has 3 opaque body tones besides the outline; more steps would
+  -- only fake a precision the art does not have. The same art uses tone
+  -- both for outline and for volume: where the artist darkened just to
+  -- separate the hat from the forehead, the relief turns into a groove.
+  -- That is why it is its own step, not the default. The recess is also
+  -- limited by each side line's real depth: at least one layer always
+  -- remains, because a thin sprite from an external mod cannot turn into a
+  -- hole going through the character.
   local function solid(lx, ly, sx)
     if lx < widthBounds.minX or lx > widthBounds.maxX then return false end
     if ly < widthBounds.minY or ly > widthBounds.maxY then return false end
@@ -1931,10 +1968,10 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   end
 
   local sideFrameA, sideFrameB = referenceFramesForRole(frame, m.frames, 2)
-  -- v1.4.2: mesma logica de widthOffsetA/B acima, mas para a lateral.
-  -- pose.side e SEMPRE role 2 (a vista de perfil desta folha), como
-  -- sideFrameA/B; a comparacao fica perfil-contra-perfil, nunca
-  -- frente-contra-perfil.
+  -- v1.4.2: same logic as widthOffsetA/B above, but for the side. pose.side
+  -- is ALWAYS role 2 (this sheet's profile view), same as sideFrameA/B;
+  -- the comparison stays profile-against-profile, never
+  -- front-against-profile.
   local sideOffsetAX, sideOffsetAY = poseOffset(m, pose.side, sideFrameA)
   local sideOffsetBX, sideOffsetBY = 0, 0
   if sideFrameB then
@@ -1944,17 +1981,17 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   local function sideUv(sx, ly)
     local middle = (sideBounds.minX + sideBounds.maxX) / 2
     local dx = sx <= middle and 1 or -1
-    -- DECISAO: a casca lateral tem que ter classificacao estavel entre
-    -- frames. No red.png, 161/378 posicoes laterais alternavam corpo/contorno
-    -- porque a malha vinha da silhueta combinada, mas a busca de cor olhava
-    -- so o frame corrente. Procuramos uma vez entre as vistas laterais da
-    -- folha e fixamos o primeiro texel opaco encontrado; assim caminhar nao
-    -- troca vermelho por preto na mesma posicao da face.
+    -- DECISION: the side shell has to have a stable classification across
+    -- frames. On red.png, 161/378 side positions alternated body/outline
+    -- because the mesh came from the combined silhouette, but the color
+    -- search only looked at the current frame. We search once among the
+    -- sheet's side views and fix the first opaque texel found; that way
+    -- walking does not swap red for black at the same face position.
     --
-    -- v1.4.2: `sx, ly` compensado pelo deslocamento entre pose.side e o
-    -- frame de referencia antes de ler o corpo, com a mesma degradacao de
-    -- topUv: compensado, depois sem compensar, depois os fallbacks de
-    -- sempre.
+    -- v1.4.2: `sx, ly` compensated by the displacement between pose.side
+    -- and the reference frame before reading the body, with the same
+    -- degradation as topUv: compensated, then uncompensated, then the
+    -- usual fallbacks.
     local function tryFrame(sideFrame, pdx, pdy)
       if not sideFrame then return nil end
       local bx, by = bodyTexel(sideFrame, sx + pdx, ly + pdy, dx, 0)
@@ -1973,19 +2010,21 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   end
 
   local function topUv(lx, ly, dy)
-    -- DECISAO: topo/base precisam de classificacao fixa como as laterais.
-    -- O bug medido no red.png vinha de usar o frame corrente: 49/180 posicoes
-    -- de face de topo alternavam parado/andando, 14 delas nas 6 linhas de cima
-    -- do bone. A causa direta e a linha 0 existir no frame 0
-    -- (".....######.....") e sumir no frame 3, porque o sprite inteiro desce uma
-    -- linha ao andar. Tentar a vista de referencia e so cair para a caminhada
-    -- quando ha opacidade fixa a cor da face no mesmo texel logico.
+    -- DECISION: top/bottom need fixed classification like the sides. The
+    -- bug measured on red.png came from using the current frame: 49/180
+    -- top face positions alternated standing/walking, 14 of them in the
+    -- hat's top 6 rows. The direct cause is row 0 existing in frame 0
+    -- (".....######.....") and disappearing in frame 3, because the whole
+    -- sprite shifts down a row while walking. Trying the reference view and
+    -- only falling back to the walking one fixes the face's color to the
+    -- same logical texel wherever there is opacity.
     --
-    -- v1.4.2: `lx, ly` compensado pelo deslocamento entre pose.front e o
-    -- frame de referencia (widthOffsetA/B, calculados uma vez acima) antes
-    -- de ler o corpo; se a coordenada compensada sair da celula ou nao
-    -- achar corpo opaco no frame de referencia, degrada para a coordenada
-    -- sem compensar antes de cair nos fallbacks que ja existiam.
+    -- v1.4.2: `lx, ly` compensated by the displacement between pose.front
+    -- and the reference frame (widthOffsetA/B, computed once above) before
+    -- reading the body; if the compensated coordinate falls outside the
+    -- cell or finds no opaque body in the reference frame, it degrades to
+    -- the uncompensated coordinate before falling into the fallbacks that
+    -- already existed.
     local function tryFrame(frameIndex, pdx, pdy)
       if not frameIndex then return nil end
       local bx, by = bodyTexel(frameIndex, lx + pdx, ly + pdy, 0, dy)
@@ -2008,14 +2047,15 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
     if pose.role == 1 then
       ox, oz = m.cellW - x, -depthPixels - z
     elseif pose.role == 2 then
-      -- DECISAO: o role lateral tambem precisa compensar o pivo. Sem isso,
-      -- red.png medido no main.lua real ia de Y [0, 13] na frente para
-      -- Y [-14, 0] de lado: o z positivo entrava na contra-rotacao do lean
-      -- como deslocamento vertical e metade das direcoes afundava no chao.
-      -- A compensacao mantem o volume em z nao positivo, como frente e costas.
-      -- Desde a v1.3.0 o X tambem preserva o padding da celula; por isso o
-      -- eixo que vem da vista lateral soma sideBounds.minX de volta, enquanto
-      -- o eixo de profundidade gira em torno da largura da celula.
+      -- DECISION: the side role also needs to compensate for the pivot.
+      -- Without this, red.png measured on the real main.lua went from Y
+      -- [0, 13] at the front to Y [-14, 0] at the side: the positive z
+      -- entered the lean's counter-rotation as vertical displacement and
+      -- half the directions sank into the ground. The compensation keeps
+      -- the volume at non-positive z, like front and back. Since v1.3.0 X
+      -- also preserves the cell's padding; that is why the axis coming
+      -- from the side view adds sideBounds.minX back, while the depth axis
+      -- rotates around the cell's width.
       ox, oz = sideBounds.minX - z, x - m.cellW
     end
     return { ox, y * pitchC - oz * pitchS, y * pitchS + oz * pitchC, y }
@@ -2091,24 +2131,25 @@ local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, sh
     baseName, topEdge, frontShape, topDome, stepWeight)
 end
 
--- FRONT SHAPE, TOP DOME e STEP WEIGHT, como TOP EDGE, so existem para SLAB:
--- CARVED/CARVED+ constroem a partir do casco visual em voxels, sem o run
--- frontal continuo que emitFrontRun escalona, sem o run de topo que
--- topShadeDomo le, e sem o `p()` que aplica o cisalhamento de STEP WEIGHT.
--- Fora do SLAB, a chave ignora a forca de proposito, para nao duplicar
--- malhas identicas so porque o menu trocou de nivel.
+-- FRONT SHAPE, TOP DOME and STEP WEIGHT, like TOP EDGE, only exist for
+-- SLAB: CARVED/CARVED+ build from the visual voxel hull, without the
+-- continuous front run emitFrontRun steps, without the top run topShadeDomo
+-- reads, and without the `p()` that applies STEP WEIGHT's shear. Outside
+-- SLAB, the key ignores the strength on purpose, so it does not duplicate
+-- identical meshes just because the menu switched level.
 local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
                         groundShade, topEdge, frontShape, topDome, stepWeight)
   local depthPart = (shape == "carved" or shape == "carved_plus") and "art"
     or tostring(depth)
   local topEdgePart = shape == "slab" and tostring(topEdge or "") or ""
   local frontShapePart = shape == "slab" and tostring(frontShape or "") or ""
-  -- A chave PRECISA incluir a forca do domo, mesmo padrao de FRONT SHAPE:
-  -- sem isso, mexer no menu nao muda nada na tela ate o LRU reciclar por
-  -- acaso, exatamente o defeito que o Colonel_Aureliano reportou na v1.4.0.
+  -- The key MUST include the dome's strength, same pattern as FRONT SHAPE:
+  -- without this, touching the menu changes nothing on screen until the
+  -- LRU happens to recycle it, exactly the defect Colonel_Aureliano
+  -- reported in v1.4.0.
   local topDomePart = shape == "slab" and tostring(topDome or "") or ""
-  -- Mesma exigencia da spec desta rodada ("a chave de cache precisa incluir
-  -- a forca"), mesmo motivo de TOP DOME logo acima.
+  -- Same requirement from this round's spec ("the cache key needs to
+  -- include the strength"), same reason as TOP DOME right above.
   local stepWeightPart = shape == "slab" and tostring(stepWeight or "") or ""
   return table.concat({
     tostring(def and def.image or ""),
@@ -2129,24 +2170,25 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
   }, "#")
 end
 
--- CORRECAO defeito 3 (SLAB e CARVED, v1.3.0; roda antes de qualquer um dos
--- dois ser escolhido): o shader do host move cada vertice em direcao ao olho
--- quando FirstPerson.cardBlend() > 0 (Voxel3D.lua:122-130, enviado em
--- :1296-1307). Num card plano isso e projetivamente estavel; num volume
--- solido, cada canto anda numa direcao diferente, e somado a camera de
--- primeira pessoa, que fica na cabeca do sprite com near plane curto
--- (FirstPerson.lua:63-75, Voxel3D.lua:518-519), atravessa o near plane e
--- produz espetos pretos (Colonel_Aureliano, Dramatic Shape 1.7.0 + Kanto
--- First Person, campo de conflito do manifest limpo a mao). O contrato deste
--- mod e explicito: todo caminho de falha cai de volta para o card plano
--- original, nunca um corpo com espetos. Em pcall como leanCorrection ja faz
--- (main.lua:418-421), porque FirstPerson pode nao existir em toda versao
--- suportada do host; ausencia = blend zero = comportamento atual. Nao
--- tentamos compensar o rotateY: o host tambem troca o frame pedido por uma
--- direcao aparente continua em primeira pessoa (VoxelScene.lua:234-241) e
--- documenta o card de primeira pessoa como billboard cilindrico; um solido
--- nao deveria herdar esse contrato. Isto nao vira opcao de menu: nao e
--- escolha estetica, e o contrato de falha limpa.
+-- FIX for defect 3 (SLAB and CARVED, v1.3.0; runs before either of the
+-- two gets chosen): the host's shader moves every vertex toward the eye
+-- when FirstPerson.cardBlend() > 0 (Voxel3D.lua:122-130, sent at
+-- :1296-1307). On a flat card that is projectively stable; on a solid
+-- volume, each corner moves in a different direction, and combined with
+-- the first-person camera, which sits at the sprite's head with a short
+-- near plane (FirstPerson.lua:63-75, Voxel3D.lua:518-519), it crosses the
+-- near plane and produces black spikes (Colonel_Aureliano, Dramatic Shape
+-- 1.7.0 + Kanto First Person, a manifest conflict field cleaned by hand).
+-- This mod's contract is explicit: every failure path falls back to the
+-- original flat card, never a body with spikes. In a pcall like
+-- leanCorrection already does (main.lua:418-421), because FirstPerson may
+-- not exist in every supported host version; absence = zero blend =
+-- current behavior. We do not try to compensate for rotateY: the host also
+-- swaps the requested frame for a continuous apparent direction in first
+-- person (VoxelScene.lua:234-241) and documents the first-person card as a
+-- cylindrical billboard; a solid should not inherit that contract. This
+-- does not become a menu option: it is not an aesthetic choice, it is the
+-- clean-failure contract.
 local function firstPersonCardActive()
   if not (FirstPerson and FirstPerson.cardBlend) then return false end
   local ok, blend = pcall(FirstPerson.cardBlend)
@@ -2163,17 +2205,18 @@ local function warnOriginalMeshFailure(reason)
     tostring(reason))
 end
 
--- CORRECAO defeito "um mod de terceiro derruba o modo voxel do jogo inteiro"
--- (v1.4.2): o host (DramaticShapeVoxelMod/lib/SpriteBillboards.lua:65) faz
--- `def.image .. "#" .. frame` sem guarda de tipo; um `frame` nulo vindo de
--- QUALQUER mod de entidade lanca ali. Quem chama o host e
--- VoxelScene.lua:368, dentro do loop de desenho, sem pcall; a excecao sobe
--- ate Pipelines.lua, que marca o mod inteiro como broken pela sessao inteira
--- (AngelusRole: precisou desligar o Wilds of Kanto pro nosso mod voltar a
--- funcionar). Uma unica entidade com pose ruim, um unico frame, desliga o
--- modo voxel do jogo inteiro ate reiniciar. Nenhum caminho nosso que chama o
--- original pode deixar essa excecao escapar; por isso TODO chamador de
--- `originalMesh` passa por aqui, nunca chama `originalMesh` direto.
+-- FIX for the "a third-party mod takes down voxel mode for the whole
+-- game" defect (v1.4.2): the host
+-- (DramaticShapeVoxelMod/lib/SpriteBillboards.lua:65) does `def.image ..
+-- "#" .. frame` with no type guard; a nil `frame` coming from ANY entity
+-- mod throws there. The host is called by VoxelScene.lua:368, inside the
+-- draw loop, with no pcall; the exception rises up to Pipelines.lua, which
+-- marks the whole mod as broken for the entire session (AngelusRole: had
+-- to disable Wilds of Kanto for our mod to start working again). A single
+-- entity with a bad pose, a single frame, turns off voxel mode for the
+-- whole game until restart. None of our paths that call the original may
+-- let that exception escape; that is why EVERY caller of `originalMesh`
+-- goes through here, never calls `originalMesh` directly.
 local function safeOriginal(def, frame)
   local ok, mesh = pcall(originalMesh, def, frame)
   if ok then return mesh end
@@ -2181,12 +2224,12 @@ local function safeOriginal(def, frame)
   return nil
 end
 
--- v1.4.2, pente fino (itens 1 e 2): empurra um resultado para a janela
--- deslizante. `kind` e nil para sucesso, ou o tipo de falha (mask_failed,
--- build_failed, exception) para falha. Mantem drawWindowFailures e
--- drawWindowKindCounts corretos sem varrer o array: se o slot que esta
--- sendo sobrescrito era falha, tira ele das duas contagens antes de
--- escrever o novo valor por cima.
+-- v1.4.2, fine-tooth comb (items 1 and 2): pushes a result into the
+-- sliding window. `kind` is nil for success, or the failure type
+-- (mask_failed, build_failed, exception) for failure. Keeps
+-- drawWindowFailures and drawWindowKindCounts correct without scanning the
+-- array: if the slot being overwritten was a failure, it removes it from
+-- both counts before writing the new value on top.
 local function pushDrawWindow(kind)
   local slot = (drawWindowPos % DRAW_WINDOW_SIZE) + 1
   local old = drawWindow[slot]
@@ -2202,18 +2245,18 @@ local function pushDrawWindow(kind)
   drawWindowPos = drawWindowPos + 1
 end
 
--- v1.4.2, TwoTracks: registra um desenho bem sucedido (ou um caminho
--- intencional, DEPTH: OFF ou primeira pessoa) na janela.
+-- v1.4.2, TwoTracks: records a successful draw (or an intentional path,
+-- DEPTH: OFF or first person) in the window.
 local function recordDrawResult(kind)
   lastDrawResult = kind
   pushDrawWindow(nil)
 end
 
--- v1.4.2, TwoTracks: registra uma falha de desenho na janela e loga a
--- causa, uma vez por causa DISTINTA (chave = tipo + mensagem), nunca por
--- quadro. Causas diferentes (duas folhas quebradas de jeitos diferentes)
--- logam cada uma a sua vez; a MESMA causa repetindo (a mesma folha ruim
--- toda vez) loga so uma.
+-- v1.4.2, TwoTracks: records a draw failure in the window and logs the
+-- cause, once per DISTINCT cause (key = type + message), never per frame.
+-- Different causes (two sheets broken in different ways) each log once;
+-- the SAME cause repeating (the same bad sheet every time) logs only
+-- once.
 local function recordDrawFailure(kind, message)
   lastDrawResult = kind
   pushDrawWindow(kind)
@@ -2226,10 +2269,10 @@ end
 
 local DRAW_FAILURE_KIND_PRIORITY = { "mask_failed", "build_failed", "exception" }
 
--- v1.4.2, pente fino (item 2): a causa DOMINANTE da janela, nao a mais
--- recente. So troca o melhor candidato quando a contagem e estritamente
--- maior, entao um empate desempata pela ordem fixa acima (deterministico),
--- nunca pela ordem em que as falhas chegaram.
+-- v1.4.2, fine-tooth comb (item 2): the window's DOMINANT cause, not the
+-- most recent one. Only swaps the best candidate when the count is
+-- strictly greater, so a tie breaks by the fixed order above
+-- (deterministic), never by the order the failures arrived in.
 local function dominantFailureKind()
   local bestKind, bestCount = nil, 0
   for _, kind in ipairs(DRAW_FAILURE_KIND_PRIORITY) do
@@ -2254,31 +2297,32 @@ local STATUS_FAILURE_LABELS = {
   exception = "DRAW ERROR",
 }
 
--- v1.4.2, AngelusRole/Tyler Durden/TwoTracks: a row de STATUS existe porque
--- nenhum dos tres reports tinha como saber, olhando o jogo, por que os
--- personagens nao estavam desenhando voxel. Ordem de precedencia (Kim): NO
--- HOST e REPLACED primeiro, sao estados do patch e valem para todo desenho;
--- DEPTH: OFF e primeira pessoa por leitura de estado ao vivo, porque sao
--- escolhas uniformes que valem para o quadro inteiro, nao por sprite; so
--- depois a proporcao de falha na janela deslizante dos ultimos
--- DRAW_WINDOW_SIZE desenhos, que so escala para um erro quando METADE OU
--- MAIS da janela e falha (item C: uma folha ruim isolada, ou intercalada
--- com folhas boas, nao pode deixar o STATUS preso em erro).
+-- v1.4.2, AngelusRole/Tyler Durden/TwoTracks: the STATUS row exists
+-- because none of the three reports had a way to know, just by looking at
+-- the game, why characters were not drawing as voxel. Precedence order
+-- (Kim): NO HOST and REPLACED first, they are patch states and apply to
+-- every draw; DEPTH: OFF and first person by live state read, because
+-- they are uniform choices that apply to the whole frame, not per sprite;
+-- only then the failure proportion in the sliding window of the last
+-- DRAW_WINDOW_SIZE draws, which only escalates to an error when HALF OR
+-- MORE of the window is failures (item C: a single bad sheet, isolated or
+-- interleaved with good sheets, cannot leave STATUS stuck at error).
 local function statusValue()
-  -- v1.4.2, pente fino: `patched`, nunca `SpriteBillboards ~= nil`. Um
-  -- patch que comecou mas nao terminou (tabela do host recusou uma
-  -- escrita) nunca chega a marcar `patched`, entao isto ainda le NO HOST
-  -- em vez de REPLACED, mesmo que `SpriteBillboards` tivesse sido setada
-  -- cedo demais numa versao anterior deste codigo.
+  -- v1.4.2, fine-tooth comb: `patched`, never `SpriteBillboards ~= nil`. A
+  -- patch that started but did not finish (host table refused a write)
+  -- never gets to mark `patched`, so this still reads NO HOST instead of
+  -- REPLACED, even if `SpriteBillboards` had been set too early in an
+  -- earlier version of this code.
   if not patched then return "NO HOST" end
   if SpriteBillboards.mesh ~= installedMesh then
     warnReplacedMesh()
     return "REPLACED"
   end
   if (optionState.depth or readOption(OPTION_BY_KEY.depth)) == "off" then return "OFF" end
-  -- Intencional, nao defeito: em CARD devolvemos o card original de proposito
-  -- em primeira pessoa (ver a opcao first_person e fpPullSeguro). Em SOLID
-  -- nada disso acontece e a linha nao deve mentir dizendo que aconteceu.
+  -- Intentional, not a defect: in CARD we return the original card on
+  -- purpose in first person (see the first_person option and
+  -- fpPullSeguro). In SOLID none of this happens and the row must not lie
+  -- by saying it did.
   if firstPersonCardActive() then
     local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
     if fp ~= "solid" or installedDraw == nil then return "FIRST PERSON" end
@@ -2289,23 +2333,24 @@ local function statusValue()
   return "ACTIVE"
 end
 
--- `activate` VAZIO NAO E ENFEITE, e o conserto de um defeito de verdade.
+-- AN EMPTY `activate` IS NOT DECORATION, it is the fix for a real defect.
 --
--- OptionsMenu:update (src/ui/OptionsMenu.lua:549-566) trata A, esquerda e
--- direita no mesmo ramo, e escolhe o que fazer nesta ordem: se a linha tem
--- `activate`, chama; senao, se tem `step`, cicla; SENAO, se foi A, trata como
--- CANCEL e da POP NO MENU. Uma linha so de leitura, com `value` e sem os dois
--- outros, cai nesse terceiro caso: apertar A em cima de STATUS fechava a tela
--- de opcoes inteira, como se o jogador tivesse escolhido sair.
+-- OptionsMenu:update (src/ui/OptionsMenu.lua:549-566) handles A, left and
+-- right in the same branch, and picks what to do in this order: if the
+-- row has `activate`, call it; else, if it has `step`, cycle it; ELSE, if
+-- it was A, treat it as CANCEL and POP THE MENU. A read-only row, with
+-- `value` and neither of the other two, falls into that third case:
+-- pressing A over STATUS closed the whole options screen, as if the
+-- player had chosen to exit.
 --
--- E o A e a tecla que a pessoa aperta primeiro quando quer entender uma linha
--- que ela nao reconhece, que e exatamente a situacao para a qual a row de
--- STATUS foi criada. Um `activate` que nao faz nada mantem o cursor onde
--- estava, que e o comportamento certo para uma linha que so informa.
+-- And A is the key a person presses first when they want to understand a
+-- row they do not recognize, which is exactly the situation the STATUS
+-- row was created for. An `activate` that does nothing keeps the cursor
+-- where it was, which is the right behavior for a row that only informs.
 --
--- Achado por revisao independente lendo o motor, nao por teste nosso: nenhum
--- gate daqui aperta tecla no menu de verdade. Ver o passo de tooling da
--- proxima versao.
+-- Found by independent review reading the engine, not by a test of ours:
+-- no gate here presses a key in the actual menu. See the tooling step for
+-- the next version.
 local function readOnlyRow(id, label, value)
   return {
     id = mod.id .. ":" .. id,
@@ -2321,11 +2366,12 @@ end
 
 local warnedReplacedDraw = false
 
--- Mesma ideia da row de STATUS, para o canal novo. Os tres reports que
--- motivaram o STATUS (AngelusRole, TwoTracks, Tyler Durden) tinham em comum
--- nao ter como saber, olhando o jogo, por que nada acontecia. Um canal que
--- depende de um SEGUNDO ponto do host tem ainda mais jeitos de nao acontecer,
--- entao ele nasce dizendo em qual deles esta.
+-- Same idea as the STATUS row, for the new channel. The three reports
+-- that motivated STATUS (AngelusRole, TwoTracks, Tyler Durden) had in
+-- common that there was no way to know, just by looking at the game, why
+-- nothing was happening. A channel that depends on a SECOND point in the
+-- host has even more ways to not happen, so it is born saying which one
+-- it is at.
 local function lifeStatusValue()
   if not patched then return "NO HOST" end
   if not drawPatched then return "NO CHANNEL" end
@@ -2354,12 +2400,12 @@ local function lifeStatusRow()
   return readOnlyRow("life", "LIFE", lifeStatusValue)
 end
 
--- ====================================================== PRESET DE CAMERA
+-- ====================================================== CAMERA PRESET
 --
--- MEDIDO, nao escolhido. O harness rendeu o red frame 0 em cada degrau de
--- camera do host contra cada espessura do menu, e contou que fracao dos pixels
--- desenhados vem da arte do artista (faces de frente e de costas) contra
--- superficie que este mod inventou (topo, laterais, base):
+-- MEASURED, not chosen. The harness rendered the red frame 0 at every
+-- host camera rung against every menu thickness, and counted what
+-- fraction of the drawn pixels come from the artist's art (front and back
+-- faces) versus surface this mod invented (top, sides, bottom):
 --
 --                 rung 15   rung 35   rung 50   rung 75
 --     depth  1     76.3      88.4      92.8      97.6
@@ -2368,22 +2414,25 @@ end
 --     depth  5     40.1      62.9      73.8      89.1
 --     depth 10     26.0      49.6      62.1      81.0
 --
--- O criterio nao foi inventado: e o que JA E O PADRAO. rung 35 com depth 3 da
--- 73.4% de arte, e essa e a configuracao que a comunidade viu, usou e aprovou.
--- Entao para cada degrau a recomendacao e a maior espessura que ainda fica
--- nesse patamar. Sai 1, 3, 5, 10, e a monotonia e consequencia da tabela, nao
--- um arredondamento nosso.
+-- The criterion was not invented: it is what IS ALREADY THE DEFAULT. rung
+-- 35 with depth 3 gives 73.4% art, and that is the configuration the
+-- community has seen, used and approved. So for every rung the
+-- recommendation is the largest thickness that still stays at that level.
+-- Out comes 1, 3, 5, 10, and the monotonicity is a consequence of the
+-- table, not a rounding of ours.
 --
--- O RESULTADO INTERESSANTE: com essas espessuras a composicao fica quase
--- constante em todo degrau (arte entre 73 e 81%). Uma camera mais deitada olha
--- mais para o topo, e o preset compensa exatamente isso tirando espessura. E
--- por isso que ele NAO mexe em FRONT SHAPE nem em TOP DOME: depois de acertar a
--- espessura, a proporcao entre a face da frente e a de topo ja e a mesma em
--- todo lugar, entao nao existe motivo medido para variar o sombreamento junto.
+-- THE INTERESTING RESULT: with these thicknesses the composition stays
+-- nearly constant at every rung (art between 73 and 81%). A more level
+-- camera looks more toward the top, and the preset compensates for
+-- exactly that by removing thickness. That is why it does NOT touch FRONT
+-- SHAPE or TOP DOME: once the thickness is right, the ratio between the
+-- front face and the top one is already the same everywhere, so there is
+-- no measured reason to vary the shading along with it.
 --
--- E o de baixo para cima tambem vale: no degrau 75 da para usar a espessura
--- MAXIMA do menu e ainda ter mais arte na tela do que a configuracao padrao tem
--- hoje. Quem joga naquela camera esta deixando volume na mesa sem saber.
+-- And the reverse also holds: at rung 75 you can use the menu's MAXIMUM
+-- thickness and still have more art on screen than today's default
+-- configuration has. Anyone playing at that camera is leaving volume on
+-- the table without knowing it.
 local CAMERA_PRESET = {
   { rung = 15, depth = 1 },
   { rung = 35, depth = 3 },
@@ -2391,9 +2440,9 @@ local CAMERA_PRESET = {
   { rung = 75, depth = 10 },
 }
 
--- O degrau atual em graus, do jeito que o host mede (0 deita o card no chao, 90
--- levanta ele). Devolve nil quando nao da para saber, e ai a row diz isso em
--- vez de chutar.
+-- The current rung in degrees, the way the host measures it (0 lays the
+-- card flat on the ground, 90 raises it). Returns nil when there is no way
+-- to know, and then the row says so instead of guessing.
 local function cameraRung()
   if not VoxelState then return nil end
   local ok, value = pcall(function() return VoxelState.angle end)
@@ -2414,12 +2463,13 @@ local function presetParaAgora()
   return melhor, graus
 end
 
--- Row de ACAO, nao de ciclo. Apertar A aplica; esquerda e direita nao fazem
--- nada. E deliberado que ela nao seja automatica: o mod mexer sozinho na
--- escolha de alguem toda vez que a pessoa troca de camera e a mesma familia do
--- defeito em que A numa row de leitura fechava o menu, ou seja fazer o que
--- ninguem pediu. Aqui a pessoa pede, ve o valor mudar na row de VOXEL CHARS
--- logo abaixo, e o save guarda o que ela escolheu.
+-- An ACTION row, not a cycling one. Pressing A applies it; left and right
+-- do nothing. It is deliberate that it is not automatic: the mod changing
+-- someone's choice on its own every time the person switches camera is
+-- the same family of defect as A on a read-only row closing the menu,
+-- that is, doing what nobody asked for. Here the person asks, sees the
+-- value change in the VOXEL CHARS row right below, and the save stores
+-- what they chose.
 local function cameraPresetRow()
   return {
     id = mod.id .. ":camera_preset",
@@ -2443,11 +2493,11 @@ local function cameraPresetRow()
   }
 end
 
--- v1.4.2: registrado SEMPRE, com ou sem host (Colonel_Aureliano perdeu vinte
--- minutos numa reinstalacao limpa, e o Angelus achou que era o Wilds of
--- Kanto, porque sem host a row nem aparecia). Sem host, so a row de STATUS
--- (dizendo NO HOST); com host, STATUS no topo e as rows de sempre depois,
--- na mesma ordem.
+-- v1.4.2: ALWAYS registered, with or without a host (Colonel_Aureliano
+-- lost twenty minutes on a clean reinstall, and Angelus thought it was
+-- Wilds of Kanto, because without a host the row would not even show up).
+-- Without a host, only the STATUS row (saying NO HOST); with a host,
+-- STATUS on top and the usual rows after, in the same order.
 local function registerOptionsRows()
   if optionsRegistered then return end
   optionsRegistered = true
@@ -2459,10 +2509,10 @@ local function registerOptionsRows()
       out[#out + 1] = lifeStatusRow()
       out[#out + 1] = cameraPresetRow()
       for _, opt in ipairs(OPTIONS) do
-        -- As tres opcoes de vida so aparecem quando o canal existe. Um menu
-        -- que oferece BREATH num host sem Voxel3D.draw substituivel promete o
-        -- que nao pode cumprir, e essa e exatamente a experiencia que a row de
-        -- STATUS foi criada para acabar.
+        -- The three life options only show up when the channel exists. A
+        -- menu that offers BREATH on a host without a replaceable
+        -- Voxel3D.draw promises what it cannot deliver, and that is
+        -- exactly the experience the STATUS row was created to end.
         if not (LIFE_OPTION_KEYS[opt.key] and not drawPatched) then
           out[#out + 1] = makeOptionRow(opt)
         end
@@ -2479,105 +2529,110 @@ local function registerOptionsRows()
 end
 
 -- ========================================================================
--- VIDA: animacao por matriz, uma instancia de cada vez
+-- LIFE: matrix animation, one instance at a time
 -- ========================================================================
 --
--- O QUE ESTA SECAO FAZ, EM UMA FRASE: o host monta uma matriz de mundo nova
--- para cada personagem a cada quadro; a gente pos-multiplica essa matriz por
--- uma transformacao LOCAL pequena (escala em Y, cisalhamento em X e em Z) e
--- devolve. Nenhum vertice e escrito, nenhuma malha e duplicada.
+-- WHAT THIS SECTION DOES, IN ONE SENTENCE: the host builds a new world
+-- matrix for every character every frame; we post-multiply that matrix by
+-- a small LOCAL transform (scale in Y, shear in X and in Z) and return it.
+-- No vertex is written, no mesh is duplicated.
 --
--- POR QUE ISSO E CORRETO, e nao um truque. A cadeia do host e
+-- WHY THIS IS CORRECT, and not a trick. The host's chain is
 --
 --     M = T(px+8, y, py+8) . Rx(lean - pi/2) . [S(-1,1,1)] . T(-8,0,0)
 --
--- (row-major, translacao na 4a coluna; VoxelScene.billboardMatrix). Eu quero
--- injetar a transformacao ANTES da rotacao, no espaco local do card, para o
--- efeito ser "estica para cima a partir do chao" e nao "estica na direcao da
--- camera". Pos-multiplicar poe a transformacao no lugar mais local de todos,
--- depois do T(-8,0,0). Isso e equivalente porque:
+-- (row-major, translation in the 4th column; VoxelScene.billboardMatrix).
+-- I want to inject the transform BEFORE the rotation, in the card's local
+-- space, so the effect is "stretches upward from the ground" and not
+-- "stretches toward the camera". Post-multiplying puts the transform in
+-- the most local spot of all, after the T(-8,0,0). This is equivalent
+-- because:
 --
---   S(1,s,1) comuta com T(-8,0,0)   (uma escala so em Y, uma translacao so
---                                    em X: eixos ortogonais)
---   S(1,s,1) comuta com S(-1,1,1)   (duas diagonais)
+--   S(1,s,1) commutes with T(-8,0,0)   (a scale only in Y, a translation
+--                                        only in X: orthogonal axes)
+--   S(1,s,1) commutes with S(-1,1,1)   (two diagonals)
 --
--- entao M . S = T . Rx . S(-1,1,1) . S(1,s,1) . T(-8,0,0), que e exatamente
--- onde eu queria a escala. O cisalhamento H (x' = x + kx.y, z' = z + kz.y)
--- tambem comuta com T(-8,0,0), mas NAO com o espelho: por isso kx e negado
--- quando m[1] < 0, senao o balanco viraria de lado junto com o personagem.
+-- so M . S = T . Rx . S(-1,1,1) . S(1,s,1) . T(-8,0,0), which is exactly
+-- where I wanted the scale. The shear H (x' = x + kx.y, z' = z + kz.y)
+-- also commutes with T(-8,0,0), but NOT with the mirror: that is why kx is
+-- negated when m[1] < 0, otherwise the sway would flip sideways along with
+-- the character.
 --
--- O PIVO SAO OS PES. A malha tem y=0 no chao (o proprio host documenta "its
--- feet at local y = 0 land on y"), entao escalar y em torno de zero mantem o
--- pe plantado e levanta a cabeca, e cisalhar proporcional a y nao arrasta o
--- pe. E o que faz isto parecer corpo e nao adesivo deslizando.
+-- THE PIVOT IS THE FEET. The mesh has y=0 at the ground (the host itself
+-- documents "its feet at local y = 0 land on y"), so scaling y around zero
+-- keeps the foot planted and raises the head, and shearing proportional to
+-- y does not drag the foot. That is what makes this read as a body and not
+-- a sticker sliding around.
 
--- Amplitudes e ritmos. Segundos e fracao de altura de celula.
-local BREATH_PERIOD = 3.1      -- respiracao calma de adulto parado
-local SWAY_PERIOD = 6.2        -- metade do ritmo, para nao bater junto
-local LAG_STIFFNESS = 90       -- mola do movimento secundario
-local LAG_DAMPING = 12         -- abaixo do critico: passa do ponto e volta
-local LAG_REFERENCE_SPEED = 60 -- px/s de uma caminhada normal (16 px / 16 quadros)
-local LIFE_CELL = 16           -- a grade de caminhada do jogo
-local LIFE_MATCH_RADIUS = 24   -- px: o quanto uma instancia pode ter andado
--- DERIVADO, nunca escrito a mao. A varredura de vizinhos precisa alcancar
--- TODA celula que possa conter um ponto dentro do raio, e essa relacao e
--- geometrica: um raio de 24 px sobre celulas de 16 px alcanca DUAS celulas,
--- nao uma (px' = 15 esta na celula 0, px = 32 na celula 2, e a distancia entre
--- eles e 17, bem dentro de 24).
+-- Amplitudes and rhythms. Seconds and fraction of cell height.
+local BREATH_PERIOD = 3.1      -- calm breathing of a standing adult
+local SWAY_PERIOD = 6.2        -- half the rate, so they never beat together
+local LAG_STIFFNESS = 90       -- secondary motion's spring
+local LAG_DAMPING = 12         -- below critical: overshoots and comes back
+local LAG_REFERENCE_SPEED = 60 -- px/s of a normal walk (16 px / 16 frames)
+local LIFE_CELL = 16           -- the game's walking grid
+local LIFE_MATCH_RADIUS = 24   -- px: how far an instance may have walked
+-- DERIVED, never hand-written. The neighbor scan needs to reach EVERY cell
+-- that could contain a point within the radius, and that relation is
+-- geometric: a 24 px radius over 16 px cells reaches TWO cells, not one
+-- (px' = 15 is in cell 0, px = 32 in cell 2, and the distance between them
+-- is 17, well within 24).
 --
--- A primeira versao varria so as oito celulas adjacentes com o raio em 24, e
--- revisao independente pegou: nesse vao a instancia nao era encontrada e
--- renascia com fase nova, que e exatamente o escorregamento de fase que este
--- rastreador existe para evitar. Derivar o alcance do raio faz os dois numeros
--- nao poderem mais divergir.
+-- The first version only scanned the eight adjacent cells with the radius
+-- at 24, and independent review caught it: in that gap the instance was
+-- not found and was reborn with a new phase, which is exactly the phase
+-- slipping this tracker exists to prevent. Deriving the cell reach from
+-- the radius makes the two numbers unable to diverge anymore.
 local LIFE_MATCH_CELLS = math.ceil(LIFE_MATCH_RADIUS / 16)
-local LIFE_FORGET_SECONDS = 2  -- sem aparecer, a instancia e esquecida
+local LIFE_FORGET_SECONDS = 2  -- without showing up, the instance is forgotten
 local LIFE_MAX_INSTANCES = 512
 
--- PERSONALIDADE POR FOLHA (passo 7 do roadmap). Multiplicadores sobre o que o
--- menu escolheu: ritmo, amplitude de respiracao, amplitude de balanco. Ausente
--- da tabela = 1, 1, 1. A forma e a mesma de EYE_MARKS, que ja tem 112 entradas
--- e provou que uma tabela escrita a mao envelhece bem neste mod.
+-- PER-SHEET PERSONALITY (roadmap step 7). Multipliers on top of what the
+-- menu chose: rate, breath amplitude, sway amplitude. Absent from the
+-- table = 1, 1, 1. Same shape as EYE_MARKS, which already has 112 entries
+-- and proved that a hand-written table ages well in this mod.
 --
--- Isto NAO inventa movimento novo: so diz que um velho sentado respira devagar
--- e quase nao balanca, e que um nadador parado na agua balanca mais que um
--- guarda em posicao de sentido. Nenhum pixel novo foi desenhado para isso.
+-- This does NOT invent new movement: it only says that a sitting old man
+-- breathes slowly and barely sways, and that a swimmer standing in water
+-- sways more than a guard at attention. No new pixel was drawn for this.
 local LIFE_PERSONALITY = {
-  -- quem esta dormindo ou sentado: lento e quase parado
+  -- sleeping or sitting: slow and nearly still
   gambler_asleep   = { rate = 0.45, breath = 1.35, sway = 0.0 },
   sleeping_boy     = { rate = 0.45, breath = 1.35, sway = 0.0 },
-  -- quem esta em posicao de sentido: ritmo normal, sem balanco
+  -- standing at attention: normal rate, no sway
   guard            = { rate = 1.00, breath = 0.80, sway = 0.15 },
   officer_jenny    = { rate = 1.00, breath = 0.80, sway = 0.20 },
   scientist        = { rate = 1.05, breath = 0.85, sway = 0.30 },
-  -- quem esta na agua ou em pe ha muito tempo: mais balanco
+  -- in the water or standing for a long time: more sway
   swimmer          = { rate = 1.15, breath = 1.10, sway = 1.60 },
   fisher           = { rate = 0.85, breath = 1.05, sway = 1.25 },
-  -- criancas e gente agitada: rapido e curto
+  -- children and restless people: fast and short
   youngster        = { rate = 1.30, breath = 0.90, sway = 1.20 },
   girl             = { rate = 1.25, breath = 0.90, sway = 1.15 },
   little_girl      = { rate = 1.40, breath = 0.85, sway = 1.30 },
-  -- quem carrega peso
+  -- carrying weight
   super_nerd       = { rate = 0.90, breath = 1.15, sway = 0.75 },
   gambler          = { rate = 0.95, breath = 1.10, sway = 0.85 },
-  -- OBJETOS. Uma item ball nao respira. Sem esta entrada, a poke_ball do chao
-  -- ficaria pulsando, que e o defeito mais obvio possivel desta feature.
+  -- OBJECTS. An item ball does not breathe. Without this entry, the
+  -- poke_ball on the ground would end up pulsing, which is the most
+  -- obvious defect this feature could possibly have.
   poke_ball        = { rate = 1, breath = 0, sway = 0, lag = 0 },
   boulder          = { rate = 1, breath = 0, sway = 0, lag = 0 },
   snorlax          = { rate = 0.40, breath = 1.60, sway = 0.0 },
 }
 
--- Rastreador de instancias.
+-- Instance tracker.
 --
--- POR QUE ELE EXISTE, e nao so um hash da posicao: se a fase da animacao for
--- f(posicao), o personagem andando muda de posicao a cada quadro e a fase
--- escorrega junto (revisao externa chamou isso de "phase slipping", e esta
--- certa: ele respiraria em supervelocidade andando num sentido e congelaria
--- andando no outro). A fase tem que avancar com o TEMPO e so com o tempo.
+-- WHY IT EXISTS, and is not just a hash of position: if the animation's
+-- phase were f(position), a walking character changes position every
+-- frame and the phase slips along with it (external review called this
+-- "phase slipping", and it is right: it would breathe at superspeed
+-- walking one direction and freeze walking the other). The phase has to
+-- advance with TIME and only with time.
 --
--- Entao a gente casa cada desenho com uma instancia conhecida por
--- proximidade, e carrega a fase de um quadro para o outro. Sem isso nao ha
--- movimento secundario nenhum: mola precisa de estado.
+-- So we match every draw with a known instance by proximity, and carry
+-- the phase from one frame to the next. Without this there is no
+-- secondary motion at all: a spring needs state.
 local lifeInstances = {}
 local lifeCount = 0
 
@@ -2586,11 +2641,12 @@ local function lifeCellKey(sheet, px, py)
     "\1" .. math.floor(py / LIFE_CELL)
 end
 
--- Fase inicial de uma instancia nova. Determinista (mesma folha no mesmo lugar
--- volta com a mesma fase depois de trocar de mapa e voltar) e bem espalhada:
--- as constantes sao irracionais de proposito, porque px e py sao multiplos de
--- 16 e qualquer fator racional simples alinharia instancias vizinhas na mesma
--- fase, que e exatamente o coro de robos que a gente esta tentando evitar.
+-- Initial phase for a new instance. Deterministic (the same sheet in the
+-- same spot comes back with the same phase after switching maps and
+-- returning) and well spread out: the constants are irrational on
+-- purpose, because px and py are multiples of 16 and any simple rational
+-- factor would line up neighboring instances on the same phase, which is
+-- exactly the robot choir we are trying to avoid.
 local function lifeSeedPhase(px, py)
   local v = px * 0.6180339887 + py * 0.4142135624
   return v - math.floor(v)
@@ -2606,15 +2662,16 @@ local function lifeForget(now)
   end
 end
 
--- Devolve a instancia deste desenho, criando se for a primeira vez.
+-- Returns this draw's instance, creating one if it is the first time.
 --
--- Tres tentativas, nesta ordem:
---   1. celula exata. Cobre o caso normal (parado) E a copia refletida na agua,
---      que o host desenha pela MESMA funcao no mesmo quadro com a mesma
---      matriz: ela cai na mesma instancia e nao vira uma segunda pessoa.
---   2. as oito celulas vizinhas, mesma folha, dentro do raio. E o personagem
---      que acabou de atravessar a fronteira de uma celula andando.
---   3. instancia nova.
+-- Three attempts, in this order:
+--   1. exact cell. Covers the normal case (standing) AND the reflected
+--      copy in the water, which the host draws through the SAME function
+--      in the same frame with the same matrix: it lands on the same
+--      instance and does not become a second person.
+--   2. the eight neighboring cells, same sheet, within the radius. This is
+--      the character that just crossed a cell boundary while walking.
+--   3. a new instance.
 local function lifeInstance(sheet, px, py, now)
   local key = lifeCellKey(sheet, px, py)
   local inst = lifeInstances[key]
@@ -2625,8 +2682,8 @@ local function lifeInstance(sheet, px, py, now)
         if dx ~= 0 or dy ~= 0 then
           local k = lifeCellKey(sheet, px + dx * LIFE_CELL, py + dy * LIFE_CELL)
           local c = lifeInstances[k]
-          -- `c.seen < now` impede roubar uma instancia que JA foi vista neste
-          -- quadro: essa e outra pessoa, nao esta.
+          -- `c.seen < now` prevents stealing an instance that was ALREADY
+          -- seen this frame: that is a different person, not this one.
           if c and c.seen < now then
             local ddx, ddy = px - c.px, py - c.py
             local d = ddx * ddx + ddy * ddy
@@ -2643,9 +2700,10 @@ local function lifeInstance(sheet, px, py, now)
         phase = lifeSeedPhase(px, py),
         px = px, py = py,
         lagX = 0, lagVX = 0, lagZ = 0, lagVZ = 0,
-        -- distancia total ja percorrida, em pixels de mundo. E dela que sai a
-        -- fase da PASSADA: o jogo anda 16 px por passo, entao cada 16 px
-        -- percorridos e uma pisada, sem precisar ler frame nenhum.
+        -- total distance already traveled, in world pixels. This is where
+        -- the FOOTFALL phase comes from: the game walks 16 px per step, so
+        -- every 16 px traveled is a footfall, with no need to read any
+        -- frame.
         andado = 0, velocidade = 0,
         seen = now,
       }
@@ -2657,37 +2715,41 @@ local function lifeInstance(sheet, px, py, now)
   return inst
 end
 
--- Avanca a instancia ate `now`. Idempotente dentro do mesmo quadro: a segunda
--- chamada (o reflexo na agua) tem dt = 0 e nao mexe em nada. E o que dispensa
--- este codigo de saber onde comeca e termina um quadro.
+-- Advances the instance up to `now`. Idempotent within the same frame: the
+-- second call (the water reflection) has dt = 0 and touches nothing. That
+-- is what frees this code from needing to know where a frame begins and
+-- ends.
 local function lifeAdvance(inst, px, py, now, rate)
   local dt = now - inst.seen
   if dt <= 0 then return end
-  -- Um dt gigante quer dizer que a instancia sumiu e voltou (troca de mapa,
-  -- menu aberto, jogo em pausa). Continuar a mola com ele daria um estouro.
+  -- A huge dt means the instance disappeared and came back (map switch,
+  -- menu open, game paused). Carrying the spring forward with it would
+  -- blow it up.
   if dt > 0.25 then dt = 1 / 60 end
 
   inst.phase = (inst.phase + dt * rate) % 1
 
-  -- Velocidade em px/s a partir do deslocamento real. E a unica fonte honesta:
-  -- o mod nao ve o estado de caminhada do NPC, so onde ele estava e onde esta.
+  -- Speed in px/s from the actual displacement. It is the only honest
+  -- source: the mod does not see the NPC's walking state, only where it
+  -- was and where it is.
   local dx, dz = px - inst.px, py - inst.py
   local vx, vz = dx / dt, dz / dt
   inst.px, inst.py = px, py
 
-  -- Distancia percorrida e velocidade suavizada. A distancia da a FASE da
-  -- passada; a velocidade da a AMPLITUDE, e e o que faz o efeito sumir sozinho
-  -- quando o personagem para, sem precisar de um "esta andando?" booleano que
-  -- ligaria e desligaria de estalo.
+  -- Distance traveled and smoothed speed. Distance gives the footfall's
+  -- PHASE; speed gives the AMPLITUDE, and that is what makes the effect
+  -- disappear on its own when the character stops, with no need for an
+  -- "is walking?" boolean that would snap on and off.
   inst.andado = (inst.andado or 0) + math.sqrt(dx * dx + dz * dz)
   local vel = math.sqrt(vx * vx + vz * vz) / LAG_REFERENCE_SPEED
   if vel > 1 then vel = 1 end
-  -- Suaviza para a amplitude nao piscar quando um quadro anda 0 px por
-  -- arredondamento, que acontece em toda passada.
+  -- Smooths so the amplitude does not flicker when a frame moves 0 px due
+  -- to rounding, which happens on every footfall.
   inst.velocidade = (inst.velocidade or 0) + (vel - (inst.velocidade or 0)) * 0.25
 
-  -- Mola de segunda ordem perseguindo o negativo da velocidade: o corpo fica
-  -- para tras enquanto acelera, e passa do ponto quando o personagem para.
+  -- Second-order spring chasing the negative of the velocity: the body
+  -- lags behind while accelerating, and overshoots when the character
+  -- stops.
   local alvoX = -vx / LAG_REFERENCE_SPEED
   local alvoZ = -vz / LAG_REFERENCE_SPEED
   inst.lagVX = inst.lagVX +
@@ -2700,36 +2762,40 @@ local function lifeAdvance(inst, px, py, now, rate)
   inst.seen = now
 end
 
--- Pos-multiplica `m` (row-major, 16 numeros) pela transformacao local
+-- Post-multiplies `m` (row-major, 16 numbers) by the local transform
 --
---     L = S(1, s, 1) . H(kx, kz)     com H: x' = x + kx.y,  z' = z + kz.y
+--     L = S(1, s, 1) . H(kx, kz)     with H: x' = x + kx.y,  z' = z + kz.y
 --
--- e devolve uma tabela NOVA. Nova, e nao mutacao no lugar, mesmo tendo
--- verificado que o host aloca a matriz a cada chamada: se um host futuro
--- reciclar uma matriz de rascunho, mutar acumularia o efeito a cada quadro ate
--- explodir, e esse modo de falha e caro demais para o que se economiza.
--- Pos-multiplica `m` pela transformacao LOCAL
+-- and returns a NEW table. New, not an in-place mutation, even though we
+-- have verified the host allocates the matrix on every call: if a future
+-- host recycled a scratch matrix, mutating would accumulate the effect
+-- every frame until it blew up, and that failure mode is too expensive
+-- for what it saves.
+-- Post-multiplies `m` by the LOCAL transform
 --
---     L = [ sx  kx  0  8-8sx ]      escala em X com pivo no CENTRO da celula
---         [ 0   s   0  0     ]      escala em Y com pivo nos PES
---         [ 0   kz  1  0     ]      cisalhamento proporcional a altura
+--     L = [ sx  kx  0  8-8sx ]      scale in X pivoted at the cell's CENTER
+--         [ 0   s   0  0     ]      scale in Y pivoted at the FEET
+--         [ 0   kz  1  0     ]      shear proportional to height
 --         [ 0   0   0  1     ]
 --
--- e devolve tabela NOVA.
+-- and returns a NEW table.
 --
--- POR QUE O X E DIFERENTE DOS OUTROS. Escala em Y e cisalhamento COMUTAM com o
--- T(-8,0,0) local do host, entao pos-multiplicar ja os coloca no lugar certo.
--- Escala em X NAO comuta: S(sx,1,1) . T(-8,0,0) escala o -8 junto, e o
--- personagem engordaria so para um lado, a partir da borda esquerda da folha em
--- vez do proprio eixo. Por isso o X entra como T(8,0,0) . S(sx,1,1) . T(-8,0,0),
--- que e o que produz o termo (8 - 8sx) na coluna 4.
+-- WHY X IS DIFFERENT FROM THE OTHERS. Scale in Y and shear COMMUTE with
+-- the host's local T(-8,0,0), so post-multiplying already puts them in the
+-- right place. Scale in X does NOT commute: S(sx,1,1) . T(-8,0,0) scales
+-- the -8 along with it, and the character would fatten to only one side,
+-- from the sheet's left edge instead of its own axis. That is why X enters
+-- as T(8,0,0) . S(sx,1,1) . T(-8,0,0), which is what produces the (8 -
+-- 8sx) term in column 4.
 --
--- Conferido no papel: o ponto local (8, 0, z), o centro do pe, vai parar em
--- col4 + 8.col1 com e sem a escala. O pe fica plantado e o corpo engorda para os
--- dois lados, que e o unico jeito de achatar sem o personagem escorregar.
+-- Checked on paper: the local point (8, 0, z), the center of the foot,
+-- ends up at col4 + 8.col1 with and without the scale. The foot stays
+-- planted and the body fattens to both sides, which is the only way to
+-- squash without the character sliding.
 --
--- Escrito aberto, sem laco sobre indices, porque este e o caminho mais quente do
--- mod: roda uma vez por personagem por desenho, duas vezes por quadro cada.
+-- Written out flat, with no loop over indices, because this is the mod's
+-- hottest path: it runs once per character per draw, twice per frame
+-- each.
 local function lifeApply(m, s, kx, kz, sx, corr)
   local out = {
     m[1], m[2], m[3], m[4],
@@ -2737,33 +2803,35 @@ local function lifeApply(m, s, kx, kz, sx, corr)
     m[9], m[10], m[11], m[12],
     m[13], m[14], m[15], m[16],
   }
-  -- A TRANSFORMACAO E CONJUGADA PELA CORRECAO DE INCLINACAO, e sem isso ela
-  -- opera no eixo errado. Isto era um defeito em producao.
+  -- THE TRANSFORM IS CONJUGATED BY THE TILT CORRECTION, and without this
+  -- it operates on the wrong axis. This was a defect in production.
   --
-  -- O builder devolve o vertice ja contra-rotacionado: `p()` aplica Rx(corr)
-  -- com corr = pi/2 menos o angulo da camera, e o host desfaz com
-  -- Rx(angulo - pi/2). Liquido, o personagem fica em pe. Mas pos-multiplicar
-  -- aqui poe a nossa transformacao no espaco da MALHA, que esta girado pelo
-  -- pitch, e nao no espaco do personagem. O mundo entao ve Rx(t)*L*Rx(-t) em
-  -- vez de L.
+  -- The builder returns the vertex already counter-rotated: `p()` applies
+  -- Rx(corr) with corr = pi/2 minus the camera angle, and the host undoes
+  -- it with Rx(angle - pi/2). Net, the character ends up standing. But
+  -- post-multiplying here puts our transform in the MESH's space, which is
+  -- rotated by the pitch, not in the character's space. The world then
+  -- sees Rx(t)*L*Rx(-t) instead of L.
   --
-  -- Medido: com BREATH SUBTLE a cabeca subia 16*eps*cos^2(corr) em vez de
-  -- 16*eps. No degrau padrao (35) isso e 33% do prometido; no degrau 15 sobra
-  -- 7%. E aparecia deriva em Z de 16*eps*sin*cos, ate 0.079 px, empurrando o
-  -- corpo para tras sem ninguem pedir. O MOTION LAG era o pior: o termo kz
-  -- virava 82% vertical no degrau padrao, entao "inercia" era em boa parte o
-  -- corpo subindo e descendo.
+  -- Measured: with BREATH SUBTLE the head rose by 16*eps*cos^2(corr)
+  -- instead of 16*eps. At the default rung (35) that is 33% of what was
+  -- promised; at rung 15 only 7% is left. And a Z drift of 16*eps*sin*cos
+  -- appeared, up to 0.079 px, pushing the body backward without anyone
+  -- asking. MOTION LAG was the worst: the kz term turned 82% vertical at
+  -- the default rung, so "inertia" was largely the body rising and
+  -- falling.
   --
-  -- Nenhum gate pegou porque todos os testes de vida afirmavam sobre a MATRIZ
-  -- e nenhum compunha a matriz com a rotacao assada no vertice. O teste que
-  -- faltava existe agora e mede deslocamento NO MUNDO nos quatro degraus.
+  -- No gate caught it because every life test asserted on the MATRIX and
+  -- none composed the matrix with the rotation baked into the vertex. The
+  -- missing test exists now and measures displacement IN THE WORLD at the
+  -- four rungs.
   --
-  -- Conserto: pos-multiplicar L' = Rx(corr) * L * Rx(-corr), que faz o mundo
-  -- ver exatamente L. Com corr = 0 isto colapsa em L e o comportamento antigo
-  -- volta identico, que e o certo quando nao ha inclinacao.
+  -- Fix: post-multiply L' = Rx(corr) * L * Rx(-corr), which makes the
+  -- world see exactly L. With corr = 0 this collapses into L and the old
+  -- behavior returns identically, which is correct when there is no tilt.
   --
-  -- L, em coordenadas do personagem (x cisalha por y, y escala, z cisalha por
-  -- y), e a conjugacao expandida termo a termo:
+  -- L, in the character's coordinates (x shears by y, y scales, z shears
+  -- by y), and the conjugation expanded term by term:
   --
   --   L  = [ 1 kx 0 ; 0 s 0 ; 0 kz 1 ]
   --   L' = [ 1        kx*c                 kx*n              ]
@@ -2808,33 +2876,35 @@ local function lifeApply(m, s, kx, kz, sx, corr)
   return out
 end
 
--- ------------------------------------------------------------ o wrap
--- Le a identidade do desenho a partir da propria matriz. Medido em jogo
--- (tools/ingame/probe_draw.lua): m[4] carrega px, ou px+16 quando espelhado, e
--- nesse caso m[1] = -1; m[12] carrega py+8. Sao coordenadas de MUNDO, imunes a
--- camera (P8) e ao degrau de inclinacao (P6).
+-- ------------------------------------------------------------ the wrap
+-- Reads the draw's identity from the matrix itself. Measured in game
+-- (tools/ingame/probe_draw.lua): m[4] carries px, or px+16 when mirrored,
+-- in which case m[1] = -1; m[12] carries py+8. These are WORLD
+-- coordinates, immune to the camera (P8) and to the tilt rung (P6).
 --
--- Quando m[1] nao e +-1, o host esta misturando o yaw de primeira pessoa
--- (billboardMatrix, ramo cardBlend > 0) e px deixa de ser recuperavel. Ali este
--- mod ja devolve card plano de proposito, entao a animacao tambem sai fora.
--- Raio conservador do personagem a partir da ancora da matriz: meia celula em
--- x e z, mais a profundidade maxima que o menu oferece. Serve para perguntar
--- pelo vertice MAIS PROXIMO em vez de pelo centro, que e o que decide se algum
--- canto atravessa o near plane.
+-- When m[1] is not +-1, the host is mixing in first-person yaw
+-- (billboardMatrix, cardBlend > 0 branch) and px stops being recoverable.
+-- There this mod already returns the flat card on purpose, so the
+-- animation drops out too.
+-- Conservative character radius from the matrix's anchor: half a cell in
+-- x and z, plus the maximum depth the menu offers. Used to ask about the
+-- CLOSEST vertex instead of the center, which is what decides whether any
+-- corner crosses the near plane.
 local FP_RAIO = 14
--- Folga acima do near plane (1 unidade quando olho e foco estao juntos). Dois
--- e o menor numero que ainda deixa margem para a respiracao e a inercia
--- moverem o corpo depois desta conta, ja que elas mexem a matriz e nao o pull.
+-- Margin above the near plane (1 unit when eye and focus are together).
+-- Two is the smallest number that still leaves room for breath and
+-- inertia to move the body after this math, since they touch the matrix
+-- and not the pull.
 local FP_FOLGA = 2
 
--- O CONSERTO. `pull` e um vies de profundidade: o shader empurra cada vertice
--- na direcao do olho por essa distancia. Perto demais, isso joga o vertice
--- para tras do olho e o que aparece e um espeto preto.
+-- THE FIX. `pull` is a depth bias: the shader pushes every vertex toward
+-- the eye by that distance. Too close, and this throws the vertex behind
+-- the eye and what shows up is a black spike.
 --
--- Entao a gente nao desliga o volume, a gente entrega um pull que a distancia
--- aguenta. Errar para menos e seguro por construcao: pull menor so significa
--- menos vies de profundidade, e a razao de existir do vies (nao brigar em z
--- com o terreno LONGE) nao se aplica a quem esta colado na camera.
+-- So we do not turn off the volume, we hand over a pull the distance can
+-- take. Erring low is safe by construction: a smaller pull only means
+-- less depth bias, and the bias's reason to exist (not fighting in z with
+-- terrain FAR away) does not apply to something glued to the camera.
 local function fpPullSeguro(model, pull)
   if type(pull) ~= "number" or pull <= 0 then return pull end
   local eye = Voxel3D and Voxel3D.eye
@@ -2897,9 +2967,9 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     return originalDraw(mesh, texture, model, pull, sunModel)
   end
 
-  -- Antes de qualquer saida antecipada, porque isto nao e animacao: e a
-  -- condicao para o solido poder existir em primeira pessoa, e vale mesmo com
-  -- todas as opcoes de vida desligadas.
+  -- Before any early return, because this is not animation: it is the
+  -- condition for the solid to be allowed to exist in first person, and it
+  -- applies even with every life option turned off.
   local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
   if fp == "solid" and firstPersonCardActive() then
     pull = fpPullSeguro(model, pull)
@@ -2926,9 +2996,10 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     return originalDraw(mesh, texture, model, pull, sunModel)
   end
 
-  -- Mesmo cuidado do piscar (blinkClosedForBase): o relogio vem do host, e um
-  -- host sem love.timer nao pode derrubar o desenho. Sem relogio nao ha
-  -- animacao, e o personagem sai como sempre saiu.
+  -- Same care as blinking (blinkClosedForBase): the clock comes from the
+  -- host, and a host without love.timer must not bring down the draw.
+  -- Without a clock there is no animation, and the character comes out as
+  -- it always did.
   if not (love and love.timer and love.timer.getTime) then
     return originalDraw(mesh, texture, model, pull, sunModel)
   end
@@ -2951,23 +3022,24 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   end
   if sway ~= "off" then
     local amp = sway * (pessoa and pessoa.sway or 1)
-    -- Metade do ritmo da respiracao e um quarto de volta fora de fase: os dois
-    -- nunca chegam no extremo juntos, que e o que faria o personagem parecer
-    -- um metronomo em vez de uma pessoa.
+    -- Half the breath rate and a quarter turn out of phase: the two never
+    -- reach the extreme together, which is what would make the character
+    -- look like a metronome instead of a person.
     local a = (inst.phase * BREATH_PERIOD / SWAY_PERIOD + 0.25) * 2 * math.pi
     kx = amp * math.sin(a) / LIFE_CELL
   end
   if lag ~= "off" then
-    -- DIVIDIR POR LIFE_CELL, igual ao SWAY logo acima, e o motivo esta escrito
-    -- aqui porque a falta disso passou por todos os gates numericos.
+    -- DIVIDING BY LIFE_CELL, same as SWAY right above, and the reason is
+    -- written here because missing it slipped past every numeric gate.
     --
-    -- `amp` e deslocamento da CABECA em pixels de mundo. O cisalhamento e
-    -- x' = x + k*y com y ate 16, entao k tem que ser amp/16. Sem a divisao,
-    -- `amp` virava a INCLINACAO: no nivel 0.70 a cabeca andava 0.70*16 = 11 px,
-    -- quase um tile inteiro, e o personagem nao lia como andando com peso, lia
-    -- como caindo de lado. Os oito checks in-game passaram assim mesmo, porque
-    -- todos perguntavam "mudou?" e nenhum perguntava "mudou quanto?". Quem
-    -- pegou foi olhar o clipe.
+    -- `amp` is HEAD displacement in world pixels. The shear is x' = x +
+    -- k*y with y up to 16, so k has to be amp/16. Without the division,
+    -- `amp` turned into the SLOPE: at level 0.70 the head moved 0.70*16 =
+    -- 11 px, nearly a whole tile, and the character did not read as
+    -- walking with weight, it read as falling sideways. The eight in-game
+    -- checks passed anyway, because
+    -- they all asked "did it change?" and none asked "by how much?". What
+    -- caught it was watching the clip.
     local amp = lag * (pessoa and pessoa.lag or 1) / LIFE_CELL
     kx = kx + amp * inst.lagX
     kz = kz + amp * inst.lagZ
@@ -2975,29 +3047,33 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   local sx = 1
   if footfall ~= "off" then
     local amp = footfall * (pessoa and pessoa.footfall or 1) / LIFE_CELL
-    -- cosseno da fase da passada: +1 no impacto, -1 no alto do passo. Um ciclo
-    -- inteiro por celula andada.
+    -- cosine of the footfall's phase: +1 on impact, -1 at the top of the
+    -- step. One full cycle per cell walked.
     local pulso = math.cos((inst.andado / LIFE_CELL) * 2 * math.pi)
     local achata = amp * (inst.velocidade or 0) * pulso
     s = s - achata
-    -- Volume preservado: o que some em altura aparece em largura. Sem isso o
-    -- personagem so encolhe, que le como afundar no chao em vez de pisar.
+    -- Volume preserved: what disappears in height shows up in width.
+    -- Without this the character just shrinks, which reads as sinking into
+    -- the ground instead of stepping.
     sx = 1 + achata
   end
 
-  -- O cisalhamento em X vive no espaco do card, que o espelho ja inverteu.
-  -- Sem negar aqui, o balanco e o atraso trocariam de lado toda vez que o
-  -- personagem virasse para o outro lado, e o pulo seria visivel.
+  -- The shear in X lives in the card's space, which the mirror has
+  -- already flipped. Without negating here, sway and lag would swap sides
+  -- every time the character turned to face the other way, and the jump
+  -- would be visible.
   if espelhado then kx = -kx end
 
-  -- A MESMA correcao que o builder assou no vertice, quantizada igual: se as
-  -- duas divergirem, a conjugacao nao cancela e sobra um residuo.
+  -- The SAME correction the builder baked into the vertex, quantized the
+  -- same way: if the two diverge, the conjugation does not cancel and a
+  -- residue is left over.
   local corr = quantizeCorrection(leanCorrection())
   local novo = lifeApply(model, s, kx, kz, sx, corr)
-  -- A sombra recebe a MESMA escala. Sem isso o corpo respira e a sombra fica
-  -- imovel, e o personagem descola da propria sombra. O cisalhamento em Z fica
-  -- de fora: a matriz de sombra ja achata z (casterMatrix termina em S(1,1,0))
-  -- e reintroduzir profundidade ali nao teria significado.
+  -- The shadow receives the SAME scale. Without this the body breathes and
+  -- the shadow stays still, and the character detaches from its own
+  -- shadow. The shear in Z stays out: the shadow's matrix already flattens
+  -- z (casterMatrix ends in S(1,1,0)) and reintroducing depth there would
+  -- have no meaning.
   local novoSol = sunModel and lifeApply(sunModel, s, kx, 0, sx, corr) or nil
   return originalDraw(mesh, texture, novo, pull, novoSol)
 end
@@ -3008,11 +3084,12 @@ local function voxelMesh(def, frame)
     recordDrawResult("off")
     return safeOriginal(def, frame)
   end
-  -- Em primeira pessoa o solido so sai se DUAS coisas forem verdade: a pessoa
-  -- pediu, e o canal de desenho existe para limitar o pull. Sem o canal,
-  -- installedDraw fica nil e SOLID prometeria exatamente os espetos que a
-  -- v1.3.0 consertou; a opcao nem chega a aparecer no menu nesse host, mas um
-  -- save antigo pode carregar o valor, entao a checagem e aqui e nao no menu.
+  -- In first person the solid only comes out if TWO things are true: the
+  -- person asked for it, and the draw channel exists to cap the pull.
+  -- Without the channel, installedDraw stays nil and SOLID would promise
+  -- exactly the spikes v1.3.0 fixed; the option does not even show up in
+  -- the menu on that host, but an old save can carry the value, so the
+  -- check is here and not in the menu.
   if firstPersonCardActive() then
     local fp = optionState.first_person or readOption(OPTION_BY_KEY.first_person)
     if fp ~= "solid" or installedDraw == nil then
@@ -3055,48 +3132,50 @@ local function voxelMesh(def, frame)
   if mesh then
     recordDrawResult("ok")
     applyBlinkUv(mesh)
-    -- Marca a malha como NOSSA e guarda a folha. E o que o wrap de
-    -- Voxel3D.draw usa para saber que aquele desenho e um personagem deste mod
-    -- e nao terreno, grama, sombra ou a pokedex, que passam pela mesma funcao.
+    -- Marks the mesh as OURS and stores the sheet. This is what the
+    -- Voxel3D.draw wrap uses to know that draw is a character from this
+    -- mod and not terrain, grass, shadow or the pokedex, which pass
+    -- through the same function.
     --
-    -- So na PRIMEIRA vez. A malha e cacheada por (folha, frame, opcoes), entao
-    -- base e frame nunca mudam para um mesmo objeto de malha; reatribuir a cada
-    -- acerto de cache alocaria uma tabela por personagem por quadro sem trocar
-    -- nada dentro dela.
+    -- Only on the FIRST time. The mesh is cached by (sheet, frame,
+    -- options), so base and frame never change for the same mesh object;
+    -- reassigning on every cache hit would allocate a table per character
+    -- per frame without changing anything inside it.
     if ourMeshes[mesh] == nil then
       ourMeshes[mesh] = { base = baseName, frame = frame,
                           frames = (def and def.frames) or 1 }
     end
     return mesh
   end
-  -- Registra de novo em toda chamada, mesmo quando `mesh` veio do cache
-  -- (meshes[key] == false de uma falha anterior): sem isso, so a PRIMEIRA
-  -- tentativa entraria na janela deslizante, e uma folha que falha sempre
-  -- pareceria ter falhado uma vez so.
+  -- Records again on every call, even when `mesh` came from cache
+  -- (meshes[key] == false from an earlier failure): without this, only
+  -- the FIRST attempt would enter the sliding window, and a sheet that
+  -- always fails would look like it had only failed once.
   recordDrawFailure("build_failed", meshFailureReasons[key])
   return safeOriginal(def, frame)
 end
 
--- v1.4.2, pente fino (bloqueante): patch atomico. Tudo montado em locais
--- primeiro; as DUAS escritas na tabela do host (as unicas que podem lancar,
--- se essa tabela recusar escrita) rodam antes de qualquer commit de
--- upvalue de modulo. Se qualquer uma lancar, a excecao sobe para o
--- pcall(patch, host) do chamador e NENHUMA upvalue de modulo foi tocada
--- (nem SpriteBillboards, nem installedMesh, nem `patched`), entao o
--- proximo statusValue() ainda le NO HOST. Sem isso, SpriteBillboards podia
--- ficar setada sozinha por uma escrita anterior bem sucedida e o STATUS
--- lia REPLACED por uma substituicao que nunca aconteceu.
+-- v1.4.2, fine-tooth comb (blocking): atomic patch. Everything built in
+-- locals first; the TWO writes to the host's table (the only ones that
+-- can throw, if that table refuses a write) run before any module upvalue
+-- commit. If either one throws, the exception rises to the caller's
+-- pcall(patch, host) and NO module upvalue was touched (not
+-- SpriteBillboards, not installedMesh, not `patched`), so the next
+-- statusValue() still reads NO HOST. Without this, SpriteBillboards could
+-- end up set on its own by an earlier successful write and STATUS would
+-- read REPLACED for a replacement that never happened.
 --
--- v1.4.2, pente fino (item 1): as duas escritas nao sao uma transacao so;
--- um host cujo __newindex protege so a chave `mesh` (ja existente) e
--- permite chave nova (o jeito mais plausivel de defender uma API publica
--- sem travar extensao) deixa a PRIMEIRA escrita passar e a segunda
--- lancar. Sem desfazer a primeira, __voxelCharactersOriginal fica gravado
--- na tabela do host pra sempre, mesmo com o patch nunca tendo pegado, o
--- que contradiz o README ("does not modify the Voxel Mod"). Se a segunda
--- lancar, a primeira e desfeita: se __voxelCharactersOriginal ja existia
--- antes (repatch de verdade), o valor anterior volta; se nao existia,
--- volta pra nil, exatamente como estava.
+-- v1.4.2, fine-tooth comb (item 1): the two writes are not a single
+-- transaction; a host whose __newindex only protects the (already
+-- existing) `mesh` key and allows a new key (the most plausible way to
+-- defend a public API without locking out extension) lets the FIRST write
+-- through and the second one throw. Without undoing the first,
+-- __voxelCharactersOriginal stays written into the host's table forever,
+-- even though the patch never actually took, which contradicts the
+-- README ("does not modify the Voxel Mod"). If the second one throws, the
+-- first is undone: if __voxelCharactersOriginal already existed before (a
+-- real repatch), the previous value comes back; if it did not exist, it
+-- goes back to nil, exactly as it was.
 local function patch(host)
   local handle = host.handle
   local V = handle.exports.lib
@@ -3119,27 +3198,26 @@ local function patch(host)
     recordDrawFailure("exception", mesh)
     return safeOriginal(def, frame)
   end
-  -- Escritas arriscadas. Nenhum commit de upvalue antes das duas terem
-  -- sucesso.
+  -- Risky writes. No upvalue commit until both have succeeded.
   spriteBillboards.__voxelCharactersOriginal = original
   local okMesh, meshErr = pcall(function()
     spriteBillboards.mesh = installed
   end)
   if not okMesh then
-    -- Desfaz a primeira escrita: `spriteBillboards[k] = v` nunca invoca
-    -- __newindex para uma chave que ja tem valor bruto (a que acabamos de
-    -- gravar), entao esta atribuicao passa direto por rawset mesmo numa
-    -- tabela cujo __newindex bloqueia chave nova, sem precisar do builtin
-    -- `rawset` explicito. Em pcall porque desfazer e melhor esforco: o
-    -- erro que importa pro chamador e o da segunda escrita, nao o do
-    -- rollback.
+    -- Undoes the first write: `spriteBillboards[k] = v` never invokes
+    -- __newindex for a key that already has a raw value (the one we just
+    -- wrote), so this assignment goes straight through rawset even on a
+    -- table whose __newindex blocks new keys, with no need for an
+    -- explicit `rawset` builtin. In a pcall because undoing is
+    -- best-effort: the error that matters to the caller is the second
+    -- write's, not the rollback's.
     pcall(function()
       spriteBillboards.__voxelCharactersOriginal = previousOriginal
     end)
     error(meshErr, 0)
   end
 
-  -- Commit: so chega aqui se as duas escritas acima nao lancaram.
+  -- Commit: only gets here if the two writes above did not throw.
   Voxel3D = voxel3D
   ImageCache = imageCache
   SpriteBillboards = spriteBillboards
@@ -3152,21 +3230,23 @@ local function patch(host)
   registerOptionsRows()
   mod.log:info("patched %s character billboards", host.name)
 
-  -- SEGUNDO PONTO DE PATCH, e ele e OPCIONAL de proposito.
+  -- SECOND PATCH POINT, and it is OPTIONAL on purpose.
   --
-  -- O canal de animacao precisa envolver Voxel3D.draw. Isso e mais superficie
-  -- do host do que este mod tinha antes, e mais superficie e mais chance de um
-  -- fork futuro quebrar a gente: entre outubro e agora o repositorio original
-  -- saiu do ar duas vezes e nasceram tres linhagens versionando de formas
-  -- incompativeis. Por isso o patch inteiro fica DEPOIS do commit acima e num
-  -- pcall proprio: se ele falhar, o mod perde a animacao e continua desenhando
-  -- solidos normalmente, que e o produto principal. O contrario (perder o mod
-  -- por causa de um enfeite) seria inaceitavel.
+  -- The animation channel needs to wrap Voxel3D.draw. That is more host
+  -- surface than this mod had before, and more surface means more chance
+  -- for a future fork to break us: between October and now the original
+  -- repository went dark twice and three lineages were born versioning in
+  -- incompatible ways. That is why this whole patch sits AFTER the commit
+  -- above and in its own pcall: if it fails, the mod loses the animation
+  -- and keeps drawing solids normally, which is the main product. The
+  -- opposite (losing the mod because of a decoration) would be
+  -- unacceptable.
   --
-  -- A sonda de capacidade ja recusou hosts sem Voxel3D.draw utilizavel
-  -- (probeHost, OPTIONAL_CAPABILITIES), entao chegar aqui sem capacidade
-  -- significa host antigo, e a ausencia e silenciosa por escolha: quem roda um
-  -- host sem o canal ve LIFE: NO CHANNEL na tela de opcoes e sabe o porque.
+  -- The capability probe has already rejected hosts without a usable
+  -- Voxel3D.draw (probeHost, OPTIONAL_CAPABILITIES), so getting here
+  -- without the capability means an old host, and the absence is silent
+  -- by choice: whoever runs a host without the channel sees LIFE: NO
+  -- CHANNEL on the options screen and knows why.
   if host.caps and host.caps.drawWrap then
     local okDraw, drawErr = pcall(function()
       local previous = voxel3D.draw
@@ -3191,51 +3271,53 @@ local function hostIds()
   return table.concat(ids, ", ")
 end
 
--- DECISAO v1.4.2: decidir por capacidade, nao por numero de versao. Medido
--- antes desta mudanca: "banana" (versao ilegivel) era ACEITO e "1.3.1"
--- (versao legivel, mas fora da faixa, com a API inteira presente) era
--- RECUSADO, o oposto do que faz sentido. Existem tres linhagens do host
--- versionando de forma independente e caotica (1.6.2.ST com sufixo que o
--- Semver nao le; v1.68 que parseia como 1.68.0 e por isso fica "maior" que
--- 1.7.6; e o manifesto de uma release podendo dizer uma versao enquanto o
--- proprio codigo interno diz outra). Um portao de versao sobre isso erra de
--- novo a cada lancamento novo, e cada erro custa uma versao inteira em que
--- o mod nao faz nada para quem migrou. A partir de agora a versao nunca
--- recusa um host: ela e so informacao, logada sempre, e um aviso quando
--- esta fora da faixa conhecida.
+-- DECISION v1.4.2: decide by capability, not by version number. Measured
+-- before this change: "banana" (an unreadable version) was ACCEPTED and
+-- "1.3.1" (a readable version, but out of range, with the whole API
+-- present) was REJECTED, the opposite of what makes sense. There are
+-- three host lineages versioning independently and chaotically (1.6.2.ST
+-- with a suffix Semver cannot read; v1.68 which parses as 1.68.0 and so
+-- ends up "greater" than 1.7.6; and a release's manifest possibly stating
+-- one version while the code itself states another). A version gate over
+-- this gets it wrong again with every new release, and every mistake
+-- costs a whole version where the mod does nothing for whoever migrated.
+-- From now on the version never rejects a host: it is just information,
+-- always logged, and a warning when it is out of the known range.
 local REQUIRED_MODULES = { "Voxel3D", "ImageCache", "SpriteBillboards" }
 
--- PASSO 2 DO ROADMAP. Capacidades OPCIONAIS: a ausencia NAO recusa o host, so
--- desliga o recurso que depende dela.
+-- ROADMAP STEP 2. OPTIONAL capabilities: their absence does NOT reject
+-- the host, it only turns off the feature that depends on it.
 --
--- Isto e o preco de encostar em mais de um ponto do host, e o preco tem que
--- ser pago aqui e nao no lugar do acidente. A sonda de v1.4.2 ja provou o
--- valor da ideia: ela e o motivo de a v1.5.0 ter sobrevivido ao repositorio
--- original sair do ar duas vezes e a comunidade se partir em tres linhagens.
--- Um recurso novo que dependa de mais API do host tem que entrar pela mesma
--- porta, senao a primeira mudanca de um fork leva o mod inteiro junto.
+-- This is the price of touching more than one point of the host, and the
+-- price has to be paid here, not at the site of the accident. v1.4.2's
+-- probe already proved the idea's worth: it is the reason v1.5.0 survived
+-- the original repository going dark twice and the community splitting
+-- into three lineages. A new feature that depends on more host API has to
+-- come in through the same door, otherwise the first change from a fork
+-- takes the whole mod down with it.
 --
--- Cada capacidade e uma pergunta que so o host pode responder, respondida por
--- leitura e nunca por numero de versao.
+-- Every capability is a question only the host can answer, answered by
+-- reading and never by version number.
 local function probeCapabilities(modules)
   return {
-    -- Canal de vida: exige que Voxel3D.draw exista como funcao substituivel
-    -- por CAMPO. Nao da para verificar por leitura que os pontos de chamada
-    -- resolvem o campo em tempo de chamada (nas tres linhagens vivas, os 32
-    -- resolvem), mas da para exigir o minimo: que o campo exista e seja
-    -- chamavel. O resto e coberto pelo pcall em volta da escrita.
+    -- Life channel: requires Voxel3D.draw to exist as a function
+    -- replaceable by FIELD. There is no way to verify by reading that the
+    -- call sites resolve the field at call time (on the three living
+    -- lineages, all 32 do), but it is possible to require the minimum:
+    -- that the field exists and is callable. The rest is covered by the
+    -- pcall around the write.
     drawWrap = type(modules.Voxel3D) == "table"
       and type(modules.Voxel3D.draw) == "function",
   }
 end
 
--- Sonda de capacidade: um host e utilizavel quando exports.lib existe e
--- devolve os tres modulos obrigatorios, e SpriteBillboards.mesh e uma
--- funcao. Os tres opcionais (VoxelState, FirstPerson, VoxelScene) continuam
--- opcionais, tratados em patch(). pcall em cada require porque um host que
--- passe no id mas nao tenha um dos modulos obrigatorios (ou cujo require
--- estoure) tem que ser recusado limpo, sem derrubar o carregamento do mod
--- inteiro (mesma classe de defeito da rodada 2).
+-- Capability probe: a host is usable when exports.lib exists and returns
+-- the three required modules, and SpriteBillboards.mesh is a function.
+-- The three optional ones (VoxelState, FirstPerson, VoxelScene) stay
+-- optional, handled in patch(). pcall on every require because a host
+-- that passes the id check but is missing one of the required modules (or
+-- whose require blows up) has to be rejected cleanly, without taking down
+-- the whole mod's loading (same class of defect as round 2).
 local function probeHost(handle)
   if not (handle.exports and handle.exports.lib) then
     return nil, "exports.lib is missing"
