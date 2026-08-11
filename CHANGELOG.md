@@ -8,11 +8,22 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.7.0] - 2026-08-11
+
 **Six new options, and all six are off until you turn them on.** Nothing here
 changes what a player sees by default; `ATTENTION`, `PART LAG`, `FOOTFALL`,
 `AUTHORED REGIONS` and `DEMO FX` start at `OFF` and `FIRST PERSON` starts at
 `CARD`, per the house rule that a visual change the community has not seen yet
 ships off.
+
+**One thing DOES change without you turning anything on, and it is the only one:**
+three characters the mod already treated as asleep have stopped leaning toward
+you as you walk past. `gambler_asleep`, `sleeping_boy` and Snorlax each have a
+slow rhythm, deep breathing and no sway in the mod's own table, and a sleeping
+character noticing a passer-by contradicted that. Every other character is
+pixel-identical to 1.6.0.
 
 `AUTHORED REGIONS` is the first option whose behaviour depends on material that
 ships WITH the mod rather than being derived from your own ROM, so it deserves a
@@ -168,6 +179,39 @@ behaviour that the tooling found.
   a sixtieth of a second. A positive control runs first, so "zero calls" cannot
   be a broken recorder reporting zero.
 
+- **`AUTHORED REGIONS: OFF / ON` lets `PART LAG` cut along your character's
+  actual body instead of four equal slices of its cell.** It ships no artwork,
+  and the difference it makes was measured rather than guessed: a walking frame
+  of a sprite sits one row lower in its cell than a standing one, so the old
+  rule moved every band boundary a row up the body mid-stride, including the
+  neck line. `ON`, the feet band begins where the legs actually part. `OFF` is
+  the default and is byte-for-byte what 1.6.0 did.
+
+- **A character preset format, for the laboratory.** A look is one line of text
+  you can paste into a message and load back: `preset1 sheet=red head=3 body=1`.
+  It does **not** contain colours, and that is deliberate. Every one of the 67
+  character sheets in this game uses the same three tones, `#000000 #555555
+  #aaaaaa`, so a colour picker would produce, for all but three of its values,
+  shades this art has never contained. A preset instead chooses WHICH of the
+  three existing tones each body part uses, which is the one kind of recolour
+  the art's own system can absorb.
+
+- **Characters can be composed from other characters' parts**, in the
+  laboratory, with no shipped art at all: the hair rows of one sheet on the body
+  of another. Every pixel is still from your own ROM, and the provenance report
+  says so — a composed character still measures 100% artist pixels and 0%
+  shipped ones.
+
+- **A reason can travel with a choice.** The pairwise laboratory can record WHY
+  a pick was made, alongside the pick, without breaking any of the 106 choices
+  already recorded.
+
+### Fixed
+
+- **Three sleeping characters stopped watching you.** See the note at the top:
+  this is the only change in this release that a player sees without turning
+  something on.
+
 ### Changed
 
 - **The trailer pins a time of day per shot, and moves the camera within a
@@ -184,6 +228,20 @@ behaviour that the tooling found.
 - **The render harness was split** from one 2723 line file into modules, graded
   by output equality against a floor measured beforehand rather than by how
   tidy the result looks.
+
+- **The provenance report splits three ways instead of two.** It used to
+  separate your artist's pixels from surface the mod computes. It now reports a
+  third number, `auth%`, for pixels that ship WITH the mod. It reads `0.0%` on
+  every line, because this release ships none, and it is printed anyway: a
+  number that only appears once it is non-zero teaches nobody where to look, and
+  the release that ships the first one is exactly the release where somebody
+  should already know.
+
+- **The mod's own measuring tools could not see part of the mod.** The
+  laboratory and every comparison card resolve file paths differently from the
+  game, so a feature that worked perfectly in-game did nothing in the tools that
+  judge features. Nothing a player could see was affected; everything used to
+  judge what a player sees was.
 
 ## [1.6.0] - 2026-08-09
 

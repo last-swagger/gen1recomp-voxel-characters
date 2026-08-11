@@ -65,7 +65,13 @@ fi
 # pre-commit hook had the same defect for a different reason and was fixed; this
 # copy was missed, which is the argument for tools/verdict_gate.sh, that found
 # it. Same pattern as the hook's on purpose.
-grep -E '^   [^[:space:]].*[[:space:]]ok$' "$SAIDA.bateria.log" | sed 's/^/  /' | head -14
+# NOT TRUNCATED. This was `head -12`, then `head -14`, and both times the number
+# was the gate count on the day somebody wrote it: the battery has grown to 17
+# and the rehearsal quietly stopped listing the last three. A release summary
+# that shows SOME of what passed is the same defect as one that shows a
+# hardcoded list of names, which is what it was before that. There is no reason
+# to cap it at all -- the battery is what decides how many lines there are.
+grep -E '^   [^[:space:]].*[[:space:]]ok$' "$SAIDA.bateria.log" | sed 's/^/  /'
 echo "  BATTERY OK"
 
 # ------------------------------------------------------------- 2b. mutants
