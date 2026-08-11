@@ -1404,6 +1404,19 @@ local function computeMetrics(screen)
   print("provenance at the visible pixel level")
   print("  art%   share of drawn pixels sampling the original sprite art")
   print("  top%   share taken by upward faces, which carry no art at all")
+  -- THE THIRD NUMBER, AND WHY IT IS PRINTED WHILE IT IS ALWAYS ZERO
+  -- (roadmap T2.1). Provenance used to split two ways: the artist's pixels
+  -- against surface this mod computed. An authored layer ships a third kind,
+  -- pixels that came WITH THE MOD, and folding those into "invented" would let
+  -- an art pack hide inside a number that already reads high.
+  --
+  -- It reads 0.0% on every line today because the mod ships no authored
+  -- pixels, and it is printed anyway. A number that appears only once it is
+  -- non-zero teaches nobody to look for it, and the first release that ships
+  -- one authored texel is exactly the release where somebody should already
+  -- know where to look. `tools/authored_gate.lua` holds the zero to its word.
+  print("  auth%  share shipped WITH THE MOD, drawn by neither the artist nor")
+  print("         the runtime. Zero until an authored layer ships pixels")
   for r, row in ipairs(state.rows) do
     local y0 = (r - 1) * (cell + labelH) + labelH
     for c, yawDeg in ipairs(state.yaws) do
@@ -1419,9 +1432,14 @@ local function computeMetrics(screen)
       end
       if drawn > 0 then
         local art = (n.front + n.back) / drawn * 100
+        -- Authored pixels have no face class of their own yet, because none
+        -- are drawn. When they are, they get their own `kindAt` label rather
+        -- than being inferred, for the same reason the other five are
+        -- geometric: a metric that guesses its own inputs is decoration.
+        local auth = 0
         print(string.format(
-          "  %-11s %-9s yaw %2d   art %5.1f%%   top %5.1f%%   side %5.1f%%   base %5.1f%%",
-          row.shape, row.pitchLabel, yawDeg, art, n.top / drawn * 100,
+          "  %-11s %-9s yaw %2d   art %5.1f%%   auth %5.1f%%   top %5.1f%%   side %5.1f%%   base %5.1f%%",
+          row.shape, row.pitchLabel, yawDeg, art, auth, n.top / drawn * 100,
           n.side / drawn * 100, n.bottom / drawn * 100))
       end
     end

@@ -783,8 +783,26 @@ Breaking a promise still needs a gate. Every item in this tier answers all five:
 
 ### T2.1 The authored character layer
 
-**State:** open. This is the architectural door the creator and richer FX both
-walk through, so it comes before either.
+**State:** slice 1 LANDED, as data and gates only. The architectural door the
+creator and richer FX both walk through, so it comes before either.
+
+**Slice 1, landed:** `authored/schema.lua` with three provenance classes, fixed
+region names, three guiding overlay types and a hard refusal of living metadata
+on an object sheet; Ash and an item ball as the living and object fixtures;
+`tools/authored_gate.lua` as battery step 7g; and `docs/DISCLOSURE_DRAFT.md`.
+
+The provenance metric splits three ways now and prints `auth%` on every line,
+at 0.0% everywhere, because a number that appears only once it is non-zero
+teaches nobody to look for it. The gate fails the battery if that count is
+anything but zero, and the mod's runtime does not read the directory at all,
+which is the byte-identical guarantee in its strongest available form. Ash's
+regions are named and deliberately not measured: pixel bounds written before
+anything can check them would be invented numbers.
+
+Four of the five gate conditions below are met by slice 1. The two that are not
+are the two that need Kim: pairwise picks on authored against pure, which cannot
+exist until there is something authored to pick, and A/B clips from the same
+scene, which need the same.
 
 **What changes:** the mod gains a second presentation path. Pure runtime
 derivation stays as the default and as the control; an authored path may add

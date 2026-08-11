@@ -47,6 +47,10 @@
 #      those pairs does not turn a gate red, it turns it GREEN AND EMPTY, and
 #      the only end-to-end proof is a full battery on a machine with a screen.
 #      This is the cheap static half that runs on every commit;
+#   7g. the authored layer, whose risk is identity rather than engineering. A
+#      mod that quietly starts drawing its own pixels while its README says it
+#      derives everything from your ROM has broken something a gate cannot
+#      repair, so the first slice ships none and this holds it to that;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -137,6 +141,10 @@ fi
 passo "7f. every string a gate greps for is still printed"
 "$LUAJIT" "$MOD/tools/output_contract.lua" 2>&1 | tail -6
 verdict "output contract" "${PIPESTATUS[0]}"
+
+passo "7g. the authored layer ships nothing and cannot lie about it"
+"$LUAJIT" "$MOD/tools/authored_gate.lua" 2>&1 | tail -6
+verdict "authored layer" "${PIPESTATUS[0]}"
 
 passo "7e. the battery's verdicts still reach their readers"
 bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9

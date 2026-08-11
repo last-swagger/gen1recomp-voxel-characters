@@ -74,6 +74,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
+| T2.1 slice 1, authored layer schema | this session | `authored/**`, `tools/authored_gate.lua`, `tools/render/main.lua`, `docs/DISCLOSURE_DRAFT.md`, `tools/bateria.sh` | **landed** | 11 refusals enforced, 6 of 6 mutations caught, 0 authored pixels shipped; provenance splits three ways; full battery green on the MBP |
 | T1.4 reason field | this session | `tools/render/{reason,lab,main}.lua`, `tools/juiz/reason_gate.{lua,sh}`, `tools/render/check.sh`, `tools/bateria.sh` | **landed** | 171 states / 30 pairs / 30 key lines byte-identical with a hostile reason on every one of the 106 recorded choices; 7 encoder mutations caught; `REGUA OK` on the MBP with the quote/pipe/equals round trip |
 | T1.4 critic context, round 3 | this session | `tools/juiz/dados/*_r3.txt`, `NOTAS_DO_CRITICO.md` | **run, inconclusive; critic NOT approved** | 60.0% against a 53.3% baseline, margin +6.7 inside a +/-12.6 standard error |
 | T2.3 slice 4, playback | this session | `main.lua`, `sfx/*.wav`, `tools/fx_sfx_gate.sh`, docs | **landed** | 637/637; off-guard defeat caught as `1 source(s), 5 play(s)`; full battery green on the MBP with the assets packaged |
@@ -1419,6 +1420,75 @@ typing so the headless gate can exercise the write path.
 
 **Round 4 is still not runnable.** No recorded choice carries a reason yet, and
 the critic that would take the test has already seen round 3's key.
+
+## T2.1 slice 1: the authored layer exists as a schema and ships no pixels
+
+The narrowest useful slice of the item whose risk is identity rather than
+engineering. **Nothing in the mod reads any of it**, which is deliberate: the
+shape of the data and the rules it must obey are settled and gated before a
+single authored pixel is drawn.
+
+**What landed.**
+
+- `authored/schema.lua` — the schema and its validator. Three provenance
+  classes named (`artist`, `invented`, `authored`), five fixed region names,
+  three overlay types, and a hard rule that living metadata is refused on an
+  object sheet.
+- `authored/sheets/red.lua` — Ash, the living fixture. Regions **named and
+  deliberately not measured**: writing pixel bounds now would be inventing
+  numbers before anything can check them. Ships zero pixels.
+- `authored/sheets/poke_ball.lua` — the object fixture, which exists to be
+  refused.
+- `tools/authored_gate.lua` — battery step 7g.
+- `docs/DISCLOSURE_DRAFT.md` — the release-note text, written while the honest
+  answer is still "nothing", which is much easier than writing it later.
+- The harness provenance report **splits three ways** now, printing `auth%` on
+  every line even though it is 0.0% everywhere.
+
+**Why `auth%` prints while it is always zero.** A number that appears only once
+it is non-zero teaches nobody to look for it, and the release that ships the
+first authored texel is exactly the release where somebody should already know
+where to look. The gate fails the battery if the count is anything but zero, so
+the claim cannot quietly stop being true; making it stop being true requires
+editing that gate on purpose, and that edit is the moment the disclosure gets
+rewritten.
+
+**The object fixture has real teeth, not a comment's worth.** Its `kind` is
+cross-checked against `STILL_OBJECTS` in the mod's own source, which is where
+the runtime already decides what is alive. Two places disagreeing about whether
+an item ball breathes is how an item ball ends up breathing, and this project
+has the precedent: `boulder`, `clipboard`, `fossil`, `old_amber`, `paper`,
+`poke_ball` and `pokedex` are pinned to zero life by hand because a general rule
+once made them pulse. Deleting `poke_ball` from that list turns this gate red.
+
+**Byte-identical, in its strongest available form.** The usual way to prove an
+off path changes nothing is to render both ways and compare. Here the runtime
+does not open the directory at all, and the gate asserts that by searching
+`main.lua` for the word. When that stops being true the assertion fails with a
+message saying it must be replaced by a real authored-off render comparison,
+rather than passing on an argument that has expired.
+
+**Mutations, 6 of 6 caught:** the item ball declaring itself alive, Ash starting
+to ship 12 authored pixels, the object rule going unenforced, unknown fields
+being ignored instead of refused, the runtime dropping `poke_ball` from
+`STILL_OBJECTS`, and the runtime starting to reference `authored/`. The first
+attempt at the fifth was a bad mutation whose pattern did not match the real
+line; re-run correctly, it was caught.
+
+**Assumptions logged, both reversible.**
+
+1. **`authored/` ships in the package.** modkit accepts it. Excluding it now
+   would mean remembering to un-exclude it later, which is a trap; and shipping
+   it means the package itself carries the honest "zero authored pixels"
+   declaration. Reversible with one line in `.modkitignore`.
+2. **Regions are named, not measured.** The honest first version says WHICH
+   regions a sheet has, which the schema can validate, and leaves WHERE they are
+   to the slice that can measure them against the real sprite.
+
+**What this slice deliberately did not do:** no overlay pixels, no runtime
+integration, no lab preset UI, no save data, no gameplay, battle, link or
+encounter changes, no art pack. Those are later slices and most of them need
+Kim's eye first.
 
 ## Filenames stay Portuguese: decided, and closed
 
