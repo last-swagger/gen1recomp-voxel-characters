@@ -10,6 +10,8 @@
 local Lab = {}
 local ctx
 
+local Reason = require("reason")
+
 function Lab.init(c) ctx = c end
 
 --------------------------------------------------------------------------
@@ -41,12 +43,37 @@ local lab = {
   row = nil, erro = nil, sujo = true, t = 0, construcoes = 0,
   -- choice mode
   ab = false, par = nil, rowA = nil, rowB = nil, escolhas = 0, pulos = 0,
+  -- WHY a choice was made, and why it is typed BEFORE the pick rather than
+  -- after. The lab collected 106 choices at two keystrokes each, and that
+  -- rhythm is the reason it collected 106 rather than twenty. Asking for prose
+  -- after every pick would end that. So the reason is stashed with `w`, and
+  -- attaches to whichever pick comes next; leave it alone and the fast path is
+  -- byte for byte what it always was.
+  motivo = "", digitando = false,
   -- region boundary overlay (roadmap item 11, key `b`)
   overlay = false,
 }
 
 -- Where choices are stored. One line per choice, key=value, so the judge's
 -- fit can be redone from scratch and audited later.
+--
+-- THE LINE FORMAT, in full, because three tools read it and none of them owns
+-- it:
+--
+--   t=<iso> folha=<sheet> pose=<facing> frame=<n> clock=<s> rung=<deg>
+--   yaw=<deg> opcao=<key> a=<level> b=<level> escolha=<A|B|pulo>
+--   [reason=<percent-encoded>] | A: <state> | B: <state>
+--
+-- Everything before the first `|` is a `key=value` token with no spaces. The
+-- two states follow, split on `|`, and the second runs to the end of the line.
+-- That last part is why `reason` sits where it does and is encoded: written
+-- after the states it would be swallowed into state B, and written plainly it
+-- could carry a `|` that hijacks the split. See reason.lua.
+--
+-- `reason` is OPTIONAL and omitted entirely when there is nothing to say, so
+-- the 106 choices recorded before it existed are still exactly what this
+-- writes today. Proved by tools/juiz/reason_gate.sh, which runs the real
+-- ajusta.lua and the real calibra.sh selector over both shapes.
 --
 -- Deliberately does NOT record any feature here: features are recalculated
 -- from the recorded state, by the ruler itself, when it is time. Recording a
@@ -567,12 +594,24 @@ local function labEscolhe(lado)
   local cf = p.congela and p.congela.frame
     or ((lab.andando and FACINGS[lab.facing].anda) or FACINGS[lab.facing].pose)
   local ct = p.congela and p.congela.t or 0
+  -- The reason goes right after the pick it explains, and BEFORE the first
+  -- `|`, which is not a matter of taste. `calibra.sh` and `ajusta.lua` split
+  -- the two option states on `|` and capture the second with `(.*)$`, so
+  -- anything written after them is swallowed into state B. Reason.field
+  -- returns the empty string when there is nothing to say, and then this line
+  -- is byte for byte the line the lab has always written. See reason.lua and
+  -- tools/juiz/reason_gate.sh.
   labGrava(string.format(
-    "t=%s folha=%s pose=%s frame=%d clock=%.2f rung=%d yaw=%d opcao=%s a=%s b=%s escolha=%s | A: %s | B: %s",
+    "t=%s folha=%s pose=%s frame=%d clock=%.2f rung=%d yaw=%d opcao=%s a=%s b=%s escolha=%s%s | A: %s | B: %s",
     os.date("%Y-%m-%dT%H:%M:%S"), p.folha, FACINGS[lab.facing].nome,
     cf, ct, lab.rung, lab.yaw, p.opcao.key, tostring(p.valoresA[p.opcao.key]),
-    tostring(p.valoresB[p.opcao.key]), lado,
+    tostring(p.valoresB[p.opcao.key]), lado, Reason.field(lab.motivo),
     labEstadoTexto(p.valoresA), labEstadoTexto(p.valoresB)))
+  -- A reason belongs to ONE choice. Carrying it forward would quietly label
+  -- every later pick with something said about an earlier one, which is worse
+  -- than having no reasons at all: the round would train on captions that do
+  -- not describe their pairs.
+  lab.motivo = ""
   if lado == "pulo" then lab.pulos = lab.pulos + 1
   else lab.escolhas = lab.escolhas + 1 end
   labMontaPar()
@@ -606,6 +645,25 @@ function love.labkeys(key)
   -- delivered `space`, and I almost read that as the rebuild being slow.
   if ctx.opts.labshot ~= "" then return end
   local n = #lab.folhas
+
+  -- While a reason is being typed the keyboard belongs to the text, or every
+  -- letter would also fire the command it is bound to and the pair would
+  -- rebuild underneath the sentence being written about it.
+  if lab.digitando then
+    if key == "return" or key == "kpenter" then lab.digitando = false
+    elseif key == "escape" then lab.digitando = false; lab.motivo = ""
+    elseif key == "backspace" then
+      -- One UTF-8 character, not one byte: `coração` typed and then corrected
+      -- would otherwise leave half a letter behind.
+      local i = #lab.motivo
+      while i > 0 and lab.motivo:byte(i) >= 0x80 and lab.motivo:byte(i) < 0xC0 do
+        i = i - 1
+      end
+      lab.motivo = lab.motivo:sub(1, math.max(0, i - 1))
+    end
+    return
+  end
+
   if key == "escape" then return love.event.quit() end
 
   if key == "t" then
@@ -617,6 +675,7 @@ function love.labkeys(key)
     if key == "left" then return labEscolhe("A") end
     if key == "right" then return labEscolhe("B") end
     if key == "space" then return labEscolhe("pulo") end
+    if key == "w" then lab.digitando = true; return end
     if key == "f" then
       lab.facing = lab.facing % #FACINGS + 1; return labMontaPar()
     end
@@ -676,6 +735,21 @@ function love.labkeys(key)
         "correto, que restaura no fim, esta em tools/ingame/trailer.lua)")
     end
   end
+end
+
+-- Typed characters, routed here by main.lua's love.textinput. Only accepted
+-- while the laboratory is actually asking, so the letters stay commands the
+-- rest of the time.
+--
+-- Nothing is filtered or escaped on the way in: Kim should be able to type a
+-- pipe, a quote or an accent and see exactly what he typed. The encoding
+-- happens once, at the moment the line is written, in Reason.field. Sanitising
+-- at both ends is how text ends up double-escaped in the file.
+function love.labtexto(t)
+  if not lab.digitando then return end
+  -- A cap, because the reason shares a line with the two option states and a
+  -- runaway paste would make that line unreadable in every tool that prints it.
+  if #lab.motivo + #t <= 200 then lab.motivo = lab.motivo .. t end
 end
 
 local function labTexto(x, y, s, cor)
@@ -779,9 +853,27 @@ local function labDrawAB()
   end
   labTexto(AX, GY + S + 24, string.format(
     "%d escolhas, %d pulos", lab.escolhas, lab.pulos), { 0.7, 0.73, 0.78, 1 })
-  labTexto(AX, GY + S + 46,
-    "f vira o personagem, 1-4 troca a camera, q/e gira, t volta ao editor",
-    { 0.45, 0.48, 0.53, 1 })
+
+  -- The reason has to be VISIBLE, both while it is being typed and while it
+  -- sits waiting for a pick. An invisible stash is how a sentence written
+  -- about one pair ends up attached to the next one.
+  if lab.digitando then
+    labTexto(AX, GY + S + 46, "motivo: " .. lab.motivo .. "_",
+      { 1, 0.9, 0.55, 1 })
+    labTexto(AX, GY + S + 68,
+      "enter guarda, escape descarta; o motivo vai na proxima escolha",
+      { 0.45, 0.48, 0.53, 1 })
+  elseif lab.motivo ~= "" then
+    labTexto(AX, GY + S + 46, "motivo guardado: " .. lab.motivo,
+      { 0.6, 0.85, 0.6, 1 })
+    labTexto(AX, GY + S + 68,
+      "vai junto com a proxima escolha; w edita, escape dentro de w descarta",
+      { 0.45, 0.48, 0.53, 1 })
+  else
+    labTexto(AX, GY + S + 46,
+      "f vira o personagem, 1-4 troca a camera, q/e gira, w escreve o motivo, "
+      .. "t volta ao editor", { 0.45, 0.48, 0.53, 1 })
+  end
 end
 
 -- T1.1 slice 2: makes the laboratory answerable without a person at the
@@ -941,6 +1033,9 @@ function love.labupdate(dt)
       end)
     elseif lab.quadros == 202 and ctx.opts.labpick ~= "" then
       -- Proves the whole recording path, from the pair to the line in the file.
+      -- `labreason` stands in for the typing, which is the one step a headless
+      -- gate cannot perform and therefore the one most likely to ship unread.
+      lab.motivo = ctx.opts.labreason or ""
       labEscolhe(ctx.opts.labpick)
       print(string.format("escolha simulada gravada: %d escolhas, %d pulos",
         lab.escolhas, lab.pulos))

@@ -158,3 +158,58 @@ needs a critic that has not, which means a fresh session or a different model.
 5. **Checksum the verdicts before fetching the key**, as round 3 did.
 6. **Report the margin against always-commonest with its standard error**, and
    keep the critic out of the loop unless the margin clears it.
+
+# Step 1 of the round 4 protocol is done: choices can carry a reason
+
+The blocker above is closed. The laboratory can now record WHY a pick was made,
+and nothing downstream noticed.
+
+**How it is written.** `reason=<percent-encoded>` sits between the pick and the
+first `|`, e.g.
+
+```
+... escolha=B reason=kim%20disse%20%22o%20chato%20%7C%20le%20melhor%22 | A: ... | B: ...
+```
+
+Percent-encoding was not decoration. The field had to survive four parsers at
+once: `key=(%S+)` means no spaces, the A/B split means no pipe, `estadoCanonico`
+harvesting `key=value` means no equals sign of its own, and `(.*)$` on state B
+means it cannot go at the end of the line at all. Encoding everything outside
+`[%w%-%.~_]` satisfies all four without a rule per parser, and it is an
+allowlist, so a parser added later cannot be broken by a character nobody
+thought about.
+
+**Empty means absent.** A choice made without a reason writes the line the
+laboratory has always written, byte for byte. That was the requirement, and it
+is checked against the real recorded file rather than a fixture.
+
+**Typed before the pick, not after.** `w` in choice mode opens a one-line field;
+enter stashes it, escape discards it, and the stash attaches to the next pick
+and then clears. The 106 choices exist because choosing costs two keystrokes,
+and asking for prose after every pick would have ended that. Annotating only the
+pairs worth annotating is also the honest shape for the experiment: a reason
+written to satisfy a prompt is not a reason.
+
+**What was measured, not assumed.** `tools/juiz/reason_gate.sh` runs the real
+`ajusta.lua --estados` and the pair selector LIFTED OUT of `calibra.sh` over the
+106 recorded choices twice, once with a hostile reason attached to every line,
+and requires byte-identical output: 171 states, 30 pairs, 30 answer-key lines,
+all unchanged. Seven mutations of the encoder were caught, including writing the
+reason plainly, and one mutation of the gate itself confirmed that appending the
+field after state B does corrupt state B, so the placement is load-bearing
+rather than superstition. The write path is checked on real LOVE by the ruler:
+a reason containing a quote, a pipe and an equals sign comes back out identical.
+
+**Precision about what the end-to-end half does not catch,** since overstating a
+gate is worse than not having it. Leaking a single character through the
+allowlist does not shift the state list, because hijacking the split needs `|`,
+a space and `:` literal together, and even then `estadoCanonico` only harvests
+`key=value` tokens and ignores the rest. Single-character leaks are caught by
+the structural checks in `reason_gate.lua` instead. Neither half subsumes the
+other.
+
+**Round 4 is still not runnable, and this did not change that.** No recorded
+choice carries a reason yet, because the field has existed for minutes and Kim
+has not used it. Step 1 is now infrastructure rather than a blocker; the round
+needs a calibration session where reasons are actually typed, plus a critic that
+has not seen round 3's key. Steps 2 through 6 above are unchanged.

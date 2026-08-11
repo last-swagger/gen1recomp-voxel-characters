@@ -34,6 +34,10 @@
 #   7c. the FX demo's two sounds, regenerated and measured through that gate. A
 #      committed WAV can only be checked once, by whoever listened to it; a
 #      generator can be re-derived and re-measured on every run;
+#   7d. the reason field on a choice, checked against the RECORDED choices and
+#      through the real judge tools. 106 choices were collected before the field
+#      existed and they have to keep parsing exactly as they do today; a format
+#      that needs its old records migrated is a format that loses them;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -120,6 +124,10 @@ if [ -n "${FFMPEG:-}" ] || command -v ffmpeg >/dev/null 2>&1; then
 else
   printf "   %-44s SKIPPED (no ffmpeg)\n" "fx sfx"
 fi
+
+passo "7d. a reason on a choice changes nothing the judge reads"
+bash "$MOD/tools/juiz/reason_gate.sh" 2>&1 | tail -6
+veredito "reason field" "${PIPESTATUS[0]}"
 
 if [ "$MODO" = "--rapido" ]; then
   PULADOS="the ruler and the in-game gates"

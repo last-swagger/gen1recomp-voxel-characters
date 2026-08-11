@@ -17,6 +17,16 @@
 -- it learned nothing, it just memorised the features I chose. This number is
 -- the most important thing this file prints.
 --
+-- A CHOICE MAY CARRY A REASON, and this file does not read it. `reason=` is an
+-- optional percent-encoded token the laboratory writes before the first `|`,
+-- so it is invisible to every pattern here: it has no space, so `key=(%S+)`
+-- stops before it; no pipe, so the A/B split is untouched; and no equals sign
+-- of its own, so `estadoCanonico` cannot mistake it for part of a state. The
+-- reason is for the calibration experiment that shows a critic a decided pair
+-- together with why, not for the fit. tools/juiz/reason_gate.sh runs the real
+-- --estados over the recorded choices with and without one and requires the
+-- two outputs to be byte-identical.
+--
 -- Usage:
 --   luajit ajusta.lua --estados <escolhas.txt>            lists the variants
 --   luajit ajusta.lua --ajusta <escolhas.txt> <features.tsv>

@@ -588,19 +588,48 @@ critic could see clearly scored no better than the ones it could not, and it
 answered 13 A to 2 B where Kim answered 7 A to 8 B. The palette makes the critic
 more consistent with the art's own system and no better at predicting the
 person, which is what round 2's notes suspected and this measured. The remaining
-cheap experiment, showing it a pair Kim decided along with his reason, is now the
-only one that adds information about the person rather than the pixels. Full
+cheap experiment, showing it a pair Kim decided along with his reason, is the
+only one left that adds information about the person rather than the pixels, and
+the field it needs now exists. Full
 write-up in `tools/juiz/dados/NOTAS_DO_CRITICO.md`.
 
-**The third experiment cannot be run at all, and that is worth knowing before
-anyone plans around it.** It needs a pair Kim decided together with his reason,
-and no reason was ever recorded: the laboratory writes the pick, the option
-states and nothing else, and a grep across all 106 choices returns zero. The
-information exists only in Kim's head. A protocol for the round is written up
-alongside the round 3 notes, including the one code change it needs, which is a
-reason field on the choice line and is a format change that deserves its own
-gate. Held-out material is not the constraint: 76 of the 106 choices have never
-been sampled.
+**The third experiment could not be run, because it needs an input nobody had
+recorded.** It calls for a pair Kim decided together with his reason, and the
+laboratory wrote the pick, the option states and nothing else: a grep across all
+106 choices returned zero. Held-out material was never the constraint, since 76
+of the 106 choices have never been sampled. A protocol for the round is written
+up alongside the round 3 notes.
+
+**That blocker is now closed, as its own slice.** A choice can carry a reason,
+and no existing parser changed:
+
+```text
+... escolha=B reason=kim%20disse%20%22o%20chato%20%7C%20le%20melhor%22 | A: ... | B: ...
+```
+
+The field is optional, percent-encoded, and sits between the pick and the first
+`|`. Four different parsers constrained it: `key=(%S+)` forbids spaces, the A/B
+split forbids a pipe, the state canonicaliser forbids an equals sign of its own,
+and the greedy capture on state B forbids the end of the line. Encoding
+everything outside `[%w%-%.~_]` satisfies all four at once, and being an
+allowlist it cannot be broken by a character a later parser cares about. Omitted
+entirely when empty, so the 106 recorded choices are still byte for byte what
+the laboratory writes today. In the lab, `w` opens a one-line field whose text
+attaches to the next pick, which keeps a plain choice at the two keystrokes that
+made 106 of them possible.
+
+Measured rather than asserted: `tools/juiz/reason_gate.sh` runs the real
+`ajusta.lua --estados` and the pair selector lifted out of `calibra.sh` over the
+recorded choices with and without a hostile reason on every line, and requires
+byte-identical output. 171 states, 30 pairs, 30 answer-key lines, unchanged.
+Seven mutations of the encoder are caught, and one mutation of the gate itself
+confirms that putting the field after state B corrupts state B.
+
+**Round 4 still cannot run**, and the remaining blockers are not code. No choice
+carries a reason yet, so the round needs a calibration session where Kim
+actually types some; and the critic that would sit the test has already seen
+round 3's answer key, so it needs a fresh session or a different model. A critic
+that has seen a key is spent for that key's question.
 
 **Gate:** `calibra.sh conta` already encodes it, and the thresholds are the
 tool's own: at or below the always-commonest-answer baseline the critic knows

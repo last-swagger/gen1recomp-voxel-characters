@@ -137,6 +137,11 @@ local opts = {
   -- requested, instead of rolling. See labParDoArquivo.
   labpares = "",
   labpick = "",
+  -- `labreason=<text>` stashes a reason before the simulated choice, so the
+  -- write path can be proved end to end without anyone typing. Typing is the
+  -- one thing a headless gate cannot do, and it is exactly the part that would
+  -- otherwise ship unchecked.
+  labreason = "",
   -- `labregions=1` forces the region-boundary overlay (key `b` in the
   -- laboratory) on at startup, so the gate can screenshot it without a
   -- keypress: labshot runs with love.labkeys disabled (roadmap item 11).
@@ -1584,4 +1589,11 @@ end
 function love.keypressed(key)
   if opts.lab == "1" then return love.labkeys(key) end
   if key == "escape" then love.event.quit() end
+end
+
+-- Typed characters only reach the laboratory while it is asking for a reason.
+-- Everywhere else the letters are commands, and swallowing them here would
+-- silently disable the whole keyboard.
+function love.textinput(t)
+  if opts.lab == "1" and love.labtexto then love.labtexto(t) end
 end

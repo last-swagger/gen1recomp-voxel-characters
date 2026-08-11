@@ -23,6 +23,16 @@
 # something. If Kim happened to pick B in 60% of these pairs, a critic that
 # always answers B scores 60% while knowing nothing. Agreement is only evidence
 # when it beats always-answering-the-commonest-side.
+#
+# CHOICES MAY NOW CARRY A REASON, and the pair selector below ignores it on
+# purpose. `reason=` is an optional percent-encoded token the laboratory writes
+# before the first `|`; it has no space, no pipe and no equals sign of its own,
+# so `escolha=(%S+)` and the A/B split read exactly what they always read. The
+# round that shows a critic a decided pair together with its reason will read
+# the field separately; this path stays blind to it, because a pair shown to a
+# critic must not leak why Kim picked what he picked. Proved by
+# tools/juiz/reason_gate.sh, which lifts the selector out of this file and runs
+# it over the recorded choices with and without reasons.
 set -u
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 MOD="$(cd "$AQUI/.." && pwd)"

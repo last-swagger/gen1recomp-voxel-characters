@@ -234,6 +234,66 @@ say "a escolha vira linha de arquivo" \
     "$([ "${LINHAS:-0}" -ge 1 ] && echo "ok, $LINHAS linha" || echo FALHOU)"
 [ "${LINHAS:-0}" -ge 1 ] || FAIL=1
 
+# 7b. THE REASON FIELD, both ways round (roadmap T1.4).
+#
+#     `tools/juiz/reason_gate.sh` proves the format is safe and that the judge
+#     reads it unchanged, all without LOVE. What it cannot prove is that the
+#     LABORATORY actually writes what it was given, because writing is the step
+#     that needs the real thing running. So both halves are checked here: a
+#     choice made with nothing to say must be byte-identical to the choice the
+#     lab has always written, and a choice made with a reason must carry it
+#     back out again intact.
+#
+#     The empty half matters more than the full one. 106 choices were recorded
+#     before this field existed, and every future choice made without a reason
+#     has to keep looking exactly like them.
+#     THE ABSENCE CHECK NEEDS THE FILE TO EXIST FIRST. Written the obvious way
+#     it reported "ok" on a run where LOVE never started: no file, so no
+#     `reason=` in it, so the field was "correctly omitted". A check for the
+#     absence of something passes hardest when nothing happened at all, which
+#     is the one situation it must not pass in.
+ESC_SEM="$HOME/Library/Application Support/LOVE/render/chk_escolhas.txt"
+if [ ! -s "$ESC_SEM" ]; then
+  say "escolha sem motivo omite o campo" "FALHOU: sem escolha gravada para olhar"
+  FAIL=1
+elif grep -q "reason=" "$ESC_SEM"; then
+  say "escolha sem motivo omite o campo" "FALHOU: escreveu reason= sem motivo"
+  FAIL=1
+else
+  say "escolha sem motivo omite o campo" \
+      "ok, $(wc -l < "$ESC_SEM" | tr -d ' ') linha sem o campo"
+fi
+
+ESC_COM="$HOME/Library/Application Support/LOVE/render/chk_motivo.txt"
+rm -f "$ESC_COM"
+MOTIVO='kim disse "o chato | le melhor" opcao=x'
+$LOVE $H lab=1 labab=1 labpick=B labreason="$MOTIVO" \
+  labfile=chk_motivo.txt labshot=chk_lab_motivo.png > /dev/null 2>&1
+VOLTA=$(luajit - "$ESC_COM" mods/voxel_characters/tools/render/reason.lua 2>/dev/null <<'LUA'
+local R = dofile(arg[2])
+local f = io.open(arg[1], "r")
+if not f then print("SEM ARQUIVO"); os.exit(0) end
+for linha in f:lines() do
+  local m = R.fromLine(linha)
+  if m then print(m); f:close(); os.exit(0) end
+end
+f:close(); print("SEM MOTIVO")
+LUA
+)
+if [ "$VOLTA" = "$MOTIVO" ]; then
+  say "escolha com motivo grava e volta igual" "ok"
+else
+  say "escolha com motivo grava e volta igual" "FALHOU: [$VOLTA]"
+  FAIL=1
+fi
+# The reason must not have disturbed the pick or the two states on the way in.
+if luajit mods/voxel_characters/tools/juiz/ajusta.lua --estados "$ESC_COM" 2>/dev/null | grep -q .; then
+  say "a linha com motivo ainda parseia no juiz" "ok"
+else
+  say "a linha com motivo ainda parseia no juiz" "FALHOU"
+  FAIL=1
+fi
+
 # 8. THE JUDGE LOOP closes: model goes out to a file, pairs come out of the
 #    model, and the laboratory consumes the pairs. Each piece already has its
 #    own proof; what this check covers is the JOIN, which is where file

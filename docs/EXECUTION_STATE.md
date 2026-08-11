@@ -20,19 +20,24 @@ authorisation, against this working state synced over: every gate, including
 the ruler and all five in-game gates.
 
 ```
-621/621 offline · lint clean · chunk-local headroom 75 of 200 (125 in use)
-modkit ok · option docs ok (16 options, 19 rows) · RUNNER SELFTEST OK (16 cases)
-execution state ok · en-US sweep ok · audio gate ok
-REGUA OK · in-game 20/16/16/8/6 passed, 0 failed
+637/637 offline · lint clean · chunk-local headroom 71 of 200 (129 in use)
+modkit ok · option docs ok (17 options, 20 rows) · RUNNER SELFTEST OK (16 cases)
+execution state ok · en-US sweep ok · audio gate ok · fx sfx ok · reason field ok
+REGUA OK (MBP, 2026-08-10, 36 checks) · in-game 20/16/16/8/6 passed, 0 failed
 BATERIA OK
 ```
+
+`--rapido` is 11 gates now; the reason field is 7d. The ruler figure above is
+from today's MBP run of the tempdir copy described under T1.4 slice: 36 checks,
+`REGUA OK`, including the three new choice-format checks.
 
 **`MUTANTES OK: the suite killed all 5.`** The last gate in the definition of
 done now has a result. Clean base 621 checks; each declared mutation dropped the
 count and died (612, 619, 617, 617, and 585 for the test-file mutant).
 
 **Checkpoint commit, local only: `af6e803`** on `vida-v2`, 26 files, nothing
-pushed, tagged or released. It exists because `mutantes.sh` refuses a dirty
+pushed, tagged or released. Work has continued in local commits since; `8429d0d`
+was the head before the reason-field slice. It exists because `mutantes.sh` refuses a dirty
 tree, on purpose, since it mutates `main.lua` and restores from a trap.
 
 Left deliberately uncommitted: `docs/ROADMAP_ONE_SHOT_PROMPT_DRAFT.md`, which
@@ -60,7 +65,8 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
 | T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed** | recorder proven to see calls, and to catch a stray one at 181 plays |
-| T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **cannot be run; protocol built, no result asserted** | no reason was ever recorded: `lab.lua:571` writes the pick and nothing else, and a grep over all 106 choices returns zero |
+| T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
+| T1.4 reason field | this session | `tools/render/{reason,lab,main}.lua`, `tools/juiz/reason_gate.{lua,sh}`, `tools/render/check.sh`, `tools/bateria.sh` | **landed** | 171 states / 30 pairs / 30 key lines byte-identical with a hostile reason on every one of the 106 recorded choices; 7 encoder mutations caught; `REGUA OK` on the MBP with the quote/pipe/equals round trip |
 | T1.4 critic context, round 3 | this session | `tools/juiz/dados/*_r3.txt`, `NOTAS_DO_CRITICO.md` | **run, inconclusive; critic NOT approved** | 60.0% against a 53.3% baseline, margin +6.7 inside a +/-12.6 standard error |
 | T2.3 slice 4, playback | this session | `main.lua`, `sfx/*.wav`, `tools/fx_sfx_gate.sh`, docs | **landed** | 637/637; off-guard defeat caught as `1 source(s), 5 play(s)`; full battery green on the MBP with the assets packaged |
 | T2.3 SFX, generated | this session | `tools/fx_sfx.lua`, `tools/fx_sfx_gate.sh`, `tools/bateria.sh` | **landed** | fireball -10.6 dBFS, bolt -10.1, control -91.0; 5 of 5 mutations caught; runtime playback is slice 3 |
@@ -1205,31 +1211,97 @@ pre-register the decision rule and checksum it before seeing any test pair;
 checksum the verdicts before fetching the key; and report the margin against
 always-commonest with its standard error.
 
-**The one code change it needs was deliberately not made here.** Adding a field
-to the choice line touches a format that `calibra.sh` and `ajusta.lua` both
-parse, so it deserves its own slice and its own parser gate over the existing
-file. Doing it as a footnote to a research round is how a format quietly breaks.
+**The one code change it needs was deliberately not made in that round**, and
+has since been made as its own slice: see the section below. Adding a field to
+the choice line touches a format that `calibra.sh` and `ajusta.lua` both parse,
+so it deserved its own parser gate over the existing file. Doing it as a
+footnote to a research round is how a format quietly breaks.
 
 **The critic remains out of the loop.** Nothing in this round changes that.
 
-## The next implementable item
+## T1.4 slice: a choice can carry a reason, and nothing downstream noticed
+
+Step 1 of the round 4 protocol, done as its own slice with its own gate.
+
+**The format.** `reason=<percent-encoded>` between the pick and the first `|`:
+
+```
+... escolha=B reason=kim%20disse%20%22o%20chato%20%7C%20le%20melhor%22 | A: ... | B: ...
+```
+
+Four constraints had to hold at once and they came from four different parsers:
+`key=(%S+)` forbids spaces, the A/B split forbids a pipe, `estadoCanonico`
+harvesting `key=value` forbids an equals sign of its own, and `(.*)$` on state B
+forbids the end of the line entirely. Percent-encoding everything outside
+`[%w%-%.~_]` satisfies all four without a rule per parser, and being an
+allowlist it cannot be broken by a character a future parser cares about.
+
+**No existing parser changed.** That was the design goal and it held: `ajusta.lua`
+and `calibra.sh` are untouched apart from comments.
+
+**Empty means the field is absent**, so a choice made without a reason is byte
+for byte the line the lab has always written. Verified on real LOVE, not
+inferred.
+
+**Measured.** `tools/juiz/reason_gate.sh` runs the real `ajusta.lua --estados`
+and the pair selector lifted out of `calibra.sh` over the 106 recorded choices,
+then over the same choices with a hostile reason on every line, and requires
+byte-identical output: **171 states, 30 pairs, 30 answer-key lines, all
+unchanged**. On the MBP the ruler proved the write path end to end: a reason
+containing a quote, a pipe and an equals sign came back out identical, and the
+line still parsed in the judge.
+
+**Mutations, 7 of 7 caught:** reason written raw; pipe, space and equals each
+leaked through the allowlist; empty reason still emitting a field; decode never
+unescaping; and one mutation of the gate itself proving that appending the field
+after state B does corrupt state B, so the placement is load-bearing.
+
+**Two gate defects found and fixed while building this**, both mine:
+- the end-to-end drift check first injected a reason with a bare pipe and stayed
+  green when the encoder was deliberately broken. A bare pipe is harmless, since
+  the split looks for `|` followed by `A:` and backtracks past a lone one. It
+  takes a reason containing `| A:` itself to hijack the split. The injected
+  string was changed to that;
+- the ruler's "a choice without a reason omits the field" check reported **ok**
+  on a run where LOVE never started: no file, so no `reason=` in it, so the
+  field was "correctly omitted". A check for the ABSENCE of something passes
+  hardest when nothing happened at all. It now requires the file to exist first.
+
+**Precision about coverage**, since overstating a gate is worse than not having
+one: a single leaked character does not shift the state list, because hijacking
+the split needs `|`, a space and `:` together, and `estadoCanonico` ignores
+non-`key=value` junk anyway. Single-character leaks are caught by the structural
+checks in `reason_gate.lua`. Neither half of the gate subsumes the other.
+
+**Typed before the pick.** `w` in choice mode opens a one-line field, enter
+stashes, escape discards, and the stash attaches to the next pick then clears.
+The 106 choices exist because a choice costs two keystrokes; demanding prose
+after every pick would have ended that. `labreason=<text>` stands in for the
+typing so the headless gate can exercise the write path.
+
+**Round 4 is still not runnable.** No recorded choice carries a reason yet, and
+the critic that would take the test has already seen round 3's key.
 
 ## The next implementable item
 
-**T1.2, named anchors and animation events.** T1.1 is done, and it leaves T1.2
-better supplied than it would have been: the lab can now show a character
-moving under the mod's real transform, which is where an anchor that drifts
-would become visible.
+**A calibration session with reasons, which needs Kim at the keyboard.** The
+field exists and is gated; what it does not have is data. Round 4 cannot run on
+zero annotated choices, and inventing them would be worse than having none.
 
-The order this project works in: build the measuring driver first, prove it
-reports a wrong anchor as wrong, and only then add the anchors it measures. The
-gate is a driver recording anchor positions through a walk cycle with
-`MOTION LAG`, `ATTENTION` and `PART LAG` on, checking each stays within a stated
-tolerance of the part it names, at all four camera rungs.
+What that session looks like, so it costs Kim as little as possible: open the
+lab in choice mode, keep picking at the usual two keystrokes, and press `w` only
+on the pairs where the reason is easy to say. Twenty annotated choices out of a
+normal session is plenty; they do not need to be consecutive and they do not
+need to be eloquent.
 
-**Still out of reach for any amount of autonomous work:** K1 to K5, and hiding
-the runner's window, which needs a separate macOS user session, a Space or a
-second display.
+**Independent of that, still open and display-free:** the remainder of T1.5, the
+`BATERIA OK`/`VERMELHA` banner and the 86 remaining Portuguese lines in
+`tools/ingame` and `tools/render` output, plus filenames.
+
+**Out of reach for any amount of autonomous work**, unchanged: K1 to K5 in the
+table above, and hiding the runner's window, which needs a separate macOS user
+session, a Space, or a second display. Those are decisions about credentials,
+taste and machine setup.
 
 An earlier version of this section argued for doing T1.2 BEFORE T1.1, on the
 grounds that anchors are read-only geometry while the synthetic matrix is a
@@ -1238,15 +1310,6 @@ one: T1.1's matrix is what lets an anchor be checked while the body is actually
 moving, and without it the anchor gate could only ever have measured a still
 pose. Kept because a reversed call is worth more written down than quietly
 deleted.
-
-The shape of the work, in the order this project does things: build the
-measuring driver first, prove it reports a wrong anchor as wrong, and only then
-add the anchors it measures.
-
-**What no amount of autonomous work reaches**, unchanged: K1 to K5 in the table
-above, and hiding the runner's window, which needs a separate macOS user
-session, a Space, or a second display. Those are decisions about credentials,
-taste and machine setup.
 
 ## Commands
 
