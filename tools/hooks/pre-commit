@@ -28,13 +28,13 @@ fi
 
 SAIDA=$(bash "$MOD/tools/bateria.sh" --rapido 2>&1)
 if [ $? -eq 0 ]; then
-  # SUMMARISE BY THE SHAPE bateria.sh's `veredito` prints, not by a list of step
+  # SUMMARISE BY THE SHAPE bateria.sh's `verdict` prints, not by a list of step
   # names. It used to grep for (suite|lint|folga|modkit), and when four gates
   # were added to the quick battery the summary quietly kept showing four of
   # eight: a successful commit reported less than it had actually run, which is
   # the kind of drift nobody notices because it still says ok.
   #
-  # `veredito` emits three spaces, a label padded to 44, then the verdict. So
+  # `verdict` emits three spaces, a label padded to 44, then the verdict. So
   # three-spaces-then-non-space, ending in ok, catches every step there is and
   # every step added later. The wider-indented lines a step prints on its own
   # (five or more spaces) do not match, which is what keeps this to one line per

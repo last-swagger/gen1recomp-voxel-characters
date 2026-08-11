@@ -60,11 +60,11 @@ for this document rather than quoting a previous run:
 assertion linter clean        (step 2)
 chunk-local headroom 75 free of 200, 125 in use, floor 15   (step 3)
 modkit validate ok            (step 4)
-BATERIA OK
+BATTERY OK
 ```
 
 The last full run, which needs the game and a display, reported `REGUA OK` with
-20 checks, `BATERIA OK` on every in-game gate, and `MUTANTES 5/5`.
+20 checks, `BATTERY OK` on every in-game gate, and `MUTANTES 5/5`.
 `release_check.sh` is red on purpose: it asserts the release author is
 `last-swagger`, and the nine published releases are signed by the personal
 account.
@@ -138,8 +138,8 @@ scope matters, so here is the measured state.
   `#` comments across every `.lua` and `.sh` returns two incidental hits, both
   quoting a filename or a test string.
 - **Not converted, and this is the part the handoff overstates:** the tool CLI
-  surface. Dozens of user-facing strings still print Portuguese (`BATERIA OK`,
-  `BATERIA VERMELHA`, `AVISO`, `uso:`), the
+  surface. Dozens of user-facing strings still print Portuguese (`BATTERY OK`,
+  `BATTERY RED`, `AVISO`, `uso:`), the
   drivers emit `PASSOU` and `FALHOU`, and the tool filenames are Portuguese
   (`bateria.sh`, `mutantes.sh`, `folga_locais.sh`, `juiz/`, `calibra.sh`,
   `gera.sh`, `sala_de_teste.sh`, `so_comentarios.lua`, `monta.sh`, `pouso.lua`).
@@ -655,15 +655,26 @@ eight gates), and the sweep has converted the safe tool surface including
 `runner.sh`, and `tools/juiz/ajusta.lua`. The current sweep reports 0 surface
 lines and 98 deferred lines declared with reasons.
 
-The battery's own `BATERIA OK` / `BATERIA VERMELHA` banner is deliberately
-still Portuguese: it is quoted in eight places across four docs, and the gate
-for this item is a full battery run, which needs a display. Renaming a banner
-and rewriting its citations in a display-blocked turn is more churn than value.
+**The banner is done.** `BATERIA OK` / `BATERIA VERMELHA` are now `BATTERY OK` /
+`BATTERY RED`, the per-gate word `FALHOU` is `FAILED`, and 15 citations across
+three docs were rewritten with them. Nothing parsed the banner, which was
+verified before changing it rather than assumed.
+
+What was worth guarding is the layer underneath: the verdict LINES are an
+interface with two readers, the pre-commit hook and `release.sh`, and neither is
+visible from the battery's own source. `tools/verdict_gate.sh` now runs as step
+7e and checks both, with their patterns lifted out of their own files. It found
+`release.sh` summarising **5 of 11** gates, because its pattern required the
+gate's name to be a single word; the hook had the same class of defect and had
+already been fixed, and this second copy had been missed. It also found
+`tools/ingame/monta.sh` grepping a Portuguese verdict with no English
+alternative, which the next slice would have broken silently.
+
 The remaining deferred strings live in `tools/ingame` and `tools/render`, whose
 output is parsed by display-backed gates, plus filenames and API/data values.
 
 **What changes:** a contributor running the battery stops reading
-`BATERIA VERMELHA`, and the remaining tool output stops depending on Portuguese
+`BATTERY RED`, and the remaining tool output stops depending on Portuguese
 for routine development. The repository exists because of outside reports and
 pull requests, so a language barrier costs exactly the most valuable input it
 has.

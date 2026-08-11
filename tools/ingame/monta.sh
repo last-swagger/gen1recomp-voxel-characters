@@ -53,7 +53,10 @@ for spec in "$@"; do
       echo "   FALHOU: clip.sh succeeded but produced no side-by-side"
     fi
   else
-    motivo=$(grep -oE 'FALHOU.*|opcao desconhecida.*' "$SAIDA/$nome.log" | head -1)
+    # Both languages, because the drivers are being converted one at a time.
+    # A counter that knows only one of them reads a converted driver as silent.
+    motivo=$(grep -oE '(FALHOU|FAILED).*|opcao desconhecida.*|unknown option.*' \
+             "$SAIDA/$nome.log" | head -1)
     FALHOS+=("$spec ${motivo:-unknown}")
     echo "   FALHOU: ${motivo:-see $SAIDA/$nome.log}"
   fi

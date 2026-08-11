@@ -23,13 +23,18 @@ the ruler and all five in-game gates.
 637/637 offline · lint clean · chunk-local headroom 71 of 200 (129 in use)
 modkit ok · option docs ok (17 options, 20 rows) · RUNNER SELFTEST OK (16 cases)
 execution state ok · en-US sweep ok · audio gate ok · fx sfx ok · reason field ok
-REGUA OK (MBP, 2026-08-10, 36 checks) · in-game 20/16/16/8/6 passed, 0 failed
-BATERIA OK
+verdict contract ok
+REGUA OK (36 checks) · in-game 20/16/16/8/6 passed, 0 failed
+BATTERY OK
 ```
 
-`--rapido` is 11 gates now; the reason field is 7d. The ruler figure above is
-from today's MBP run of the tempdir copy described under T1.4 slice: 36 checks,
-`REGUA OK`, including the three new choice-format checks.
+`--rapido` is 12 gates; the reason field is 7d and the verdict contract is 7e.
+The figures above are a FULL battery run on the MBP, 2026-08-11, from the
+tempdir copy described under the T1.5 slice 1 write-up.
+
+**The banner is `BATTERY OK` / `BATTERY RED` now**, not `BATERIA`. Anything
+grepping the old string finds nothing; nothing did, which was checked before
+changing it.
 
 **`MUTANTES OK: the suite killed all 5.`** The last gate in the definition of
 done now has a result. Clean base 621 checks; each declared mutation dropped the
@@ -66,6 +71,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
 | T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed** | recorder proven to see calls, and to catch a stray one at 181 plays |
 | T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
+| T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.4 reason field | this session | `tools/render/{reason,lab,main}.lua`, `tools/juiz/reason_gate.{lua,sh}`, `tools/render/check.sh`, `tools/bateria.sh` | **landed** | 171 states / 30 pairs / 30 key lines byte-identical with a hostile reason on every one of the 106 recorded choices; 7 encoder mutations caught; `REGUA OK` on the MBP with the quote/pipe/equals round trip |
 | T1.4 critic context, round 3 | this session | `tools/juiz/dados/*_r3.txt`, `NOTAS_DO_CRITICO.md` | **run, inconclusive; critic NOT approved** | 60.0% against a 53.3% baseline, margin +6.7 inside a +/-12.6 standard error |
 | T2.3 slice 4, playback | this session | `main.lua`, `sfx/*.wav`, `tools/fx_sfx_gate.sh`, docs | **landed** | 637/637; off-guard defeat caught as `1 source(s), 5 play(s)`; full battery green on the MBP with the assets packaged |
@@ -344,7 +350,7 @@ prints (three spaces, a padded label, then the verdict) instead of a list of
 names, so a gate added later appears without editing the hook. Verified: the old
 pattern matched 4 lines, the new one matches 8.
 
-**Deliberately deferred: the `BATERIA OK` / `BATERIA VERMELHA` banner.** It is
+**Deliberately deferred: the `BATTERY OK` / `BATTERY RED` banner.** It is
 quoted literally in eight places across four documents, including the roadmap's
 own statement of this problem, and T1.5's gate is a full battery run, which needs
 a display. Renaming a banner and rewriting its citations in a display-blocked
@@ -394,7 +400,7 @@ half would leave the branch that fires in production unexercised. That case now
 runs both halves, which is why the runner selftest went from 14 cases to 15.
 
 **Still deferred, and these are the reasons rather than a shrug:** the
-`BATERIA OK` banner (quoted in 8 places across 4 docs, gate is a full battery),
+`BATTERY OK` banner (quoted in 8 places across 4 docs, gate is a full battery),
 everything under `tools/ingame` and `tools/render` (their output is parsed by
 gates that need a display, so converting blind means changing text a gate greps
 without being able to run that gate), and all filenames.
@@ -479,7 +485,7 @@ Run on the MBP, 2026-08-10. **Two runs, and the first one is why the second
 means anything.**
 
 **Baseline first, nothing copied.** The MBP's own checkout at `857f697`, its own
-code, its own battery: `BATERIA OK`, 607/607 offline, headroom 41, `REGUA OK`,
+code, its own battery: `BATTERY OK`, 607/607 offline, headroom 41, `REGUA OK`,
 in-game 20/16/16/8/6. Without that, a red in the second run could not be told
 from a machine that was already red.
 
@@ -498,7 +504,7 @@ comparing revisions was never going to show that. The measured numbers did.
 | option docs, runner selftest, execution state, en-US sweep, audio gate | ok, all five new gates |
 | **the ruler** | **REGUA OK** |
 | **in-game**: probe_life, menu, probe_draw, probe_fp, probe_grid | **20 / 16 / 16 / 8 / 6 passed, 0 failed** |
-| verdict | **BATERIA OK** |
+| verdict | **BATTERY OK** |
 
 **What this answers, and it was the open question:** the five gates added to the
 quick half did not disturb the ruler or the in-game gates. The in-game counts
@@ -1219,6 +1225,64 @@ footnote to a research round is how a format quietly breaks.
 
 **The critic remains out of the loop.** Nothing in this round changes that.
 
+## T1.5 slice 4: the banner is en-US, and the verdict lines are a contract
+
+`BATERIA OK` / `BATERIA VERMELHA` are now `BATTERY OK` / `BATTERY RED`, and the
+per-gate word `FALHOU` is `FAILED`. The internal flag and the `veredito()`
+function that prints them were renamed with it, because a file printing FAILED
+while its own variable is called FALHOU is the half-converted state this item
+exists to close. 15 citations across three docs updated; Kim's draft untouched.
+
+**Nothing parsed the banner**, which was checked before changing it rather than
+assumed: the pre-commit hook and `release.sh` both match on the SHAPE of a
+verdict line, and everything else keys on the exit code.
+
+**But the verdict LINES are parsed, and that is where the risk was.** They are an
+interface with two readers and neither is visible from the battery's source. So
+`tools/verdict_gate.sh` now guards it, running as step 7e:
+
+- the banner in both states, lifted out of `bateria.sh` and executed: `VERMELHA=0`
+  must say `BATTERY OK` and exit 0, `VERMELHA=1` must say `BATTERY RED` and exit
+  1. The red half matters more, because a green run never executes it;
+- a passing verdict line must match the hook's pattern and `release.sh`'s, both
+  LIFTED from those files rather than restated, and a FAILING line must match
+  neither, or a summary would report a failure as a pass;
+- the in-game verdict counters must accept English as well as Portuguese, which
+  is what lets `tools/ingame` be converted one driver at a time instead of in a
+  flag day;
+- no Portuguese banner text left under `tools/`.
+
+**It found a real defect on its first run.** `release.sh` summarised the battery
+with `^\s+\S+\s+ok$`, which requires the gate's NAME to be a single word, so it
+printed **5 of 11**: every gate called "option docs", "reason field", "audio gate
+selftest", "runner selftest", "lint of assertions", "en-US sweep" or "fx sfx" was
+silently dropped from the release rehearsal. The pre-commit hook had the same
+class of defect, was found earlier and fixed; this second copy was missed
+because nobody re-reads a summary that still prints something. Fixed to the same
+pattern the hook uses.
+
+**It also found `tools/ingame/monta.sh` grepping `FALHOU` with no English
+alternative**, which slice 2 would have broken silently: a converted driver would
+have produced no failure reason at all. Made bilingual before slice 2 touches
+anything.
+
+**Mutations, 6 of 6 caught:** the red banner reverting to Portuguese, a red
+battery exiting 0, `verdict` losing one leading space, the hook narrowing back to
+single-word names, `release.sh` widening to match failures too, and `monta.sh`
+dropping the English alternative. Each was verified to fail for its own reason,
+not incidentally, and all four files restored with matching checksums.
+
+**Full battery green on the MBP**, 2026-08-11: 13 gates, `REGUA OK`, and the five
+in-game drivers at 20/16/16/8/6 passed with 0 failed, which is exactly the
+historical count, so the rename did not disturb the verdict counting.
+
+**Three offline gates went red on the MBP and were NOT the change.** The tempdir
+copy was missing the repo-root entries the battery reaches for: `tests/` for the
+love stub, `tools/` for modkit, and `main.lua`/`baserom.gb` for the game itself.
+Without `main.lua`, LOVE opened its "no game" screen and sat there at 4% CPU
+producing nothing, which from outside looks exactly like a slow gate. Worth
+knowing before anyone reads a machine difference as a code defect.
+
 ## T1.4 slice: a choice can carry a reason, and nothing downstream noticed
 
 Step 1 of the round 4 protocol, done as its own slice with its own gate.
@@ -1295,7 +1359,7 @@ normal session is plenty; they do not need to be consecutive and they do not
 need to be eloquent.
 
 **Independent of that, still open and display-free:** the remainder of T1.5, the
-`BATERIA OK`/`VERMELHA` banner and the 86 remaining Portuguese lines in
+`BATTERY OK`/`RED` banner and the 86 remaining Portuguese lines in
 `tools/ingame` and `tools/render` output, plus filenames.
 
 **Out of reach for any amount of autonomous work**, unchanged: K1 to K5 in the
@@ -1340,7 +1404,7 @@ down.
 ## Final state
 
 ```
-620/620 offline · REGUA OK (20 checks) · BATERIA OK on every in-game gate
+620/620 offline · REGUA OK (20 checks) · BATTERY OK on every in-game gate
 MUTANTES 5/5 · chunk-local headroom 74 of 200 · working tree clean
 ```
 

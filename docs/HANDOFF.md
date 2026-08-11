@@ -26,7 +26,7 @@ bash mods/voxel_characters/tools/mutantes.sh             are the checks checking
 bash mods/voxel_characters/tools/instala_hooks.sh        pre-commit runs the fast half
 ```
 
-Green as of this handoff: **620/620 offline, REGUA OK with 20 checks, BATERIA
+Green as of this handoff: **620/620 offline, REGUA OK with 20 checks, BATTERY
 OK across every in-game gate, MUTANTES 5/5, chunk-local headroom 74.**
 
 `release_check.sh` is RED on purpose. The core repo's own suite is red with 18

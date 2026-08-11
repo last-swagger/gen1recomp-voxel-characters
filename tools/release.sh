@@ -58,8 +58,15 @@ if ! bash "$AQUI/bateria.sh" > "$SAIDA.bateria.log" 2>&1; then
   tail -20 "$SAIDA.bateria.log"
   falha "a bateria esta vermelha. Log completo em $SAIDA.bateria.log"
 fi
-grep -E '^\s+\S+\s+ok$' "$SAIDA.bateria.log" | sed 's/^/  /' | head -12
-echo "  BATERIA OK"
+# SUMMARISE BY THE SHAPE `verdict` PRINTS, not by a token count. This pattern
+# was `^\s+\S+\s+ok$`, which requires the gate's NAME to be a single word, and
+# it silently printed 5 of 11: every gate called "option docs" or "reason field"
+# or "audio gate selftest" was dropped from the release rehearsal. The
+# pre-commit hook had the same defect for a different reason and was fixed; this
+# copy was missed, which is the argument for tools/verdict_gate.sh, that found
+# it. Same pattern as the hook's on purpose.
+grep -E '^   [^[:space:]].*[[:space:]]ok$' "$SAIDA.bateria.log" | sed 's/^/  /' | head -14
+echo "  BATTERY OK"
 
 # ------------------------------------------------------------- 2b. mutants
 # The battery says the checks pass. This says the checks are checking. It is

@@ -38,6 +38,11 @@
 #      through the real judge tools. 106 choices were collected before the field
 #      existed and they have to keep parsing exactly as they do today; a format
 #      that needs its old records migrated is a format that loses them;
+#   7e. the battery's own verdict lines, which are an interface and not prose:
+#      the pre-commit hook summarises them and release.sh prints them into a
+#      release rehearsal. Both patterns are lifted from those files and run
+#      against what `verdict` really prints. It found release.sh printing 5 of
+#      11 gates on its first run;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -53,36 +58,36 @@ RAIZ="$(cd "$MOD/../.." && pwd)"
 MODO="${1:-tudo}"
 
 LUAJIT=$(command -v luajit || echo /usr/local/bin/luajit)
-FALHOU=0
+VERMELHA=0
 PULADOS=""
 
 passo() { printf "\n\033[1m== %s\033[0m\n" "$1"; }
-veredito() {  # $1 = nome, $2 = codigo de saida
+verdict() {  # $1 = nome, $2 = codigo de saida
   if [ "$2" -eq 0 ]; then printf "   %-44s ok\n" "$1"
-  else printf "   %-44s FALHOU\n" "$1"; FALHOU=1; fi
+  else printf "   %-44s FAILED\n" "$1"; VERMELHA=1; fi
 }
 
 cd "$RAIZ" || exit 1
 
 passo "1. offline: the maths"
 "$LUAJIT" "$MOD/tests/voxel_chars_test.lua" 2>&1 | tail -1
-veredito "suite" "${PIPESTATUS[0]}"
+verdict "suite" "${PIPESTATUS[0]}"
 
 passo "2. checks that check nothing"
 "$LUAJIT" "$MOD/tools/lint_asserts.lua" 2>&1 | tail -1
-veredito "lint of assertions" "${PIPESTATUS[0]}"
+verdict "lint of assertions" "${PIPESTATUS[0]}"
 
 passo "3. chunk-local headroom (COMPILE error if exceeded)"
 bash "$MOD/tools/folga_locais.sh" 2>&1 | tail -2
-veredito "folga_locais" "${PIPESTATUS[0]}"
+verdict "folga_locais" "${PIPESTATUS[0]}"
 
 passo "4. packaging: does the game accept the mod?"
 python3 "$RAIZ/tools/modkit.py" validate "$MOD" 2>&1 | tail -1
-veredito "modkit" "${PIPESTATUS[0]}"
+verdict "modkit" "${PIPESTATUS[0]}"
 
 passo "5. option docs: can a player find every option?"
 "$LUAJIT" "$MOD/tools/options_documented.lua" 2>&1 | tail -10
-veredito "options_documented" "${PIPESTATUS[0]}"
+verdict "options_documented" "${PIPESTATUS[0]}"
 
 # The runner's own selftest, not a visual run. It proves the controlled runner
 # reports a problem when there is one (no verdict, no artifact, unusable
@@ -90,14 +95,14 @@ veredito "options_documented" "${PIPESTATUS[0]}"
 # delta against native is measured. Nothing below has been moved onto it.
 passo "6. the controlled runner fails when it should"
 bash "$MOD/tools/runner/runner.sh" selftest 2>&1 | tail -3
-veredito "runner selftest" "${PIPESTATUS[0]}"
+verdict "runner selftest" "${PIPESTATUS[0]}"
 
 # The state file is what a cold session, a compaction or a handoff lands on, so
 # it is gated like anything else. The required sections come from ROADMAP_V3.md
 # section 9.7, not from a list inside the gate.
 passo "7. the durable execution state is complete"
 "$LUAJIT" "$MOD/tools/execution_state_gate.lua" 2>&1 | tail -6
-veredito "execution_state" "${PIPESTATUS[0]}"
+verdict "execution_state" "${PIPESTATUS[0]}"
 
 # The tool surface stays en-US. Scope and exemptions live in
 # tools/en_us_scope.txt as data, each deferral carrying a reason, and a deferral
@@ -105,14 +110,14 @@ veredito "execution_state" "${PIPESTATUS[0]}"
 # regression silently.
 passo "7a. the tool surface is en-US"
 "$LUAJIT" "$MOD/tools/en_us_sweep.lua" 2>&1 | tail -5
-veredito "en-US sweep" "${PIPESTATUS[0]}"
+verdict "en-US sweep" "${PIPESTATUS[0]}"
 
 # The instrument, verified before it is trusted to judge anything: it proves the
 # ruler can tell silence from signal and refuses a file it could not read.
 passo "7b. the audio gate can tell silence from signal"
 if [ -n "${FFMPEG:-}" ] || command -v ffmpeg >/dev/null 2>&1; then
   bash "$MOD/tools/audio_gate.sh" --selftest 2>&1 | tail -3
-  veredito "audio gate selftest" "${PIPESTATUS[0]}"
+  verdict "audio gate selftest" "${PIPESTATUS[0]}"
 else
   printf "   %-44s SKIPPED (no ffmpeg)\n" "audio gate selftest"
 fi
@@ -120,21 +125,25 @@ fi
 passo "7c. the FX demo's sounds are real, regenerated and measured"
 if [ -n "${FFMPEG:-}" ] || command -v ffmpeg >/dev/null 2>&1; then
   bash "$MOD/tools/fx_sfx_gate.sh" 2>&1 | tail -6
-  veredito "fx sfx" "${PIPESTATUS[0]}"
+  verdict "fx sfx" "${PIPESTATUS[0]}"
 else
   printf "   %-44s SKIPPED (no ffmpeg)\n" "fx sfx"
 fi
 
+passo "7e. the battery's verdicts still reach their readers"
+bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9
+verdict "verdict contract" "${PIPESTATUS[0]}"
+
 passo "7d. a reason on a choice changes nothing the judge reads"
 bash "$MOD/tools/juiz/reason_gate.sh" 2>&1 | tail -6
-veredito "reason field" "${PIPESTATUS[0]}"
+verdict "reason field" "${PIPESTATUS[0]}"
 
 if [ "$MODO" = "--rapido" ]; then
   PULADOS="the ruler and the in-game gates"
 else
   passo "8. THE RULER, before trusting any measurement"
   bash "$MOD/tools/render/check.sh" 2>&1 | tail -2
-  veredito "check.sh" "${PIPESTATUS[0]}"
+  verdict "check.sh" "${PIPESTATUS[0]}"
 fi
 
 if [ "$MODO" = "tudo" ]; then
@@ -157,11 +166,11 @@ if [ "$MODO" = "tudo" ]; then
     if [ "$NPASSOU" -eq 0 ]; then
       printf "   %-44s NO VERDICT (the driver measured nothing)\n" "$d"
       printf '%s' "$SAIDA" | tail -2 | sed 's/^/       /'
-      FALHOU=1
+      VERMELHA=1
     else
       [ "$NFALHOU" -eq 0 ] && R=0 || R=1
       printf "     %d passed, %d failed\n" "$NPASSOU" "$NFALHOU"
-      veredito "$d" "$R"
+      verdict "$d" "$R"
     fi
   done
 elif [ "$MODO" = "--sem-jogo" ]; then
@@ -170,9 +179,9 @@ fi
 
 printf "\n"
 [ -n "$PULADOS" ] && echo "SKIPPED on purpose: $PULADOS"
-if [ $FALHOU -eq 0 ]; then
-  echo "BATERIA OK"
+if [ $VERMELHA -eq 0 ]; then
+  echo "BATTERY OK"
 else
-  echo "BATERIA VERMELHA"
+  echo "BATTERY RED"
 fi
-exit $FALHOU
+exit $VERMELHA
