@@ -5423,8 +5423,8 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 20,
-     "com canal, vinte rows: STATUS, LIFE, CAMERA FIT e as dezessete opcoes")
+  eq(#rows, 21,
+     "com canal, vinte e uma rows: STATUS, LIFE, CAMERA FIT e as dezoito opcoes")
   eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
   eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
@@ -5436,7 +5436,13 @@ do
   -- went stale without anyone noticing.
   eq(rows[17].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
   eq(rows[18].label, "PART LAG", "PART LAG aparece depois de ATTENTION")
-  eq(rows[19].label, "FIRST PERSON", "FIRST PERSON aparece depois de PART LAG")
+  -- AUTHORED REGIONS sits next to PART LAG on purpose: it changes nothing on
+  -- its own, it only alters where PART LAG cuts, and an option that refines
+  -- another one belongs beside it in the menu rather than at the end.
+  eq(rows[19].label, "AUTHORED REGIONS",
+     "AUTHORED REGIONS aparece depois de PART LAG, que ela refina")
+  eq(rows[20].label, "FIRST PERSON",
+     "FIRST PERSON aparece depois de AUTHORED REGIONS")
 end
 
 do
@@ -7718,6 +7724,229 @@ do
     string.format("T2.3: off is silent and both families are heard "
       .. "(off %d, fireball %d, bolt %d)",
       #regOff.tocadas, #regFogo.tocadas, #regRaio.tocadas))
+end
+
+-- T2.1 slice 3: PART LAG CUTS ALONG MEASURED REGIONS, NOT EQUAL CELL SLICES.
+--
+-- The defect this addresses was measured, not imagined. `PART LAG` divides the
+-- body with `math.floor(y / cellH * REGION_BANDS)`, which divides the CELL, and
+-- tools/measure_regions.py found that Ash's walking frames sit a row lower in
+-- the cell than his standing frames. So every boundary lands a row up the body
+-- mid-stride: the neck line moves during a walk for no reason a viewer could
+-- name.
+--
+-- WHAT THIS GATE HAS TO SHOW, and each part is a way the slice could be hollow:
+--
+--   1. with AUTHORED REGIONS off, the bands are exactly what they always were.
+--      This is the control, and it is the promise the whole authored layer is
+--      allowed to exist under;
+--   2. with it on, the bands MOVE, and move to where the measurement says. An
+--      option that changes an internal path and no output is decoration;
+--   3. the feet band begins at the measured split, which is the part that
+--      could not come from dividing anything evenly;
+--   4. an OBJECT sheet is refused even when it carries measurements, so an item
+--      ball cannot become segmented because somebody described it;
+--   5. impossible metadata falls back to the cell rather than being used. Stale
+--      bounds are the failure this slice invites, and cutting along a row from
+--      a sprite that has since been re-imported is worse than not cutting.
+do
+  local pixels = {}
+  local W, H = 16, 16
+  local function bloco(x0, x1, y0, y1)
+    for ly = y0, y1 do
+      for lx = x0, x1 do paint(pixels, W, W, 0, lx, ly, 1) end
+    end
+  end
+  -- THE FIGURE DELIBERATELY DOES NOT FILL THE CELL. It occupies rows 4..15,
+  -- leaving the top quarter empty. That is what makes the two rules produce
+  -- different answers: dividing the cell puts a boundary at row 4, and
+  -- dividing the figure puts the first boundary well below it. A figure that
+  -- filled the cell would make this gate pass on either rule.
+  bloco(6, 9, 4, 8)      -- head, starting a quarter of the way down
+  bloco(4, 11, 9, 12)    -- torso
+  bloco(5, 6, 13, 15)    -- left leg
+  bloco(9, 10, 13, 15)   -- right leg, a gap between them from row 13
+
+  local ESTADO = { part_lag = 0.16, blink = "off" }
+
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+
+  -- Serves one synthetic authored sheet through the REAL loader, so what is
+  -- exercised is the runtime's own file path, its `kind` check and its
+  -- validation, rather than a table handed straight to the band code.
+  local function comFolha(folhaLua, fn)
+    local fs = love and love.filesystem
+    if not fs then return nil end
+    local oGet, oLoad = fs.getInfo, fs.load
+    fs.getInfo = function(caminho)
+      if caminho:match("/authored/sheets/") then
+        return folhaLua and { type = "file" } or nil
+      end
+      return oGet and oGet(caminho)
+    end
+    fs.load = function(caminho)
+      if caminho:match("/authored/sheets/") then
+        return loadstring(folhaLua)
+      end
+      return oLoad and oLoad(caminho)
+    end
+    local ok, r = pcall(fn)
+    fs.getInfo, fs.load = oGet, oLoad
+    if not ok then error(r) end
+    return r
+  end
+
+  -- Builds one mesh and reports where each band boundary falls, as SHEET ROWS,
+  -- which is the only form in which the two rules can be compared.
+  local function bandasDe(ligado, folhaLua)
+    local function corpo()
+      local handle, modules = makeVoxelHandle("1.6.0", pixels, W, H,
+        math.rad(35), nil, nil, nil, nil, true)
+      local mod = loadWith(makeMod(handle, ESTADO))
+      if ligado then
+        setOptionStateWithoutClearing(modules, "authored_regions", "on")
+      end
+      local mesh = modules.SpriteBillboards.mesh(
+        { image = "sheet.png", frames = 1 }, 0)
+      local faixas = mod._bands(mesh)
+      if not faixas then return nil end
+      -- HOW MANY QUADS LANDED IN EACH BAND, head first. Read straight off the
+      -- ranges the builder wrote, so this measures the mesh that exists rather
+      -- than re-running the arithmetic that produced it and agreeing with
+      -- itself.
+      local contas = {}
+      for b = 1, #faixas do contas[b] = faixas[b].quantos / 4 end
+      return contas
+    end
+    return comFolha(folhaLua, corpo)
+  end
+
+  local FOLHA_VIVA = [[return { kind = "living", measured = {
+    [0] = { top = 4, bottom = 15, left = 4, right = 11, footSplit = 13 } } }]]
+  local FOLHA_OBJETO = [[return { kind = "object", measured = {
+    [0] = { top = 4, bottom = 15, left = 4, right = 11, footSplit = 13 } } }]]
+  local FOLHA_IMPOSSIVEL = [[return { kind = "living", measured = {
+    [0] = { top = 4, bottom = 99, left = 4, right = 11, footSplit = 13 } } }]]
+
+  local desligado = bandasDe(false, FOLHA_VIVA)
+  if desligado == nil then
+    check(false, "T2.1 bandas: nao consegui construir a malha de controle")
+  else
+    local ligado = bandasDe(true, FOLHA_VIVA)
+    exige(ligado ~= nil, "the region path produced no bands at all")
+
+    -- 1 and 2. The control is the cell rule, and turning the option on has to
+    -- move quads between bands. Compared as whole lists so a change anywhere
+    -- counts.
+    if ligado then
+      local iguais = #ligado == #desligado
+      for b = 1, math.min(#ligado, #desligado) do
+        if ligado[b] ~= desligado[b] then iguais = false end
+      end
+      exige(not iguais,
+        "AUTHORED REGIONS on split the body exactly as off did (%s). The "
+        .. "option changes an internal path and nothing a viewer could see",
+        table.concat(desligado, ","))
+
+      -- 3. THE DEFECT, STATED AS A NUMBER. The figure starts at row 4 of a
+      -- 16-row cell, so the cell rule spends its entire first band on the empty
+      -- quarter above the head: a quarter of PART LAG's range delays nothing.
+      -- Dividing the FIGURE cannot do that.
+      exige(desligado[1] == 0,
+        "the cell rule put %d quads in the head band, so this figure does not "
+        .. "reproduce the defect and the comparison below proves nothing",
+        desligado[1] or -1)
+      exige(ligado[1] > 0,
+        "the region rule also left the head band empty, so it is still cutting "
+        .. "the cell rather than the figure")
+
+      -- 4. The feet band begins at the measured split rather than at three
+      -- quarters of the cell. The split is row 13 and the cell boundary is row
+      -- 12, so the region rule's feet band holds strictly fewer quads.
+      exige(ligado[#ligado] > 0,
+        "the region rule left the feet band EMPTY. A band with nothing in it is "
+        .. "smaller than the cell rule's too, which is how the check below "
+        .. "passed on a body whose feet had been dropped somewhere else")
+      exige(ligado[#ligado] < desligado[#desligado],
+        "the feet band holds %d quads with regions on and %d with them off. "
+        .. "The measurement says the legs part at row 13 and the cell rule "
+        .. "cuts at 12, so it should be smaller",
+        ligado[#ligado] or -1, desligado[#desligado] or -1)
+    end
+
+    -- 4. THE CACHE KEY, tested by toggling WITHOUT clearing anything.
+    --
+    -- This is its own check because the obvious version of this gate cannot
+    -- see it: every measurement above builds a fresh handle, so the cache is
+    -- empty each time and a key that ignored the option would still look
+    -- right. Here one set of modules builds the same sprite twice, with the
+    -- option flipped in between and no cache clear, which is exactly what the
+    -- menu does. If the key omits the option the second build returns the
+    -- first mesh and the bands come back identical -- the defect
+    -- Colonel_Aureliano reported in v1.4.0, where touching the menu changed
+    -- nothing until something else happened to evict the mesh.
+    local mesmoModulo = comFolha(FOLHA_VIVA, function()
+      local handle, modules = makeVoxelHandle("1.6.0", pixels, W, H,
+        math.rad(35), nil, nil, nil, nil, true)
+      local mod = loadWith(makeMod(handle, ESTADO))
+      local def = { image = "sheet.png", frames = 1 }
+      local function contas()
+        local faixas = mod._bands(modules.SpriteBillboards.mesh(def, 0))
+        if not faixas then return nil end
+        local c = {}
+        for b = 1, #faixas do c[b] = faixas[b].quantos / 4 end
+        return c
+      end
+      local antes = contas()
+      setOptionStateWithoutClearing(modules, "authored_regions", "on")
+      local depois = contas()
+      return { antes = antes, depois = depois }
+    end)
+    if mesmoModulo and mesmoModulo.antes and mesmoModulo.depois then
+      local igual = #mesmoModulo.antes == #mesmoModulo.depois
+      for b = 1, math.min(#mesmoModulo.antes, #mesmoModulo.depois) do
+        if mesmoModulo.antes[b] ~= mesmoModulo.depois[b] then igual = false end
+      end
+      exige(not igual,
+        "toggling AUTHORED REGIONS on an already-built sprite returned the "
+        .. "cached mesh unchanged (%s). The option is missing from the cache "
+        .. "key, so the menu does nothing until the mesh is evicted",
+        table.concat(mesmoModulo.antes, ","))
+    else
+      exige(false, "the cache key check could not build the sprite twice")
+    end
+
+    -- 5. An object is refused even though the metadata is well formed.
+    local objeto = bandasDe(true, FOLHA_OBJETO)
+    if objeto then
+      local igual = #objeto == #desligado
+      for b = 1, math.min(#objeto, #desligado) do
+        if objeto[b] ~= desligado[b] then igual = false end
+      end
+      exige(igual,
+        "an OBJECT sheet was segmented from its metadata. An item ball must "
+        .. "not become alive or divided because somebody described it")
+    end
+
+    -- 6. Impossible bounds fall back to the cell instead of being used.
+    local impossivel = bandasDe(true, FOLHA_IMPOSSIVEL)
+    if impossivel then
+      local igual = #impossivel == #desligado
+      for b = 1, math.min(#impossivel, #desligado) do
+        if impossivel[b] ~= desligado[b] then igual = false end
+      end
+      exige(igual,
+        "metadata claiming the figure ends at row 99 of a 16-row cell was "
+        .. "USED. Stale bounds are exactly what this path invites")
+    end
+  end
+
+  check(#problemas == 0,
+    "T2.1: PART LAG cuts along measured regions and refuses bad ones"
+    .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
 end
 
 T.finish("voxel_chars_test")

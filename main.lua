@@ -398,6 +398,30 @@ local OPTIONS = {
     help = "Delays the upper body behind the lower one, so the head and hair arrive late instead of moving as one rigid piece. Needs MOTION LAG, SWAY or ATTENTION on: it delays their movement, and has nothing to delay on its own.",
   },
   {
+    key = "authored_regions",
+    label = "AUTHORED REGIONS",
+    -- WHAT THIS CHANGES, and it changes nothing on its own: it only alters
+    -- WHERE PART LAG cuts. With it off, the body is divided into four equal
+    -- slices of the CELL. With it on, and only for a sheet that ships measured
+    -- metadata, it is divided along the FIGURE, and the feet band begins where
+    -- the legs actually part.
+    --
+    -- The defect it addresses was measured rather than imagined
+    -- (tools/measure_regions.py): the walking frames of a sheet sit lower in
+    -- the cell than the standing frames, so cutting the cell puts every
+    -- boundary a row up the body mid-stride. The neck line moves during a walk
+    -- for no reason a viewer could name.
+    --
+    -- OFF by default, and the reason is not only the house rule. This is the
+    -- first option whose behaviour depends on material shipped WITH the mod
+    -- rather than derived from the player's own ROM, and pure runtime has to
+    -- stay reachable as the control. It ships no pixels: see
+    -- docs/DISCLOSURE_DRAFT.md and authored/schema.lua.
+    levels = { { "OFF", "off" }, { "ON", "on" } },
+    defaultIndex = 1,
+    help = "Lets PART LAG cut along measured body regions instead of four equal slices of the cell. Only affects sheets that ship region metadata, and only while PART LAG is on. Ships no artwork.",
+  },
+  {
     key = "first_person",
     label = "FIRST PERSON",
     levels = { { "CARD", "card" }, { "SOLID", "solid" } },
@@ -475,7 +499,8 @@ end
 -- Voxel3D.draw. Offering SOLID on a host without that channel would be
 -- offering the spikes back.
 local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
-  footfall = true, attention = true, part_lag = true, first_person = true }
+  footfall = true, attention = true, part_lag = true, first_person = true,
+  authored_regions = true }
 
 -- SIDE COLOR sentinel used by bodyTexelInFrame/blinkBodyTexel (further
 -- below) to decide whether the body search comes into play. It stays as
@@ -696,6 +721,46 @@ local meshBlink = setmetatable({}, { __mode = "k" })
 -- extra band is another draw call per character per frame on a scene that
 -- draws twenty five of them.
 local meshBands = setmetatable({}, { __mode = "k" })
+
+-- MEASURED REGION METADATA FOR ONE SHEET, or nil (roadmap T2.1 slice 3).
+--
+-- Read from authored/sheets/<base>.lua, which ships with the mod and contains
+-- bounds produced by tools/measure_regions.py. Nothing here is a pixel: the
+-- authored layer's pixel count is zero and the provenance metric reports it as
+-- zero. See docs/DISCLOSURE_DRAFT.md.
+--
+-- OBJECTS NEVER COME BACK FROM THIS FUNCTION. A sheet whose `kind` is not
+-- `living` returns nil even if it carries measurements, so an item ball cannot
+-- become segmented merely because somebody described it. That is the same rule
+-- the schema enforces on the data and `STILL_OBJECTS` enforces on life, stated
+-- a third time at the point of use, because this is where getting it wrong
+-- would show.
+--
+-- Failure is cached too, negatively, so a missing sheet costs one lookup rather
+-- than one per mesh build.
+local authoredCache = {}
+local function authoredRegions(base)
+  if not base then return nil end
+  local hit = authoredCache[base]
+  if hit ~= nil then return hit or nil end
+  local dados = nil
+  local caminho = (mod.path or ".") .. "/authored/sheets/" .. base .. ".lua"
+  if love and love.filesystem and love.filesystem.getInfo
+     and love.filesystem.getInfo(caminho) then
+    local okLoad, chunk = pcall(love.filesystem.load, caminho)
+    if okLoad and chunk then
+      local okRun, folha = pcall(chunk)
+      -- `living` and measured, or nothing. Both halves matter: the kind keeps
+      -- objects out, and the measurements are the only part this path uses.
+      if okRun and type(folha) == "table" and folha.kind == "living"
+         and type(folha.measured) == "table" then
+        dados = folha.measured
+      end
+    end
+  end
+  authoredCache[base] = dados or false
+  return dados
+end
 local REGION_BANDS = 4
 
 -- THE FX DEMO (roadmap T2.3), one table instead of a dozen chunk locals.
@@ -1975,6 +2040,54 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     local quads = #verts / 4
     local porBanda = {}
     for b = 1, bandas do porBanda[b] = {} end
+    -- MEASURED REGIONS, OR FOUR EQUAL SLICES OF THE CELL (roadmap T2.1 slice 3).
+    --
+    -- `regiao` is nil unless AUTHORED REGIONS is on AND this sheet ships
+    -- measurements for this frame. Nil means the arithmetic below is exactly
+    -- what it always was, which is what keeps the pure runtime path
+    -- byte-identical rather than merely similar.
+    local regiao = nil
+    if optionState.authored_regions == "on" then
+      local medidas = authoredRegions(baseName)
+      regiao = medidas and medidas[frame] or nil
+      -- A measurement that cannot be true of this cell is refused here rather
+      -- than used. Stale metadata is the failure mode this whole slice invites,
+      -- and silently cutting along a bound from a sprite that has since been
+      -- re-imported would be worse than not cutting along anything.
+      if regiao then
+        local alt = m.cellH or 16
+        local ok = type(regiao.top) == "number" and type(regiao.bottom) == "number"
+          and regiao.top >= 0 and regiao.bottom < alt and regiao.top < regiao.bottom
+        if ok and regiao.footSplit then
+          ok = regiao.footSplit > regiao.top and regiao.footSplit <= regiao.bottom
+        end
+        if not ok then regiao = nil end
+      end
+    end
+
+    -- Head-first band for a sheet ROW, from the measured figure rather than
+    -- from the cell. Local to this block, so it costs no chunk local.
+    --
+    -- The feet band starts where the legs actually part when that was
+    -- measurable, and the rest of the figure divides evenly above it. Where it
+    -- was not measurable -- the side standing pose has both feet together --
+    -- the whole figure divides evenly, which is still the FIGURE and not the
+    -- cell, so the bob no longer moves the boundaries.
+    local function bandaMedida(ly)
+      local topo, base = regiao.top, regiao.bottom
+      if ly < topo then ly = topo elseif ly > base then ly = base end
+      local corte = regiao.footSplit
+      if corte then
+        if ly >= corte then return bandas end
+        local i = math.floor((ly - topo) / (corte - topo) * (bandas - 1)) + 1
+        if i > bandas - 1 then i = bandas - 1 end
+        return i
+      end
+      local i = math.floor((ly - topo) / (base - topo + 1) * bandas) + 1
+      if i < 1 then i = 1 elseif i > bandas then i = bandas end
+      return i
+    end
+
     for q = 0, quads - 1 do
       -- The band comes from the quad's own centre in Y, so a quad that
       -- straddles a boundary lands wherever most of it is, and no quad ends up
@@ -1982,7 +2095,15 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
       local y = 0
       for k = 1, 4 do y = y + verts[q * 4 + k][2] end
       y = y / 4
-      local b = math.floor(y / (m.cellH or 16) * bandas) + 1
+      local b
+      if regiao then
+        -- Back to a sheet row. The builder emits row `ly` at
+        -- `y = cellH - 1 - ly` (see `cellBottom - ly` above), so a quad centred
+        -- half a row lower inverts to `floor(cellH - y)`.
+        b = bandas - bandaMedida(math.floor((m.cellH or 16) - y)) + 1
+      else
+        b = math.floor(y / (m.cellH or 16) * bandas) + 1
+      end
       if b < 1 then b = 1 elseif b > bandas then b = bandas end
       porBanda[b][#porBanda[b] + 1] = q
     end
@@ -2543,6 +2664,16 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
   -- Same requirement from this round's spec ("the cache key needs to
   -- include the strength"), same reason as TOP DOME right above.
   local stepWeightPart = shape == "slab" and tostring(stepWeight or "") or ""
+  -- AUTHORED REGIONS CHANGES THE VERTEX ORDER, so it has to be in the key for
+  -- the same reason TOP DOME and STEP WEIGHT are. Without it, toggling the
+  -- option would leave every already-built mesh cut the old way until the LRU
+  -- happened to recycle it: the menu would appear to do nothing, which is
+  -- exactly the defect Colonel_Aureliano reported in v1.4.0.
+  --
+  -- Read from optionState rather than passed in, because it is not one of the
+  -- things buildSlabMesh's caller resolves, and threading a thirteenth
+  -- parameter through for a boolean is how signatures rot.
+  local authoredPart = tostring(optionState.authored_regions or "")
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
@@ -2555,6 +2686,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
     frontShapePart,
     topDomePart,
     stepWeightPart,
+    authoredPart,
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -4100,4 +4232,26 @@ end
 -- played for a refused effect would be a noise with nothing behind it.
 function mod._fxNascidos()
   return FX.nascidos
+end
+
+-- THE BAND RANGES PART LAG WILL CUT ALONG (roadmap T2.1 slice 3).
+--
+-- Internal test hook, not public API, same as the four above. It is what lets
+-- the region path be checked without a person looking at a screen: the gate
+-- builds one mesh with AUTHORED REGIONS off and one with it on, reads the
+-- boundaries out of both, and compares them against the measured sheet.
+--
+-- It returns the ranges as they are stored, in VERTEX indices, head first.
+-- Deriving the row each boundary falls on is the caller's job, because that
+-- conversion belongs next to whatever is asking rather than in here.
+function mod._bands(mesh)
+  return meshBands[mesh]
+end
+
+-- Whether a sheet's measured metadata is reachable at all, and what it says.
+-- Exists so a gate can tell "the regions did nothing because the option is
+-- off" apart from "the regions did nothing because the file never loaded",
+-- which otherwise look identical from outside and are very different problems.
+function mod._authoredRegions(base)
+  return authoredRegions(base)
 end

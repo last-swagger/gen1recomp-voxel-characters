@@ -22,11 +22,11 @@
 --      source, which is where the runtime already decides what is alive. Two
 --      places that disagree about whether an item ball breathes is how the
 --      item ball ends up breathing;
---   5. NOTHING IN THE MOD READS ANY OF IT. This is the byte-identical
---      guarantee in its strongest available form: the authored path cannot
---      change a pixel because the runtime does not open the directory. When
---      that stops being true, this check has to be replaced by a real
---      authored-off render comparison, and it says so when it fails;
+--   5. the authored path has exactly ONE entry point, it is shut by default,
+--      and the loader refuses object sheets. Slice 1 asserted the runtime
+--      never mentioned the layer at all; slice 3 wired it in, so that
+--      assertion expired loudly and was replaced rather than deleted. The
+--      byte-identical evidence itself lives in the suite and the ruler;
 --   6. the measured finding is pinned: PART LAG cuts bands from the CELL, and
 --      the sheet's bob says how far that is off the body. A characterisation,
 --      so the slice that fixes it has something to show it changed.
@@ -175,17 +175,52 @@ else
   end
 end
 
--- 5. the runtime does not read any of it
-local lendo = {}
-for _, arquivo in ipairs({ "main.lua" }) do
-  local texto = ler(RAIZ .. "/" .. arquivo) or ""
-  if texto:find("authored", 1, true) then lendo[#lendo + 1] = arquivo end
+-- 5. THE RUNTIME READS IT NOW, SO THE OFF PATH IS PROVED DIFFERENTLY.
+--
+-- Slice 1's version of this asserted that `main.lua` never mentioned the
+-- authored layer, which made "off changes nothing" true by construction. Slice
+-- 3 wires the layer into PART LAG, so that argument expired -- and it expired
+-- LOUDLY, with instructions, which is the whole reason it was written as an
+-- assertion instead of a comment.
+--
+-- What replaces it is the guard itself, checked in three parts. The real
+-- byte-identical evidence lives in two places this gate cannot reach: the
+-- offline suite builds one mesh each way and requires the band ranges to be
+-- identical with the option off, and the ruler renders the whole battery.
+-- What is checkable here is that there is exactly ONE way in and that it is
+-- shut by default.
+do
+  local entradas = 0
+  for _ in fonte:gmatch('optionState%.authored_regions%s*==%s*"on"') do
+    entradas = entradas + 1
+  end
+  exige(entradas == 1,
+    "the authored path has %d entry points in main.lua. It must have exactly "
+    .. "one: every additional guard is another place the off path can stop "
+    .. "being off, and none of them is covered by the control below", entradas)
+
+  -- Default OFF, read out of the option's own definition rather than trusted.
+  local bloco = fonte:match('key = "authored_regions".-defaultIndex = (%d+)')
+  exige(bloco == "1",
+    "AUTHORED REGIONS does not default to the first level (defaultIndex is %s). "
+    .. "Pure runtime has to stay the default, not merely be reachable",
+    tostring(bloco))
+  local niveis = fonte:match('key = "authored_regions".-levels = {(.-)}%s*,')
+  exige(niveis and niveis:match('{ "OFF"'),
+    "AUTHORED REGIONS's first level is not OFF, so defaulting to the first one "
+    .. "does not mean what the line above assumes")
+
+  -- Objects are refused at the loader, not merely at the schema. The schema
+  -- governs the DATA; this governs what the runtime does with a sheet that got
+  -- past it, which is the case that would actually animate an item ball.
+  exige(fonte:match('folha%.kind == "living"') ~= nil,
+    "the runtime loader no longer requires kind == \"living\". An object sheet "
+    .. "carrying measurements would be segmented, which is the one outcome "
+    .. "this fixture exists to prevent")
+  if entradas == 1 and bloco == "1" then
+    print("  authored path: one entry point, default OFF, living-only")
+  end
 end
-exige(#lendo == 0,
-  "%s now references the authored layer. The zero-pixel argument above is no "
-  .. "longer the byte-identical proof: replace check 5 with a real render "
-  .. "comparison between the authored path off and today's output",
-  table.concat(lendo, ", "))
 
 -- 6. THE FINDING THIS SLICE MEASURED, pinned so it cannot drift unnoticed.
 --
@@ -195,9 +230,10 @@ exige(#lendo == 0,
 -- every band boundary lands that far up the body from where it lands when
 -- standing: the neck line moves, mid-stride, for no reason a viewer could name.
 --
--- This is a characterisation, not a complaint. It asserts what is true TODAY, in
--- numbers, so that the slice which fixes it has something to show it changed,
--- and so that nobody rediscovers it from scratch. Two halves, and both have to
+-- This is a characterisation, not a complaint. It asserts what is true of the
+-- DEFAULT path, which is still the cell rule and still ships that way. Slice 3
+-- added `AUTHORED REGIONS`, which cuts the figure instead, but it is off until
+-- somebody turns it on, so the number below is what a player gets. Two halves, and both have to
 -- hold for the number to mean anything:
 --
 --   the band rule still divides by the cell height, and
@@ -227,8 +263,8 @@ do
     .. "in the docs has to move with it", bobMax, BOB_ESPERADO)
   if regra and bobMax == BOB_ESPERADO then
     print(string.format(
-      "  PART LAG bands are cut from the cell, so they sit %d row(s) off the "
-      .. "body on every frame with a bob", bobMax))
+      "  PART LAG cuts the cell by default, %d row(s) off the body on a bobbing "
+      .. "frame; AUTHORED REGIONS cuts the figure instead", bobMax))
   end
 end
 
@@ -242,5 +278,5 @@ if #problemas > 0 then
 end
 print(string.format(
   "authored layer ok: %d sheet(s), %d refusal(s) enforced, %d authored pixel(s) "
-  .. "shipped, runtime does not read it",
+  .. "shipped, the path is off by default",
   #nomes, #RECUSAS, autoradosTotal))

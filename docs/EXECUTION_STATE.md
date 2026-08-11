@@ -74,6 +74,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
+| T2.1 slice 3, regions drive PART LAG | this session | `main.lua`, `tests/voxel_chars_test.lua`, `tools/authored_gate.lua`, `tools/ingame/menu.lua`, `README.md`, `CHANGELOG.md` | **landed** | 643/643; AUTHORED REGIONS OFF by default, one entry point; 5 of 5 runtime mutations caught after two gaps were closed; full battery green on the MBP |
 | T2.1 slice 2, regions measured | this session | `tools/measure_regions.py`, `authored/sheets/red.lua`, `authored/schema.lua`, `tools/authored_gate.lua`, `tools/bateria.sh` | **landed** | 6 frames measured off the real sprite; 20 refusals enforced; 5 of 5 stale-region mutations caught; found the walk bob and the absent bag |
 | T2.1 slice 1, authored layer schema | this session | `authored/**`, `tools/authored_gate.lua`, `tools/render/main.lua`, `docs/DISCLOSURE_DRAFT.md`, `tools/bateria.sh` | **landed** | 11 refusals enforced, 6 of 6 mutations caught, 0 authored pixels shipped; provenance splits three ways; full battery green on the MBP |
 | T1.4 reason field | this session | `tools/render/{reason,lab,main}.lua`, `tools/juiz/reason_gate.{lua,sh}`, `tools/render/check.sh`, `tools/bateria.sh` | **landed** | 171 states / 30 pairs / 30 key lines byte-identical with a hostile reason on every one of the 106 recorded choices; 7 encoder mutations caught; `REGUA OK` on the MBP with the quote/pipe/equals round trip |
@@ -1421,6 +1422,62 @@ typing so the headless gate can exercise the write path.
 
 **Round 4 is still not runnable.** No recorded choice carries a reason yet, and
 the critic that would take the test has already seen round 3's key.
+
+## T2.1 slice 3: the measured regions now cut PART LAG, behind an OFF switch
+
+`AUTHORED REGIONS`, levels OFF and ON, **default OFF**. It changes nothing on
+its own: it only alters WHERE `PART LAG` divides the body. Off, the body is four
+equal slices of the CELL, exactly as before. On, and only for a sheet shipping
+measured metadata, it is divided along the FIGURE, and the feet band begins
+where the legs actually part.
+
+This is the first option whose behaviour depends on material shipped WITH the
+mod rather than derived from the player's ROM. It still ships **zero pixels**;
+what it ships is a description of where the parts are.
+
+**The defect it addresses, restated as the number slice 2 measured.** A walking
+frame sits a row lower in its cell than a standing one, and the old rule divides
+the cell, so every boundary lands a row up the body mid-stride. On the synthetic
+figure the gate uses, which starts a quarter of the way down its cell, the cell
+rule spends its **entire first band on empty space**: a quarter of PART LAG's
+range delaying nothing at all.
+
+**What the gate proves**, and each part is a way the slice could have been
+hollow:
+
+1. with the option off the band ranges are exactly what they always were;
+2. with it on the quads MOVE between bands, so the option is not an internal
+   path with no output;
+3. the cell rule leaves the head band empty and the region rule does not, which
+   is the defect and its fix stated as two numbers;
+4. **toggling on an already-built sprite rebuilds it.** Its own check, because
+   every other measurement builds a fresh handle and would pass on a cache key
+   that ignored the option. That is the v1.4.0 defect Colonel_Aureliano
+   reported: touching the menu changes nothing until something evicts the mesh;
+5. an OBJECT sheet is refused even carrying well-formed measurements;
+6. impossible bounds fall back to the cell rather than being used.
+
+**Two gate gaps, found by mutation and closed.** Dropping the option from the
+cache key passed, because nothing built the same sprite twice. And breaking the
+foot-split snap passed, because it left the feet band EMPTY, and empty is
+smaller than the cell rule's band, which is what the check was comparing. Both
+now covered; 5 of 5 runtime mutations caught.
+
+**Slice 1's byte-identical assertion expired loudly, as designed.** It asserted
+`main.lua` never mentioned the authored layer, which made "off changes nothing"
+true by construction. Slice 3 wired the layer in, so the gate failed with its own
+replacement instructions rather than silently going along with it. What replaces
+it: the authored path must have **exactly one entry point**, the option must
+default to its first level, that level must be OFF, and the loader must require
+`kind == "living"`. The byte-identical evidence itself lives where it can: the
+suite compares band ranges with the option off, and the ruler renders the whole
+battery.
+
+**Objects are refused twice, in two different places, on purpose.** The schema
+governs the DATA and the loader governs what the runtime does with a sheet that
+got past it. The second is the one that would actually animate an item ball.
+
+**Cost:** two chunk locals, leaving 69 of 200 free.
 
 ## T2.1 slice 2: Ash's regions are measured, and the numbers have a gate
 

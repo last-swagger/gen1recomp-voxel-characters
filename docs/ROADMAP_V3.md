@@ -783,8 +783,10 @@ Breaking a promise still needs a gate. Every item in this tier answers all five:
 
 ### T2.1 The authored character layer
 
-**State:** slices 1 and 2 LANDED, as data and gates only. The architectural door
-the creator and richer FX both walk through, so it comes before either.
+**State:** slices 1 to 3 LANDED. The architectural door the creator and richer FX
+both walk through, so it comes before either. The layer is wired into the
+runtime now, behind `AUTHORED REGIONS`, which is OFF by default and ships no
+pixels.
 
 **Slice 1, landed:** `authored/schema.lua` with three provenance classes, fixed
 region names, three guiding overlay types and a hard refusal of living metadata
@@ -813,6 +815,27 @@ and at sixteen pixels square there is no strap to cut along on the front or side
 with the back showing a block that could equally be his shirt. `bag` is
 therefore not declared, because a guessed bound in the one file whose purpose is
 measured numbers is worse than an absent region.
+
+**Slice 3, landed:** `AUTHORED REGIONS` (OFF / ON, default OFF) lets `PART LAG`
+cut along the measured figure instead of four equal slices of the cell, and the
+feet band begin where the legs actually part. It changes nothing on its own and
+nothing at all while off.
+
+On the gate's synthetic figure the cell rule spends its entire first band on the
+empty quarter above the head, so a quarter of PART LAG's range delays nothing;
+the region rule does not. The gate also proves that toggling the option on an
+already-built sprite rebuilds it, which is its own check because every other
+measurement builds a fresh handle and would pass on a cache key that ignored the
+option -- the v1.4.0 defect where touching the menu changed nothing until the
+mesh was evicted. Object sheets are refused twice, at the schema and again at the
+runtime loader, because the second is the one that would actually animate an
+item ball.
+
+Slice 1's byte-identical assertion, that the runtime never mentioned the layer,
+expired when slice 3 wired it in. It failed loudly with its own replacement
+instructions rather than going along with it, and was replaced by: exactly one
+entry point, defaulting to its first level, that level being OFF, and the loader
+requiring a living kind.
 
 Four of the five gate conditions below are met. The two that are not are the two
 that need Kim: pairwise picks on authored against pure, which cannot exist until

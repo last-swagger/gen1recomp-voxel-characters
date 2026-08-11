@@ -8,10 +8,22 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
-**Five new options, and all five are off until you turn them on.** Nothing here
-changes what a player sees by default; `ATTENTION`, `PART LAG`, `FOOTFALL` and
-`DEMO FX` start at `OFF` and `FIRST PERSON` starts at `CARD`, per the house rule
-that a visual change the community has not seen yet ships off. The rest of this entry
+**Six new options, and all six are off until you turn them on.** Nothing here
+changes what a player sees by default; `ATTENTION`, `PART LAG`, `FOOTFALL`,
+`AUTHORED REGIONS` and `DEMO FX` start at `OFF` and `FIRST PERSON` starts at
+`CARD`, per the house rule that a visual change the community has not seen yet
+ships off.
+
+`AUTHORED REGIONS` is the first option whose behaviour depends on material that
+ships WITH the mod rather than being derived from your own ROM, so it deserves a
+plain sentence: **it ships no artwork.** What it ships is a description of where
+a character's head, body and feet are, measured off your own sprite, and the
+only thing it changes is where `PART LAG` cuts the body. With it `OFF` the
+character is divided into four equal slices of its cell, exactly as before.
+`ON`, it is divided along the figure, and the feet begin where the legs
+actually part. The mod's own tooling measured why that matters: a walking frame
+sits a row lower in its cell than a standing one, so the old rule moved the neck
+line mid-stride. The rest of this entry
 is tooling, tests and the project's own language, plus one defect in shipped
 behaviour that the tooling found.
 

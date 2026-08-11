@@ -78,7 +78,7 @@ that fork.
 
 ## What you can turn on
 
-There are 20 rows under `OPTIONS`. The first two are read only, and the third
+There are 21 rows under `OPTIONS`. The first two are read only, and the third
 is a button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
@@ -109,6 +109,7 @@ MOTION LAG     OFF / SUBTLE / NORMAL             default OFF    the body arrives
 FOOTFALL       OFF / SUBTLE / NORMAL             default OFF    it compresses on each step
 ATTENTION      OFF / SUBTLE / CLEAR              default OFF    they lean toward you, never turn
 PART LAG       OFF / LOW / HIGH                  default OFF    the head arrives after the body
+AUTHORED REGIONS OFF / ON                       default OFF    PART LAG cuts along measured body parts
 
 FIRST PERSON   CARD / SOLID                      default CARD   solid through the first person blend
 
