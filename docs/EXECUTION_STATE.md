@@ -59,6 +59,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.1 slice 2, preview wired | this session | `tools/render/{main,lab,host_matrix}.lua` | **landed** | `LABPROBE motion=off options=9 moved=false` against `motion=on options=16 moved=true`; REGUA OK |
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
+| T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed; playback deferred to slice 4** | recorder proven to see calls, and to catch a stray one at 181 plays |
 | T2.3 SFX, generated | this session | `tools/fx_sfx.lua`, `tools/fx_sfx_gate.sh`, `tools/bateria.sh` | **landed** | fireball -10.6 dBFS, bolt -10.1, control -91.0; 5 of 5 mutations caught; runtime playback is slice 3 |
 | T2.3 FX demo | this session | `main.lua`, `README.md`, `CHANGELOG.md`, `tests/voxel_chars_test.lua`, `tools/ingame/menu.lua` | **landed** | 634/634; 5 of 5 mutations caught after the gate was rebuilt to count live effects; full battery green on the MBP |
 
@@ -1000,6 +1001,57 @@ silent for now.
 
 **No MBP run for this slice**: nothing visual and nothing in the wrap was
 touched, only tools and docs.
+
+## T2.3 slice 3: the capture path, and a stop that was the right call
+
+**The capture path is built. Playback is not, and stopping there was the
+instruction rather than a shortfall.**
+
+`tests/love_stub` has no audio at all, so there is nothing for the mod to call
+and nothing to record. The suite installs its own `love.audio` for the duration
+of the measurement: a recorder that logs every request with a timestamp instead
+of making a sound. It is a MEASUREMENT DEVICE and is documented as one. It
+proves what the mod ASKS for and never that a speaker moved.
+
+**The positive control is the load-bearing part.** "Zero audio calls" is
+worthless on its own, because a recorder that records nothing reports zero too.
+So the recorder is handed a deliberate call first and has to see it. Proved both
+ways: a recorder stripped of its logging fails the control, and a stray
+`love.audio.play` added to the draw wrap is caught at **181 plays**.
+
+**What it asserts today** is the honest contract while playback does not exist:
+the mod requests no audio, with `DEMO FX` off AND on. A demo that half-plays is
+worse than one that is openly silent, and the README now says the silence is
+checked rather than assumed.
+
+**Why playback stops here, and it is a decision rather than fatigue.** Runtime
+playback needs sample data, and there are only two ways to get it:
+
+1. **Duplicate the DSP inside `main.lua`.** A second copy of the algorithm that
+   `tools/fx_sfx.lua` already owns. This session has removed that exact shape
+   three times (the host matrix, the anchors, the FX family lookup) and putting
+   one back for convenience would be the worst kind of consistency.
+2. **Ship a WAV.** `.modkitignore` is an exclusion list, so a file in the mod
+   directory is packaged: this would be **the mod's first shipped asset**, and
+   the README's opening promise is that it ships none. The roadmap explicitly
+   permits breaking that for this demo, and it also says a broken promise needs
+   the five-question gate and a plain disclosure. That is Kim's call.
+
+So slice 4 is: decide where the sound comes from, then wire playback and turn
+this harness from asserting silence to asserting the full contract. The recorder
+already carries timestamps, so the four questions need nothing new built:
+
+- one play per FX spawn, and none at all when off;
+- no repeat within a frame, the same doubled-draw hazard the visual gate has;
+- the peak passing `audio_gate.sh`, which the generator's output already does;
+- the play landing in the SAME frame as the spawn, **one sixtieth of a second
+  being the declared tolerance**.
+
+Real capture, meaning a machine with audio recording what actually comes out, is
+beyond even that and is where the runner's controlled environment would earn its
+keep.
+
+**No MBP for this slice**: only the test file and docs changed.
 
 ## The next implementable item
 

@@ -182,9 +182,11 @@ rather than only bending the body. It touches nothing: no save data, no battles,
 no link play, no encounters, no gameplay of any kind. Switch it off and the next
 frame is exactly what it was before.
 
-**It is silent for now.** The two sounds exist and are measured, but nothing
-plays them yet: wiring audio into the running game is its own piece of work and
-its own gate.
+**It is silent for now, and that is checked rather than assumed.** The two
+sounds exist and are measured, but nothing plays them: the test suite installs a
+recording stand-in for the game's audio and asserts the mod asks for none.
+Wiring real playback in is its own piece of work, its own gate, and one decision
+that is not ours to make quietly: where the sound would come from.
 
 Where the effect comes out of is not a guess. The mod knows where the
 character's hand is, and when a foot lands, and it uses both.

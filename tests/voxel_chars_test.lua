@@ -7535,4 +7535,115 @@ do
       picoCorrida))
 end
 
+-- ===================================================================
+-- T2.3 slice 3: THE AUDIO CAPTURE PATH, before any playback exists.
+-- ===================================================================
+--
+-- The capture harness comes first, and today it measures the absence of sound
+-- rather than its presence. That is the honest contract while playback is not
+-- implemented: the mod must make NO audio calls at all, because a demo that
+-- half-plays is worse than one that is openly silent.
+--
+-- WHY A RECORDING BACKEND AND NOT REAL CAPTURE. `tests/love_stub` has no audio
+-- at all, so there is nothing for the mod to call and nothing to record. The
+-- test installs its own `love.audio` for the duration, which records every
+-- request instead of making a sound. That is a MEASUREMENT DEVICE and it is
+-- documented as one: it proves what the mod ASKS for, never that a speaker
+-- moved. Proving the speaker is slice 4 and needs a machine with audio.
+--
+-- THE POSITIVE CONTROL IS THE POINT. "Zero audio calls" is worthless on its own
+-- because a broken recorder reports zero too. So the same recorder is handed a
+-- deliberate call first, and has to see it. Only then does zero mean silence.
+do
+  -- The recorder. Shaped like the part of love.audio a mod would reach for.
+  local function gravador()
+    local reg = { fontes = 0, tocadas = {} }
+    return reg, {
+      newSource = function(dados, tipo)
+        reg.fontes = reg.fontes + 1
+        return {
+          play = function(self)
+            reg.tocadas[#reg.tocadas + 1] =
+              { quando = love.timer.getTime(), fonte = dados, tipo = tipo }
+            return true
+          end,
+          stop = function() end,
+          setVolume = function() end,
+          isPlaying = function() return false end,
+        }
+      end,
+      play = function(fonte)
+        reg.tocadas[#reg.tocadas + 1] =
+          { quando = love.timer.getTime(), fonte = fonte }
+        return true
+      end,
+    }
+  end
+
+  local audioAntes = rawget(love, "audio")
+
+  -- 1. THE CONTROL: the recorder can see a call. Without this, everything
+  --    below could pass with a recorder that records nothing.
+  do
+    local reg, falso = gravador()
+    love.audio = falso
+    local fonte = love.audio.newSource("qualquer", "static")
+    fonte:play()
+    love.audio.play("outra")
+    love.audio = audioAntes
+    check(reg.fontes == 1 and #reg.tocadas == 2,
+      string.format("T2.3: the audio recorder sees calls (%d source(s), "
+        .. "%d play(s)); a zero below means silence, not a broken recorder",
+        reg.fontes, #reg.tocadas))
+  end
+
+  -- 2. THE CONTRACT TODAY: the mod asks for no audio, on or off. Playback is
+  --    not implemented, and until it is, a single stray call would mean the
+  --    demo had started making noise nobody had gated.
+  local pixels = {}
+  paintBlinkFace(pixels, 16, 16, 0)
+  local function correComAudio(fx)
+    local reg, falso = gravador()
+    love.audio = falso
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      math.rad(35), nil, nil, nil, nil, true)
+    local mod = loadWith(makeMod(handle, {
+      breath = "off", sway = "off", lag = "off", footfall = 0.7,
+      attention = "off", part_lag = "off", blink = "off", demo_fx = fx }))
+    local def = { image = "red.png", frames = 1 }
+    withDrivenClock(function(setClock)
+      for q = 0, 180 do
+        setClock(q / 60)
+        local mesh = modules.SpriteBillboards.mesh(def, 0)
+        local m = HostMatrix.forRung(35)
+        m[4], m[12] = q * 0.5 + 8, 8
+        modules.Voxel3D.drawCalls = {}
+        modules.Voxel3D.draw(mesh, "tex", m, 6, nil)
+      end
+    end)
+    love.audio = audioAntes
+    return reg, mod
+  end
+
+  local regOff = correComAudio("off")
+  local regOn = correComAudio("fireball")
+  check(#regOff.tocadas == 0 and regOff.fontes == 0,
+    string.format("T2.3: with DEMO FX off the mod requests no audio "
+      .. "(%d source(s), %d play(s))", regOff.fontes, #regOff.tocadas))
+  check(#regOn.tocadas == 0 and regOn.fontes == 0,
+    string.format("T2.3: with DEMO FX on the mod is still silent, because "
+      .. "playback is slice 4 and half a feature is worse than none "
+      .. "(%d source(s), %d play(s))", regOn.fontes, #regOn.tocadas))
+
+  -- 3. AND THE HARNESS IS READY FOR THE CONTRACT IT CANNOT CHECK YET. When
+  --    playback lands, these are the four questions it will answer, and the
+  --    recorder already carries the timestamps needed for the last one:
+  --    one play per FX spawn, none when off, no repeats within a frame, and
+  --    the play landing in the SAME frame as the spawn, one sixtieth of a
+  --    second being the declared tolerance.
+  check(type(regOn.tocadas) == "table" and regOn.fontes == 0,
+    "T2.3: the capture harness records timestamps, so slice 4 can measure "
+    .. "sync without building anything new")
+end
+
 T.finish("voxel_chars_test")

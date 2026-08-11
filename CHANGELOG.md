@@ -141,7 +141,10 @@ behaviour that the tooling found.
   that matters instead, which is whether the sound is audible and inside the
   ceiling that keeps a demo effect from sitting on top of the game's music.
   Measured: fireball peaks at -10.6 dBFS and bolt at -10.1, against a -6
-  ceiling and a silent control at -91.0. Nothing plays them yet.
+  ceiling and a silent control at -91.0. Nothing plays them yet, and the suite
+  now proves that: a recording audio backend stands in for `love.audio` and
+  asserts the mod requests no sound at all, with a positive control first so
+  that "zero calls" cannot be a broken recorder reporting zero.
 
 ### Changed
 
