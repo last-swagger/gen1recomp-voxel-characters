@@ -133,6 +133,16 @@ behaviour that the tooling found.
 - **`tools/so_comentarios.lua` proves a diff touched only comments**, by
   stripping them and comparing the code underneath.
 
+- **`tools/fx_sfx.lua` generates the two sounds for the FX demo**, and
+  `tools/fx_sfx_gate.sh` re-derives and measures them on every battery run.
+  Generated rather than committed on purpose: a WAV in the repository can only
+  be checked once, by whoever listened to it, and after that a gate can confirm
+  the bytes have not changed and nothing else. Regenerating asks the question
+  that matters instead, which is whether the sound is audible and inside the
+  ceiling that keeps a demo effect from sitting on top of the game's music.
+  Measured: fireball peaks at -10.6 dBFS and bolt at -10.1, against a -6
+  ceiling and a silent control at -91.0. Nothing plays them yet.
+
 ### Changed
 
 - **The trailer pins a time of day per shot, and moves the camera within a

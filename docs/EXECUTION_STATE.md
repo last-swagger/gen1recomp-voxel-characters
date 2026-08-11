@@ -59,6 +59,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.1 slice 2, preview wired | this session | `tools/render/{main,lab,host_matrix}.lua` | **landed** | `LABPROBE motion=off options=9 moved=false` against `motion=on options=16 moved=true`; REGUA OK |
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
+| T2.3 SFX, generated | this session | `tools/fx_sfx.lua`, `tools/fx_sfx_gate.sh`, `tools/bateria.sh` | **landed** | fireball -10.6 dBFS, bolt -10.1, control -91.0; 5 of 5 mutations caught; runtime playback is slice 3 |
 | T2.3 FX demo | this session | `main.lua`, `README.md`, `CHANGELOG.md`, `tests/voxel_chars_test.lua`, `tools/ingame/menu.lua` | **landed** | 634/634; 5 of 5 mutations caught after the gate was rebuilt to count live effects; full battery green on the MBP |
 
 ## Blocked on Kim
@@ -948,10 +949,57 @@ the option to that list is part of adding the option. Nothing offline could have
 told me, and the manager's rule about running the MBP when the wrap is touched
 is what surfaced it.
 
-**No SFX yet.** The audio gate from T1.3 is built, proven and still green, but
-nothing generates sound: procedural samples plus a captured WAV through
-`audio_gate.sh` is the next slice, and shipping a silent "SFX" would be the
-promise this item is supposed to avoid.
+**The SFX exist and are measured; nothing plays them yet.** See below.
+
+## T2.3 slice 2: two real sounds, generated rather than committed
+
+**Generated, and that was the more testable path.** Two small WAVs in the
+repository could only ever be checked once, by whoever listened to them; after
+that a gate can confirm the bytes are unchanged and nothing else. A generator is
+code, so `fx_sfx_gate.sh` re-derives both sounds on every battery run and asks
+the question that matters: are they audible, and are they inside the ceiling.
+It also keeps binary blobs out of a repository whose promise is that it ships no
+assets.
+
+`tools/fx_sfx.lua` is pure Lua, no LOVE and no display. FIREBALL is noise
+through a lowpass whose cutoff falls, so it reads as something leaving the hand;
+BOLT is a crack with a fast decay and a high ring, so it reads as an impact. The
+noise comes from a small LCG rather than `math.random`, which is what makes two
+runs byte-identical and lets the gate catch a generator that has started
+drifting.
+
+| | peak | mean |
+|---|---|---|
+| fireball | -10.6 dBFS | -25.8 |
+| bolt | -10.1 dBFS | -32.3 |
+| silent control | -91.0 | |
+
+**The first version peaked at -7.9 and -7.4**, which passes a -6 ceiling by
+under two decibels. That is enough for a resample or a different encoder to push
+it over, and close enough to the limit that a demo effect would sit on top of
+the game's own music. Backed off to land near -10.5, still plainly audible.
+
+**Five mutations, five caught:** a silent effect shipped as SFX, an effect made
+far too loud, both families given the same sound, generation made
+non-reproducible, and a "silent" control that is not silent. That last one
+matters most: every other measurement is taken against it, so a control with
+signal in it would quietly raise the floor and let a quiet effect pass as loud.
+
+**One mutation was too weak and had to be redone**, which is worth recording
+because it is the same shape as two earlier ones this session: seeding from
+`os.time()` looked like non-determinism and was not, because both generations
+happen inside the same second. Reseeding from `os.clock()` at microsecond
+granularity is genuine drift, and the gate caught it.
+
+**Runtime playback is slice 3, deliberately.** The mod has no audio subsystem,
+the harness disables `love.audio` outright, and the gate the manager asked for
+("on plays exactly when the FX fires, no looping spam") needs a capture path
+that does not exist yet. Claiming the demo has sound today would be the
+placeholder this slice was told to avoid, so the README says plainly that it is
+silent for now.
+
+**No MBP run for this slice**: nothing visual and nothing in the wrap was
+touched, only tools and docs.
 
 ## The next implementable item
 

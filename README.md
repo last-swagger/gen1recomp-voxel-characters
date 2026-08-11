@@ -177,10 +177,14 @@ Turn it on and the character throws a small effect from its hand every time a
 foot lands. Two kinds: `FIREBALL` travels and fades, `BOLT` flashes and is gone.
 
 **This is not a Gen 1 feature and it is not pretending to be one.** It exists to
-show that this mod can own character effects with a position, a lifetime and a
-sound, rather than only bending the body. It touches nothing: no save data, no
-battles, no link play, no encounters, no gameplay of any kind. Switch it off and
-the next frame is exactly what it was before.
+show that this mod can own character effects with a position and a lifetime,
+rather than only bending the body. It touches nothing: no save data, no battles,
+no link play, no encounters, no gameplay of any kind. Switch it off and the next
+frame is exactly what it was before.
+
+**It is silent for now.** The two sounds exist and are measured, but nothing
+plays them yet: wiring audio into the running game is its own piece of work and
+its own gate.
 
 Where the effect comes out of is not a guess. The mod knows where the
 character's hand is, and when a foot lands, and it uses both.

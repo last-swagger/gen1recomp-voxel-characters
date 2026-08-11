@@ -26,11 +26,14 @@
 #   6. the durable execution state, because a long autonomous run that loses its
 #      own state file is a run that starts over. Reads the required sections out
 #      of the roadmap rather than from a list here;
-#   7b. the audio gate's selftest. There is no audio in the mod yet, so this
+#   7b. the audio gate's selftest, the instrument before what it judges. There is no audio in the mod yet, so this
 #      verifies the INSTRUMENT and nothing about the product: it exists before
 #      the sound does, which is the same order the ruler came in. Skipped with a
 #      reason if ffmpeg is missing, rather than turning an optional dependency
 #      into a red battery;
+#   7c. the FX demo's two sounds, regenerated and measured through that gate. A
+#      committed WAV can only be checked once, by whoever listened to it; a
+#      generator can be re-derived and re-measured on every run;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -92,9 +95,6 @@ passo "7. the durable execution state is complete"
 "$LUAJIT" "$MOD/tools/execution_state_gate.lua" 2>&1 | tail -6
 veredito "execution_state" "${PIPESTATUS[0]}"
 
-# The instrument for T2.3's SFX, verified before there is any sound to verify.
-# It measures nothing about the mod today; it proves the ruler can tell silence
-# from signal and refuses a file it could not read.
 # The tool surface stays en-US. Scope and exemptions live in
 # tools/en_us_scope.txt as data, each deferral carrying a reason, and a deferral
 # that stops matching anything fails: a stale exemption covers the next
@@ -103,12 +103,22 @@ passo "7a. the tool surface is en-US"
 "$LUAJIT" "$MOD/tools/en_us_sweep.lua" 2>&1 | tail -5
 veredito "en-US sweep" "${PIPESTATUS[0]}"
 
+# The instrument, verified before it is trusted to judge anything: it proves the
+# ruler can tell silence from signal and refuses a file it could not read.
 passo "7b. the audio gate can tell silence from signal"
 if [ -n "${FFMPEG:-}" ] || command -v ffmpeg >/dev/null 2>&1; then
   bash "$MOD/tools/audio_gate.sh" --selftest 2>&1 | tail -3
   veredito "audio gate selftest" "${PIPESTATUS[0]}"
 else
   printf "   %-44s SKIPPED (no ffmpeg)\n" "audio gate selftest"
+fi
+
+passo "7c. the FX demo's sounds are real, regenerated and measured"
+if [ -n "${FFMPEG:-}" ] || command -v ffmpeg >/dev/null 2>&1; then
+  bash "$MOD/tools/fx_sfx_gate.sh" 2>&1 | tail -6
+  veredito "fx sfx" "${PIPESTATUS[0]}"
+else
+  printf "   %-44s SKIPPED (no ffmpeg)\n" "fx sfx"
 fi
 
 if [ "$MODO" = "--rapido" ]; then
