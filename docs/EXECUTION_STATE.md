@@ -60,6 +60,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
 | T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed** | recorder proven to see calls, and to catch a stray one at 181 plays |
+| T1.4 critic context, round 3 | this session | `tools/juiz/dados/*_r3.txt`, `NOTAS_DO_CRITICO.md` | **run, inconclusive; critic NOT approved** | 60.0% against a 53.3% baseline, margin +6.7 inside a +/-12.6 standard error |
 | T2.3 slice 4, playback | this session | `main.lua`, `sfx/*.wav`, `tools/fx_sfx_gate.sh`, docs | **landed** | 637/637; off-guard defeat caught as `1 source(s), 5 play(s)`; full battery green on the MBP with the assets packaged |
 | T2.3 SFX, generated | this session | `tools/fx_sfx.lua`, `tools/fx_sfx_gate.sh`, `tools/bateria.sh` | **landed** | fireball -10.6 dBFS, bolt -10.1, control -91.0; 5 of 5 mutations caught; runtime playback is slice 3 |
 | T2.3 FX demo | this session | `main.lua`, `README.md`, `CHANGELOG.md`, `tests/voxel_chars_test.lua`, `tools/ingame/menu.lua` | **landed** | 634/634; 5 of 5 mutations caught after the gate was rebuilt to count live effects; full battery green on the MBP |
@@ -1109,6 +1110,63 @@ the mod ASKS for. Nothing here proves a speaker moved: that needs a machine
 recording its own output, which is where the controlled runner would earn its
 keep. The peak that a player would hear is the peak `audio_gate.sh` measured in
 the file, which is the closest honest statement available today.
+
+## T1.4: the palette was not the missing thing
+
+**Research with a gate, and the gate says no. The critic is not approved to
+drive anything.**
+
+The cheapest of the three experiments the handoff proposed: give the critic the
+art's tone system before it judges. Source pair 229 / 133 / black, non-front
+tones at 0.91x that pair, `OBJ_SHADE` front 0.90 / back 0.68 / side 0.78 /
+top 1.0 / bottom 0.55, and the fact that top, side and bottom carry 0% of the
+artist's work. No per-pair hints: nothing about which options were on, because
+that would be leaking the answer rather than supplying context.
+
+```
+pairs                 15
+critic (with palette) 60.0%   (9 of 15)
+always-commonest      53.3%   (key: 7 A, 8 B)
+margin                +6.7 points
+standard error        +/- 12.6 points
+95% interval          35% .. 85%, which contains the baseline
+degenerate reference  always A 46.7%, always B 53.3%
+```
+
+**Two findings that matter more than the number.**
+
+**Seeing the difference did not help.** Each pair was scored for how well it
+could be resolved at all, recorded before the answers were revealed: high
+confidence 3/5, medium 1/2, low 5/8. If the palette were the missing knowledge,
+the pairs that could be seen clearly are exactly where it should have shown up.
+It did not.
+
+**The critic answered 13 A and 2 B; Kim answered 7 A and 8 B.** The palette
+rule, applied honestly, is heavily one-sided: it prefers whichever side
+manufactures fewer tones on invented surface, and that lands on one side far
+more often than Kim's choices do. This measured what round 2's notes suspected:
+the two are answering different questions, and more context about the ART does
+not close a gap that is about the PERSON.
+
+**Method, including its weakness.** The verdicts were written and checksummed
+before the answer key was fetched, so the ordering cannot be argued with
+afterwards. The weakness is real: a no-context arm cannot be run cleanly by the
+same critic on the same pairs, because having formed one set of judgements
+contaminates the second. Round 2's 62.5% against a 62.5% baseline is the nearest
+no-context reference and it is a different pair set.
+
+**What this rules in.** Of the three cheap experiments, the only one left is the
+one that adds information about the person rather than the pixels: show the
+critic a pair Kim decided together with his reason. It is now the only one with
+a reason to expect anything.
+
+**No more pairs were collected and Kim was not asked**, per the contract.
+
+**The MBP has 22 untracked files left in place**, deliberately not deleted: they
+are copies of this working tree from the render run. `git clean -nd` in
+`~/Projects/gen1recomp/mods/voxel_characters` lists them and `git clean -fd`
+would remove them, which is Kim's call rather than something to do to somebody
+else's machine automatically.
 
 ## The next implementable item
 

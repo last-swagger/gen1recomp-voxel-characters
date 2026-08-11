@@ -1,0 +1,15 @@
+10 high
+11 medium
+13 low
+14 low
+15 high
+16 low
+17 high
+18 high
+22 high
+23 low
+26 low
+27 low
+28 low
+29 low
+30 medium

@@ -580,6 +580,18 @@ invented. It has never been shown a pair Kim decided together with his reason.
 Give it any one of those three and re-calibrate. When authored layers exist,
 give it the authored-versus-runtime distinction too.
 
+**Round 3 ran and did not clear the bar.** With the art's palette supplied as
+context, the critic scored 60.0% against a 53.3% always-commonest baseline: a
+margin of +6.7 points inside a standard error of 12.6, so the interval contains
+the baseline. Two things came out of it that the number does not show. Pairs the
+critic could see clearly scored no better than the ones it could not, and it
+answered 13 A to 2 B where Kim answered 7 A to 8 B. The palette makes the critic
+more consistent with the art's own system and no better at predicting the
+person, which is what round 2's notes suspected and this measured. The remaining
+cheap experiment, showing it a pair Kim decided along with his reason, is now the
+only one that adds information about the person rather than the pixels. Full
+write-up in `tools/juiz/dados/NOTAS_DO_CRITICO.md`.
+
 **Gate:** `calibra.sh conta` already encodes it, and the thresholds are the
 tool's own: at or below the always-commonest-answer baseline the critic knows
 nothing whatever its agreement looks like; above baseline but under 75% it
