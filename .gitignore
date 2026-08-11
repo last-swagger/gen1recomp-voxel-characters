@@ -1,2 +1,7 @@
 .DS_Store
 *.zip
+
+# Local-only notes: a personal memo to Kim and the agent handoff brief, which
+# carries MBP ssh detail. Neither belongs in a public branch, and both are worth
+# keeping on disk.
+docs/local/

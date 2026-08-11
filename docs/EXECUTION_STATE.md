@@ -1481,6 +1481,62 @@ harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
 
+## K2: the option montage, filmed, with three results worth reading
+
+Filmed by a second session in this tmux holding the MBP exclusively. Seven
+features, 36.4 s, each side proved to differ from the other by measurement
+before it was allowed into the film. The full write-up with paths stays local
+(`docs/local/MONTAGEM_K2.md`, pt-BR, because it is for Kim and this project's
+artifacts are en-US); the substance belongs here.
+
+The rule: `between` must be LOWER than `within`. Lower PSNR means more
+different, so the variation inside one side is the animation and anything beyond
+it is the option.
+
+| option | value | within | between | margin |
+|---|---|---|---|---|
+| `front_shape` | 0.17 | 34.68 | 26.02 | 8.66 |
+| `part_lag` | 0.16 | 33.31 | 27.62 | 5.68 |
+| `step_weight` | 0.5 | 31.66 | 28.48 | 3.19 |
+| `footfall` | 0.7 | 28.69 | 27.26 | 1.44 |
+| `attention` | 1.0 | 27.67 | 27.36 | **0.31** |
+| `top_dome` | 0.15 | inf (still scene) | **48.88** | n/a |
+| `first_person` | card:solid | inf (still scene) | 37.71 | n/a |
+
+**`CAMERA FIT` IS NOT AN OPTION.** It is an action row,
+`voxel_characters:camera_preset`, so there was never an off-against-on to film.
+Eight OFF options was the wrong count all along: there are seven plus an action.
+It is not judgeable by eye like the others and needs its own look.
+
+**`ATTENTION` cleared the guard by 0.31 dB.** It published, on the edge, and the
+guard was not adjusted to let it through. If it does not read on screen, the
+number agrees.
+
+**`TOP DOME` at LOW measures 48.9 dB between the sides**, close to identical, and
+may genuinely not be visible at that level. Worth judging at a higher one before
+concluding it does nothing.
+
+**Three options were unfilmable with the defaults, and the reason was always in
+the OPTION rather than in the montage.** None of it was fixed by lowering a
+threshold, which is on this project's refused list; the guard's rule is
+untouched, and each claim below changed exactly one variable.
+
+- `part_lag` delays whatever `MOTION LAG`, `SWAY` or `ATTENTION` are doing, so
+  with all three off it delays a CONSTANT. `MOTION LAG` was tried first and
+  measured as the wrong choice: it only exists while the character moves, and
+  asking for the walk made the walk the dominant signal — within 25.95 against
+  between 27.21, refused, correctly, because the clip was then showing a walk and
+  not a delay. `SWAY` animates standing still, which keeps within-side variation
+  below the delay.
+- `footfall` and `step_weight` are driven by the walk and the guard reads exactly
+  one frame. At the default step that frame lands before a velocity-driven effect
+  has any amplitude. `step_weight` at `STEP=2`: within 27.17, between 29.88,
+  refused. Same option, same walk, sampled at `STEP=6` so the frame lands on tick
+  60: within 29.60, between 27.36, published.
+- `first_person` needed a facing NPC, because in the first-person rung the host
+  hides the player's own card, so filming the player produced three
+  byte-identical passes.
+
 ## T2.2 part stack: a composed character, made of the player's own pixels
 
 T2.2 asks an open question — "are parts shipped as art, generated from existing
