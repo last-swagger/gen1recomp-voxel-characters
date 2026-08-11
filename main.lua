@@ -3542,8 +3542,13 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   -- sways more than a guard at attention. No new pixel was drawn for this.
   local LIFE_PERSONALITY = {
     -- sleeping or sitting: slow and nearly still
-    gambler_asleep   = { rate = 0.45, breath = 1.35, sway = 0.0 },
-    sleeping_boy     = { rate = 0.45, breath = 1.35, sway = 0.0 },
+    -- ASLEEP, AND THEREFORE NOT WATCHING. `attention = 0` here is not a taste
+    -- call: this table already says these two are asleep -- a slow rate, deep
+    -- breathing, no sway at all -- and a sleeping character leaning toward a
+    -- passing player is the same class of wrongness as a breathing item ball.
+    -- Derived from what the row already claims rather than chosen.
+    gambler_asleep   = { rate = 0.45, breath = 1.35, sway = 0.0, attention = 0 },
+    sleeping_boy     = { rate = 0.45, breath = 1.35, sway = 0.0, attention = 0 },
     -- standing at attention: normal rate, no sway
     guard            = { rate = 1.00, breath = 0.80, sway = 0.15 },
     officer_jenny    = { rate = 1.00, breath = 0.80, sway = 0.20 },
@@ -3563,7 +3568,8 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     -- obvious defect this feature could possibly have.
     poke_ball        = { rate = 1, breath = 0, sway = 0, lag = 0 },
     boulder          = { rate = 1, breath = 0, sway = 0, lag = 0 },
-    snorlax          = { rate = 0.40, breath = 1.60, sway = 0.0 },
+    -- Snorlax, whose entire characterisation is being asleep. Same reasoning.
+    snorlax          = { rate = 0.40, breath = 1.60, sway = 0.0, attention = 0 },
   }
   local info = ourMeshes[mesh]
   if not info or type(model) ~= "table" then
@@ -3719,7 +3725,18 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
         -- that division is the defect that sheared a body 45 degrees and
         -- passed 465 checks.
         local dirX = dx > 0 and 1 or -1
-        kx = kx + attention * inst.att * dirX / SHARED.LIFE_CELL
+        -- PER-SHEET TEMPERAMENT, the sixth axis (roadmap T2.4 question 2).
+        --
+        -- The personality table already scales rate, breath, sway, MOTION LAG
+        -- and FOOTFALL per sheet. ATTENTION was the one life axis it did not
+        -- reach, so every character noticed the player with exactly the same
+        -- eagerness, including the ones the same table describes as asleep.
+        --
+        -- The default is 1, so nothing changes for any sheet that does not set
+        -- it: this is a multiplier on an existing amplitude and not a new
+        -- behaviour.
+        local att = pessoa and pessoa.attention or 1
+        kx = kx + attention * att * inst.att * dirX / SHARED.LIFE_CELL
       end
     end
   end

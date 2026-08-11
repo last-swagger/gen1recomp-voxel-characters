@@ -75,6 +75,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
 | T2.1 defect: the ruler could not see the authored layer | this session | `main.lua`, `tools/render/{main,check}.sh`, `tools/render/main.lua` | **fixed** | `authprobe` reported `fs=MISSING`; now `io=FOUND mod=6 frames`, checked by the ruler on every run |
+| T2.4 question 2, attention temperament | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 644/644; three sleeping sheets stop noticing the player; 4 of 4 mutations caught; every untabled sheet byte-identical |
 | T2.4 clip pair, cell against measured bands | this session | `tools/ingame/clip.{lua,sh}` | **built; the ANSWER is Kim's** | `psnr within one side 35.27, between the sides 29.65`, so the difference is real in motion; `VC_CLIP_FIXO` added because PART LAG and AUTHORED REGIONS are unfilmable alone |
 | T2.5 lab randomiser | this session | `tools/randomiza.lua`, `tools/randomiza_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | deterministic from a seed; 4 of 4 real mutations caught, 1 equivalent mutant identified as uncatchable |
 | T2.2 slice 3, the three-panel card | this session | `tools/render/preset_card.sh` | **landed** | original / authored / randomised, all three byte-different; reproducible from a seed |
@@ -1478,6 +1479,45 @@ half-finished couplings, three of them mine.
 harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
+
+## T2.4 question 2: attention gets per-sheet temperament, and sleepers stop watching
+
+The personality table already scales `rate`, `breath`, `sway`, `MOTION LAG` and
+`FOOTFALL` per sheet. `ATTENTION` was the one life axis it never reached, so
+every character noticed the player with identical eagerness — including
+`gambler_asleep`, `sleeping_boy` and `snorlax`, which that same table describes
+as asleep: slow rate, deep breathing, no sway at all.
+
+**A sleeping character leaning toward a passing player is the same class of
+wrongness as a breathing item ball**, and this project already pins item balls by
+hand for exactly that reason. So `attention = 0` on those three rows is
+**derived from what the rows already claim**, not chosen by taste. That
+distinction is why this could be done without Kim: it is coherence with existing
+data, not a new preference.
+
+**One thing checked before writing any of it: does an item ball lean today?** No
+— `lifeAlive` returns early for `STILL_OBJECTS`, so the attention path is never
+reached for them. Worth knowing rather than assuming, since it is the same
+failure shape.
+
+**The conservative half is the part with the interesting check.** The multiplier
+defaults to 1, so no sheet that does not set one may move. The gate proves that
+against `youngster`, which IS in the table and sets `rate`, `breath` and `sway`
+but not `attention`: its lean must be identical to a sheet that is not in the
+table at all. If those differed, the default would not be 1 and every character
+in the table would just have moved.
+
+**No new option, no new menu row, no README change.** This is a multiplier on an
+existing amplitude inside a mechanism that already existed, which is why the
+roadmap called it "a natural extension of an existing mechanism rather than a
+new one".
+
+**Mutations, 4 of 4 caught:** the temperament ignored, the default flipped to 0,
+one sleeper losing its row, and the multiplier dropped from the shear.
+
+**What is still Kim's on this item:** whether the sleepers reading as unaware is
+an improvement. The gate for T2.4 asks for a clip pair, and this one is cheap to
+film now that `VC_CLIP_FIXO` exists.
 
 ## T2.4: the clip pair exists, and the question is now one Kim can answer
 

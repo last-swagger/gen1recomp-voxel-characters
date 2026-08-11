@@ -7949,4 +7949,88 @@ do
     .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
 end
 
+-- T2.4 question 2: PER-SHEET ATTENTION TEMPERAMENT, and a sleeping character
+-- that does not notice you.
+--
+-- The personality table already scales rate, breath, sway, MOTION LAG and
+-- FOOTFALL per sheet. ATTENTION was the one life axis it did not reach, so
+-- every character noticed the player with identical eagerness -- including
+-- `gambler_asleep`, `sleeping_boy` and `snorlax`, which that same table
+-- describes as asleep: slow rate, deep breathing, no sway at all.
+--
+-- A sleeping character leaning toward a passing player is the same class of
+-- wrongness as a breathing item ball, and this project already pins item balls
+-- by hand for exactly that reason. So `attention = 0` on those three rows is
+-- DERIVED from what the rows already claim, not chosen by taste.
+--
+-- What this gate has to show, and the third part is the one that keeps the
+-- change conservative:
+--
+--   1. an ordinary sheet still leans toward a nearby eye;
+--   2. a sheet the table calls asleep does NOT;
+--   3. the ordinary sheet's lean is UNCHANGED by the mechanism existing, so no
+--      character that does not set a temperament moved at all.
+do
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+
+  -- The lean for one sheet, with the eye placed exactly. Same shape as the
+  -- ATTENTION gate above, which measured this in the suite rather than in a
+  -- clip because the clip's answer swings with where the player happens to be
+  -- standing.
+  local function leanDe(folha)
+    local pixels = {}
+    pixels[0] = 1
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, { attention = 1.0 }))
+    local mesh = modules.SpriteBillboards.mesh(
+      { image = folha .. ".png", frames = 1 }, 0)
+    modules.Voxel3D.eye = { 10, 0, 0 }
+    local out
+    withDrivenClock(function(setClock)
+      for f = 0, 40 do
+        setClock(f / 60)
+        local model = lifeProbeModel(0, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        out = modules.Voxel3D.drawCalls[#modules.Voxel3D.drawCalls].model
+      end
+    end)
+    return out[2]
+  end
+
+  -- 1. awake sheets lean. `sheet` is not in the personality table at all, so it
+  -- takes every default, which is the case that must not have moved.
+  local acordado = leanDe("sheet")
+  exige(math.abs(acordado) > 1e-6,
+    "an ordinary sheet does not lean at all (kx=%s), so this gate is measuring "
+    .. "nothing and the comparison below is meaningless", tostring(acordado))
+
+  -- 2. the three the table calls asleep do not.
+  for _, folha in ipairs({ "gambler_asleep", "sleeping_boy", "snorlax" }) do
+    local dormindo = leanDe(folha)
+    exige(math.abs(dormindo) < 1e-9,
+      "%s leans by %s while asleep. The personality table says this sheet has "
+      .. "no sway and a slow rate; leaning toward a passing player contradicts "
+      .. "its own row", folha, tostring(dormindo))
+  end
+
+  -- 3. THE CONSERVATIVE HALF. A multiplier that defaults to 1 must leave every
+  -- sheet that does not set one exactly where it was. Checked against a sheet
+  -- that IS in the table but does not set attention, so the row is read and the
+  -- attention field is genuinely absent rather than the whole lookup missing.
+  local comLinha = leanDe("youngster")
+  exige(math.abs(comLinha - acordado) < 1e-9,
+    "youngster leans %s and an untabled sheet leans %s. youngster sets rate, "
+    .. "breath and sway but NOT attention, so its lean must be identical: a "
+    .. "difference means the default is not 1 and every sheet in the table "
+    .. "just moved", tostring(comLinha), tostring(acordado))
+
+  check(#problemas == 0,
+    "T2.4: attention has per-sheet temperament and sleepers do not notice you"
+    .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
+end
+
 T.finish("voxel_chars_test")
