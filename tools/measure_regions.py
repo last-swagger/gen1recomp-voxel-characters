@@ -48,12 +48,19 @@ CELL = 16
 
 
 def load_png(path):
-    """Decode an 8-bit RGBA non-interlaced PNG. Refuses anything else loudly."""
+    """Decode an 8-bit non-interlaced PNG to RGBA. Refuses anything else loudly.
+
+    Handles colour types 2 (RGB), 3 (palette) and 6 (RGBA). Palette support was
+    added because LOVE writes indexed PNGs, and the first version of this reader
+    refused them: the ruler's silhouette check reported UNREADABLE rather than a
+    measurement. Refusing loudly was right; staying refused was not.
+    """
     with open(path, "rb") as f:
         data = f.read()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError("%s is not a PNG" % path)
     pos, idat, hdr = 8, b"", None
+    plte, trns = None, None
     while pos < len(data):
         (ln,), typ = struct.unpack(">I", data[pos:pos + 4]), data[pos + 4:pos + 8]
         body = data[pos + 8:pos + 8 + ln]
@@ -61,16 +68,22 @@ def load_png(path):
             hdr = struct.unpack(">IIBBBBB", body)
         elif typ == b"IDAT":
             idat += body
+        elif typ == b"PLTE":
+            plte = body
+        elif typ == b"tRNS":
+            trns = body
         pos += 12 + ln
     w, h, depth, ctype, _, _, interlace = hdr
-    if (depth, ctype, interlace) != (8, 6, 0):
+    CANAIS = {2: 3, 3: 1, 6: 4}
+    if depth != 8 or interlace != 0 or ctype not in CANAIS:
         raise ValueError(
             "%s is depth %d colour type %d interlace %d; this reader handles "
-            "8-bit RGBA non-interlaced only, and guessing at the rest would "
-            "produce a measurement nobody could trust"
+            "8-bit non-interlaced RGB, palette or RGBA, and guessing at the "
+            "rest would produce a measurement nobody could trust"
             % (path, depth, ctype, interlace))
     raw = zlib.decompress(idat)
-    stride, bpp = w * 4, 4
+    bpp = CANAIS[ctype]
+    stride = w * bpp
     out, prev, i = bytearray(), bytearray(stride), 0
     for _ in range(h):
         ft = raw[i]; i += 1
@@ -92,7 +105,24 @@ def load_png(path):
                 line[x] = (line[x] + pr) & 255
         out += line
         prev = line
-    return w, h, bytes(out)
+    if ctype == 6:
+        return w, h, bytes(out)
+    # Everything becomes RGBA, so no caller has to know what was on disk.
+    rgba = bytearray(w * h * 4)
+    if ctype == 2:
+        for i in range(w * h):
+            rgba[i * 4:i * 4 + 3] = out[i * 3:i * 3 + 3]
+            rgba[i * 4 + 3] = 255
+    else:
+        if plte is None:
+            raise ValueError("%s is a palette PNG with no PLTE chunk" % path)
+        for i in range(w * h):
+            idx = out[i]
+            rgba[i * 4:i * 4 + 3] = plte[idx * 3:idx * 3 + 3]
+            # tRNS on a palette image is one alpha byte per entry, and entries
+            # past its end are opaque.
+            rgba[i * 4 + 3] = trns[idx] if (trns and idx < len(trns)) else 255
+    return w, h, bytes(rgba)
 
 
 def frame_rows(w, px, frame):
@@ -240,6 +270,51 @@ def palette(w, h, px):
 def main():
     args = sys.argv[1:]
     modo_check = "--check" in args
+    if "--region-tones" in args:
+        # HOW MANY DISTINCT TONES EACH MEASURED REGION USES IN THE ORIGINAL.
+        #
+        # This exists to answer one question for the randomiser: can any preset
+        # reproduce the character unchanged? A preset assigns ONE tone to a
+        # whole region, so it can only reproduce a region that already uses
+        # exactly one tone. If every region uses more than one, then every
+        # preset is a visible change and there is no "identity preset" to
+        # exclude -- which is a better answer than picking an arbitrary
+        # reference and calling it the identity.
+        alvos = [a for a in args if not a.startswith("-")] or ["red"]
+        for sheet in alvos:
+            caminho = os.path.join(SPRITES, sheet + ".png")
+            w, h, px = load_png(caminho)
+            folha = os.path.join(RAIZ, "authored", "sheets", sheet + ".lua")
+            if not os.path.exists(folha):
+                print("  %s ships no authored bounds" % sheet)
+                continue
+            texto = open(folha).read()
+            capOk = set(int(x) for x in re.findall(
+                r"\d+", (re.search(r"hairFrames\s*=\s*\{([^}]*)\}", texto)
+                          or type("", (), {"group": lambda s, n: ""})()).group(1)))
+            med = declared(sheet) or {}
+            piores = {}
+            for f, m in med.items():
+                if f * CELL + CELL > h:
+                    continue
+                rows = frame_rows(w, px, f)
+                for ly in range(CELL):
+                    if m.get("footSplit") and ly >= m["footSplit"]:
+                        reg = "feet"
+                    elif f in capOk and m.get("lightFreeBottom") is not None \
+                            and ly <= m["lightFreeBottom"]:
+                        reg = "hair"
+                    elif m.get("top") is not None and m["top"] <= ly <= m["bottom"]:
+                        reg = "body"
+                    else:
+                        continue
+                    for p2 in rows[ly]:
+                        if p2 is not None:
+                            piores.setdefault(reg, set()).add(p2)
+            for reg in sorted(piores):
+                print("  %s %-5s %d tone(s)" % (sheet, reg, len(piores[reg])))
+        return 0
+
     if "--palette" in args:
         alvos = [a for a in args if not a.startswith("-")]
         if not alvos:

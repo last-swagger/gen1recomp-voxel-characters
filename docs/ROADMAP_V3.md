@@ -893,8 +893,17 @@ before any of it ships.
 
 ### T2.2 Character creator, as a paper doll in the lab
 
-**State:** open, and it starts in the lab. Not a game-facing UI, not save
-integration, not NPC-wide customisation.
+**State:** all four gate conditions MET, as a preset layer in the lab. Not a
+game-facing UI, not save integration, not NPC-wide customisation, and no part
+picker yet: what exists is the palette half, which is the half the critic's
+objection was about.
+
+Round-trip and palette constraint are proved offline over the whole 255-preset
+space; silhouette and provenance parity are measured on a real render at
+`alpha_diff=0 colour_diff=3530`; and the three-panel card is built by
+`tools/render/preset_card.sh`, refusing to assemble if any two panels match.
+`head` is refused rather than approximated, because slice 2 of T2.1 declined to
+measure the head-and-shoulder line.
 
 **What changes:** a character can be composed from authored parts (head or
 face, hair or hat, torso, legs, accessory) with palette controls for skin, hair
@@ -1006,14 +1015,16 @@ consumer for it exists.
   without owning the renderer, and ask whether the authored path is active.
   **Gate:** one internal caller plus one compatibility smoke test. Do not build
   a general SDK until two real consumers exist.
-- **Preset import and export.** Serialise a look to a small blob, share it,
-  reload it. **Gate:** byte-stable round-trip, already folded into `T2.2`.
-- **A lab randomiser.** Mutate part choices, palettes, effect colours and life
-  personality, so the judge can ask Kim about surprising candidates rather than
-  hand-authored guesses. **Gate:** generated candidates pass the visibility and
-  framing checks `calibra.sh` already applies before reaching the judge. No
-  blank, cropped, identical or unreadable pairs, because that exact set of four
-  defects is what made calibration round 1 meaningless.
+- **Preset import and export.** DONE in `T2.2`: one pasteable line, byte-stable
+  round-trip over the whole 255-preset space, and a render that is byte-identical
+  after a round trip.
+- **A lab randomiser.** LANDED for palettes, as `tools/randomiza.lua` and
+  battery step 7j: deterministic from a seed, every candidate valid, distinct
+  and unable to reproduce the original. Effect colours and life personality are
+  not done and are not scheduled. The visibility and framing checks
+  `calibra.sh` applies are the remaining half and need a display; the format
+  half guarantees no identical pair by construction, which is one of the four
+  defects that made calibration round 1 meaningless.
 - **A host compatibility matrix.** Dramatic Shape, Battle Art Voxel Fork,
   Dramaless Shape, and what each supports. Authored assets, FX and creator paths
   increase coupling. **Gate:** capability probes, never version gates. The mod

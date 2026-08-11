@@ -75,6 +75,9 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
 | T2.1 defect: the ruler could not see the authored layer | this session | `main.lua`, `tools/render/{main,check}.sh`, `tools/render/main.lua` | **fixed** | `authprobe` reported `fs=MISSING`; now `io=FOUND mod=6 frames`, checked by the ruler on every run |
+| T2.5 lab randomiser | this session | `tools/randomiza.lua`, `tools/randomiza_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | deterministic from a seed; 4 of 4 real mutations caught, 1 equivalent mutant identified as uncatchable |
+| T2.2 slice 3, the three-panel card | this session | `tools/render/preset_card.sh` | **landed** | original / authored / randomised, all three byte-different; reproducible from a seed |
+| T2.2 slice 2, a preset renders | this session | `tools/render/{main,check}.lua/sh`, `tools/measure_regions.py` | **landed** | `alpha_diff=0 colour_diff=3530`: silhouette identical, colour changed; round-tripped preset renders byte-identical; `head` refused for want of a measured boundary |
 | T2.2 slice 1, preset format | this session | `authored/preset.lua`, `tools/preset_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | 67 sheets measured to ONE three-tone ramp; all 255 presets round-trip exactly; 14 refusals; 5 of 5 mutations caught |
 | T2.1 slice 3, regions drive PART LAG | this session | `main.lua`, `tests/voxel_chars_test.lua`, `tools/authored_gate.lua`, `tools/ingame/menu.lua`, `README.md`, `CHANGELOG.md` | **landed** | 643/643; AUTHORED REGIONS OFF by default, one entry point; 5 of 5 runtime mutations caught after two gaps were closed; full battery green on the MBP |
 | T2.1 slice 2, regions measured | this session | `tools/measure_regions.py`, `authored/sheets/red.lua`, `authored/schema.lua`, `tools/authored_gate.lua`, `tools/bateria.sh` | **landed** | 6 frames measured off the real sprite; 20 refusals enforced; 5 of 5 stale-region mutations caught; found the walk bob and the absent bag |
@@ -1474,6 +1477,111 @@ half-finished couplings, three of them mine.
 harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
+
+## T2.5 the lab randomiser, and T2.2 slice 3: the three-panel card
+
+**The randomiser proposes preset candidates the judge has never been asked
+about.** Every pair the judge has seen so far varies one option at a time from a
+base somebody chose by hand; the point of a randomiser is proposing looks nobody
+would have typed.
+
+Deterministic from a seed, using the same explicit LCG as `fx_sfx.lua` and never
+the clock. This project has been burned by `os.time()` handing out the same seed
+twice inside a second, and a set that cannot be regenerated cannot be
+re-examined after it fails.
+
+**There is no "identity preset" to exclude, and that is measured.** A first
+design picked "every region at the darkest tone" as a stand-in for the
+unmodified character and excluded it. That reference is arbitrary and describes
+nothing in the art. The real question is whether any preset can reproduce the
+original, and a preset flattens a region to ONE tone, so it could only do that
+where the region already uses one. Measured:
+
+```
+red body  3 tone(s)
+red feet  2 tone(s)
+red hair  2 tone(s)
+```
+
+Every region uses more than one, so every candidate is a visible change and
+nothing needs excluding. The gate re-measures this rather than trusting the
+comment: a future sheet with a single-tone region WOULD have a candidate that
+renders the character unchanged, and it should not be proposed to Kim as an
+idea.
+
+**Mutations: 4 real ones caught** (the LCG ignoring its seed, the shuffle not
+shuffling, a tone index escaping the ramp, every candidate being the same one).
+A fifth, removing the clamp on over-asking, is an **equivalent mutant**: the copy
+loop reads past the end of a table, assigning nil creates no entry, and the
+observable behaviour is identical. No gate can catch it and none should, so the
+clamp is documented as readability rather than safety instead of the gate being
+contorted to notice a change that is not one.
+
+**The three-panel card** closes T2.2's last gate condition: original Ash, a
+hand-chosen authored preset, and a randomised one, side by side. It refuses to
+build if any two panels are byte-identical, which is the failure that matters —
+if the preset path silently stopped applying, three identical characters would
+look deliberate.
+
+Built with ffmpeg rather than `card.sh`, and that is a deliberate trade: the
+compositor's card mode is built around exactly two panels with its callout
+layout computed from that, so making it N-panel is a refactor whose only
+beneficiary is this one picture and whose risk lands on `shading.card`, a
+published figure. ffmpeg is already a dependency of the clip and audio paths.
+
+The randomised panel comes from the seed rather than a roll at build time, so
+the card is reproducible: one that changed on every build could not be compared
+with the one somebody looked at last week.
+
+**One environment defect found:** `set -u` with an empty array is an unbound
+variable in bash 3.2, which is what macOS ships, so the conditional argument had
+to become a branch.
+
+## T2.2 slice 2: a preset actually renders, and changes only the colour
+
+`preset=<text>` in the harness recolours whole rows of the sheet before any mesh
+is built, so every builder, metric and silhouette check downstream sees an
+ordinary sheet and needs no knowledge of presets at all. **Lab and harness only**
+— the roadmap puts the creator in the laboratory, not in the game, and nothing
+in the shipped mod reads a preset.
+
+**Two of this item's four gate conditions are now measured rather than argued.**
+
+*"The composed character passes the same silhouette and provenance checks as a
+runtime one."* A preset only ever writes a new colour into an already-opaque
+pixel, so the opaque set cannot move — but this project has been wrong about a
+"cannot" before, so the ruler measures it:
+
+```
+o preset recolore sem mexer na silhueta    alpha_diff=0 colour_diff=3530
+```
+
+Zero alpha differences and three and a half thousand colour differences. Zero of
+both would mean the preset did nothing, which is the empty green the check is
+shaped to refuse. Provenance is unchanged too: `art 100.0%  auth 0.0%` with the
+preset on, because a recolour adds no faces and ships no pixels.
+
+*"A preset round-trips: serialise, reload, and render the same card byte for
+byte."* The text goes through `parse` and `serialise`, and the render from the
+round-tripped text is byte-identical to the render from the original.
+
+**`head` is refused, not approximated.** Slice 2 of T2.1 declined to measure the
+head-and-shoulder line because it does not resolve from the side view. So a
+preset naming `head` is turned away here with that reason rather than given a
+guessed boundary: the format can express it, this sheet cannot place it, and
+inventing a row would put a made-up number back into the one path built to avoid
+them. Regions that ARE measured — hair, body, feet — apply from the measured
+bounds.
+
+**The PNG reader refused LOVE's own output, and that was half right.** The
+silhouette check first reported `UNREADABLE ... colour type 3`, because LOVE
+writes indexed PNGs and the reader handled RGBA only. Refusing loudly was
+correct; staying refused was not. It now handles palette and RGB as well, and
+still refuses anything it cannot decode honestly.
+
+**Still open on this item:** the three-panel card, original against an authored
+preset against a randomised one. It needs the randomiser, which is being built
+in parallel.
 
 ## T2.2 slice 1: the preset format, and the measurement that shaped it
 

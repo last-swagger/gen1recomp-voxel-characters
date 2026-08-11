@@ -58,6 +58,9 @@
 #   7i. the character preset format. Every preset in the space round-trips, and
 #      no colour outside the art's measured three-tone ramp is expressible: the
 #      creator cannot manufacture a tone the game has never shown;
+#   7j. the lab randomiser, which proposes preset candidates for the judge.
+#      Reproducible from a seed, never from the clock, because a set that
+#      cannot be regenerated cannot be re-examined after it fails;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -160,6 +163,10 @@ verdict "authored regions" "${PIPESTATUS[0]}"
 passo "7i. a character preset round-trips and stays inside the art's ramp"
 "$LUAJIT" "$MOD/tools/preset_gate.lua" 2>&1 | tail -4
 verdict "preset format" "${PIPESTATUS[0]}"
+
+passo "7j. the randomiser proposes real, reproducible candidates"
+"$LUAJIT" "$MOD/tools/randomiza_gate.lua" 2>&1 | tail -4
+verdict "randomiser" "${PIPESTATUS[0]}"
 
 passo "7e. the battery's verdicts still reach their readers"
 bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9

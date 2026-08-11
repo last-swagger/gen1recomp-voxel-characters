@@ -149,6 +149,11 @@ local opts = {
   -- tools/render while `mod.path` is repo-relative, so the two can disagree and
   -- the only symptom would be AUTHORED REGIONS quietly doing nothing here.
   authprobe = "",
+  -- `preset=<preset1 sheet=... head=N ...>` recolours the sheet before any
+  -- geometry is built (roadmap T2.2). The laboratory is where the creator
+  -- lives, per the roadmap: not a game-facing UI and not save data. Nothing in
+  -- the shipped mod reads a preset, so the runtime is untouched.
+  preset = "",
   -- `labregions=1` forces the region-boundary overlay (key `b` in the
   -- laboratory) on at startup, so the gate can screenshot it without a
   -- keypress: labshot runs with love.labkeys disabled (roadmap item 11).
@@ -205,6 +210,95 @@ local function loadImageData(path)
   f:close()
   local fd = love.filesystem.newFileData(bytes, path:match("[^/]+$"))
   return love.image.newImageData(fd)
+end
+
+-- A PRESET, APPLIED TO A SHEET (roadmap T2.2).
+--
+-- Recolours whole rows of the sprite before any mesh is built, so everything
+-- downstream -- the builders, the provenance metric, the silhouette checks --
+-- sees an ordinary sheet and needs no knowledge of presets at all.
+--
+-- WHY THE SILHOUETTE AND THE PROVENANCE CANNOT MOVE, and this is the roadmap's
+-- first gate condition answered by construction rather than by hope. A preset
+-- only ever writes a NEW COLOUR into an ALREADY OPAQUE pixel. It never changes
+-- alpha, never adds or removes a pixel, and never touches geometry. So the
+-- silhouette is the same set of pixels and the provenance is the same set of
+-- faces, necessarily, for every preset that exists. The gate measures it anyway,
+-- because "necessarily" has been wrong here before.
+--
+-- WHICH ROWS BELONG TO WHICH REGION comes from the MEASURED bounds in
+-- authored/sheets/<sheet>.lua, never from a guess:
+--
+--   hair   the rows above the first light tone, and only on the frames the
+--          measurement says read as a cap
+--   feet   the rows from the measured foot split down
+--   body   what is left between them
+--
+-- `head` IS DELIBERATELY UNPLACEABLE. Slice 2 refused to measure the
+-- head-and-shoulder line because it does not resolve from the side view, and a
+-- rule tuned until one frame agreed would be a rule fitted to one sheet. So a
+-- preset naming `head` is REFUSED here rather than approximated. The format can
+-- express it, this sheet cannot place it, and inventing a boundary would put a
+-- guessed number back into the one path built to avoid them.
+local function aplicaPreset(imageData, texto, sheetName)
+  local Preset = dofile("mods/voxel_characters/authored/preset.lua")
+  local p, err = Preset.parse(texto)
+  if not p then return nil, err end
+  if p.sheet ~= sheetName then
+    return nil, string.format("the preset is for %q and this is %q",
+      tostring(p.sheet), tostring(sheetName))
+  end
+  local folha = dofile("mods/voxel_characters/authored/sheets/" .. sheetName .. ".lua")
+  if not (folha and folha.measured) then
+    return nil, sheetName .. " ships no measured bounds, so a preset has no "
+      .. "rows to apply itself to"
+  end
+  if p.tones.head then
+    return nil, "this sheet has no measured head boundary, and guessing one "
+      .. "would put an invented number into the path built to avoid them"
+  end
+  local capOk = {}
+  for _, q in ipairs(folha.hairFrames or {}) do capOk[q] = true end
+
+  local function hexPara(i)
+    local h = Preset.hex(i)
+    return tonumber(h:sub(1, 2), 16) / 255,
+           tonumber(h:sub(3, 4), 16) / 255,
+           tonumber(h:sub(5, 6), 16) / 255
+  end
+
+  local w, h = imageData:getDimensions()
+  local trocados = 0
+  for quadro, m in pairs(folha.measured) do
+    local y0 = quadro * 16
+    if y0 + 15 < h then
+      for ly = 0, 15 do
+        local regiao
+        if m.footSplit and ly >= m.footSplit then regiao = "feet"
+        elseif capOk[quadro] and m.lightFreeBottom and ly <= m.lightFreeBottom
+          then regiao = "hair"
+        elseif m.top and ly >= m.top and ly <= m.bottom then regiao = "body" end
+        local escolha = regiao and p.tones[regiao]
+        if escolha then
+          local r, g, b = hexPara(escolha)
+          for lx = 0, w - 1 do
+            local _, _, _, a = imageData:getPixel(lx, y0 + ly)
+            -- OPAQUE PIXELS ONLY. Writing colour into a transparent pixel is
+            -- how a recolour quietly grows the silhouette.
+            if a > 0 then
+              imageData:setPixel(lx, y0 + ly, r, g, b, a)
+              trocados = trocados + 1
+            end
+          end
+        end
+      end
+    end
+  end
+  if trocados == 0 then
+    return nil, "the preset matched no rows, so it would render identically to "
+      .. "the original and the comparison would prove nothing"
+  end
+  return trocados
 end
 
 local function makeVoxelHandle(imageData)
@@ -910,6 +1004,12 @@ function love.load(argv)
       .. sprite .. ".png"
     local ok, data = pcall(loadImageData, path)
     if not ok then return fail("no sprite at " .. path) end
+    if opts.preset ~= "" then
+      local n, err = aplicaPreset(data, opts.preset, sprite)
+      if not n then return fail("preset: " .. tostring(err)) end
+      print(string.format("PRESET %s applied to %s, %d texel(s) recoloured",
+        opts.preset, sprite, n))
+    end
     -- The engine derives frame count from sheet height, not from a constant
     -- (src/import/RomExtractor.lua:481, src/render/SpriteRenderer.lua:86).
     -- Hardcoding 6 turns nurse.png (16x48, three frames) into six 8px frames

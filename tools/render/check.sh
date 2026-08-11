@@ -258,6 +258,74 @@ say "a regua enxerga a camada authored" \
 printf '%s' "$AUTH" | grep -qE "mod=[0-9]+ frames" || FAIL=1
 [ "$(printf '%s' "$AUTH" | sed -nE 's/.*mod=([0-9]+) frames.*/\1/p')" = "6" ] || FAIL=1
 
+# 7a3. A PRESET RECOLOURS AND CHANGES NOTHING ELSE (roadmap T2.2).
+#
+#      Two of this item's gate conditions, answered where they can actually be
+#      answered: with a real render.
+#
+#      1. "the composed character passes the same silhouette and provenance
+#         checks as a runtime one". A preset only ever writes a new colour into
+#         an already-opaque pixel, so the opaque set cannot move -- but this
+#         project has been wrong about a "cannot" before, so it is measured:
+#         the two renders must have IDENTICAL alpha and DIFFERENT colour.
+#         Identical alpha with identical colour would mean the preset did
+#         nothing, which is the empty green this check exists to refuse.
+#
+#      2. "a preset round-trips: serialise, reload, and render the same card
+#         byte for byte". The preset text goes through parse and serialise, and
+#         the render from the round-tripped text must be byte-identical to the
+#         render from the original.
+SAVE_RENDER="$HOME/Library/Application Support/LOVE/render"
+PRESET_A='preset1 sheet=red hair=3 body=1 feet=2'
+PRESET_B=$(luajit -e '
+  local P = dofile("mods/voxel_characters/authored/preset.lua")
+  io.write(P.serialise(assert(P.parse([['"$PRESET_A"']]))))')
+
+rm -f "$SAVE_RENDER/chk_p_off.png" "$SAVE_RENDER/chk_p_on.png" "$SAVE_RENDER/chk_p_rt.png"
+$LOVE $H sprite=red shapes=slab frames=0 yaws=0 pitch=0 cell=128 \
+  out=chk_p_off.png > /dev/null 2>&1
+$LOVE $H sprite=red shapes=slab frames=0 yaws=0 pitch=0 cell=128 \
+  out=chk_p_on.png preset="$PRESET_A" > /dev/null 2>&1
+$LOVE $H sprite=red shapes=slab frames=0 yaws=0 pitch=0 cell=128 \
+  out=chk_p_rt.png preset="$PRESET_B" > /dev/null 2>&1
+
+say "o preset sobrevive ao round trip" \
+    "$([ -n "$PRESET_B" ] && [ "$PRESET_A" = "$PRESET_B" ] && echo ok || echo "FAILED: [$PRESET_B]")"
+[ "$PRESET_A" = "$PRESET_B" ] || FAIL=1
+
+SIL=$(python3 - "$SAVE_RENDER/chk_p_off.png" "$SAVE_RENDER/chk_p_on.png" <<'PYEOF'
+import sys
+sys.path.insert(0, "mods/voxel_characters/tools")
+from measure_regions import load_png
+try:
+    wa, ha, a = load_png(sys.argv[1])
+    wb, hb, b = load_png(sys.argv[2])
+except Exception as e:
+    print("UNREADABLE %s" % e); raise SystemExit(0)
+if (wa, ha) != (wb, hb):
+    print("SIZE %dx%d vs %dx%d" % (wa, ha, wb, hb)); raise SystemExit(0)
+alpha_diff = colour_diff = 0
+for i in range(0, len(a), 4):
+    if a[i+3] != b[i+3]:
+        alpha_diff += 1
+    elif a[i+3] and a[i:i+3] != b[i:i+3]:
+        colour_diff += 1
+print("alpha_diff=%d colour_diff=%d" % (alpha_diff, colour_diff))
+PYEOF
+)
+say "o preset recolore sem mexer na silhueta" "$SIL"
+case "$SIL" in
+  "alpha_diff=0 colour_diff="*) [ "${SIL##*colour_diff=}" -gt 0 ] || FAIL=1 ;;
+  *) FAIL=1 ;;
+esac
+
+if cmp -s "$SAVE_RENDER/chk_p_on.png" "$SAVE_RENDER/chk_p_rt.png"; then
+  say "o card do preset e byte identico apos round trip" "ok"
+else
+  say "o card do preset e byte identico apos round trip" "FAILED"
+  FAIL=1
+fi
+
 # 7b. THE REASON FIELD, both ways round (roadmap T1.4).
 #
 #     `tools/juiz/reason_gate.sh` proves the format is safe and that the judge
