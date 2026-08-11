@@ -54,3 +54,4 @@ mods/voxel_characters/tools/so_comentarios_test.lua  internal  test names and fi
 # --- everything else under tools/ is surface ---
 mods/voxel_characters/tools                 surface  offline tools whose text a contributor reads and which can be checked without a display
 mods/voxel_characters/Laboratorio.command   surface  the one clickable entry point, so the first file a curious contributor opens
+mods/voxel_characters/Calibracao.command   surface  the other clickable entry point, and the one a contributor is most likely to open second
