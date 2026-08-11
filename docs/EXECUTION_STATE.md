@@ -1487,6 +1487,14 @@ player's imported sprite cache in a comment; MK301 refuses any shipped Lua that
 points at that tree, and it is right to. The comment now names the tool, which
 is where the path belongs, because the tool does not ship and the data does.
 
+**The bob finding is PINNED, not just written down.** `authored_gate.lua` now
+asserts two things together: that the PART LAG band rule still divides by
+`cellH`, and that the sheet's largest measured bob is still 1. Both have to hold
+for the number in these write-ups to mean anything. Fixing PART LAG to cut from
+the figure makes the first assertion fail, which is correct: the finding is then
+retired on purpose by editing the gate, rather than quietly outliving the defect
+it describes. Both halves were mutation-tested.
+
 **Nothing changed in the render path.** No runtime integration, no overlay
 pixels, no lab preset, no save data, no gameplay. The authored pixel count is
 still zero and `main.lua` still does not open the directory, so the

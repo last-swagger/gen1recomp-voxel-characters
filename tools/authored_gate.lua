@@ -26,7 +26,10 @@
 --      guarantee in its strongest available form: the authored path cannot
 --      change a pixel because the runtime does not open the directory. When
 --      that stops being true, this check has to be replaced by a real
---      authored-off render comparison, and it says so when it fails.
+--      authored-off render comparison, and it says so when it fails;
+--   6. the measured finding is pinned: PART LAG cuts bands from the CELL, and
+--      the sheet's bob says how far that is off the body. A characterisation,
+--      so the slice that fixes it has something to show it changed.
 
 local RAIZ = "mods/voxel_characters"
 local Schema = dofile(RAIZ .. "/authored/schema.lua")
@@ -183,6 +186,51 @@ exige(#lendo == 0,
   .. "longer the byte-identical proof: replace check 5 with a real render "
   .. "comparison between the authored path off and today's output",
   table.concat(lendo, ", "))
+
+-- 6. THE FINDING THIS SLICE MEASURED, pinned so it cannot drift unnoticed.
+--
+-- `PART LAG` cuts the body into bands with `math.floor(y / cellH * REGION_BANDS)`.
+-- That divides the CELL, not the figure. The measured sheet says the walking
+-- frames sit lower in the cell than the standing frames, so on those frames
+-- every band boundary lands that far up the body from where it lands when
+-- standing: the neck line moves, mid-stride, for no reason a viewer could name.
+--
+-- This is a characterisation, not a complaint. It asserts what is true TODAY, in
+-- numbers, so that the slice which fixes it has something to show it changed,
+-- and so that nobody rediscovers it from scratch. Two halves, and both have to
+-- hold for the number to mean anything:
+--
+--   the band rule still divides by the cell height, and
+--   the sheet's largest bob is still what the docs say it is.
+--
+-- Fixing PART LAG to cut from the figure makes the first half fail. That is
+-- correct: the finding is then retired on purpose, by editing this, rather than
+-- quietly outliving the defect it describes.
+local BOB_ESPERADO = 1
+do
+  local regra = fonte:match("math%.floor%(y%s*/%s*cellH%s*%*%s*REGION_BANDS%)")
+  exige(regra ~= nil,
+    "the PART LAG band rule no longer divides by cellH. If the bands now follow "
+    .. "the figure, this characterisation has served its purpose and should be "
+    .. "deleted along with the note in EXECUTION_STATE; if they divide by "
+    .. "something else again, the note is simply wrong now")
+
+  local bobMax = 0
+  for _, folha in pairs(folhas) do
+    for _, m in pairs(folha.measured or {}) do
+      if m.bob and m.bob > bobMax then bobMax = m.bob end
+    end
+  end
+  exige(bobMax == BOB_ESPERADO,
+    "the largest measured bob is %d rows and the write-ups say %d. The bands "
+    .. "are cut from the cell, so the bob IS the misalignment, and the number "
+    .. "in the docs has to move with it", bobMax, BOB_ESPERADO)
+  if regra and bobMax == BOB_ESPERADO then
+    print(string.format(
+      "  PART LAG bands are cut from the cell, so they sit %d row(s) off the "
+      .. "body on every frame with a bob", bobMax))
+  end
+end
 
 if #problemas > 0 then
   for i = 1, math.min(#problemas, 10) do print("  " .. problemas[i]) end
