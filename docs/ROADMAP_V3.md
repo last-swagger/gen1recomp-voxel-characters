@@ -504,8 +504,10 @@ rung, which is a separate item and not a precondition for the lab.
 
 ### T1.2 Named anchors and animation events
 
-**State:** open. Prerequisite for FX, and useful to the creator and to any
-future mod API, which is why it is here and not inside `T2.3`.
+**State:** LANDED, both slices. Named anchors derived from the transformed body
+through a walk cycle at all four camera rungs, and three measured animation
+events. Prerequisite for FX, and useful to the creator and to any future mod
+API, which is why it is here and not inside `T2.3`.
 
 **What changes:** a character exposes named anchor points (hand, head, feet,
 centre of mass) and named events (footfall impact, blink closed, attention
@@ -643,8 +645,11 @@ discarded it.
 
 ### T1.5 Finish en-US where it is not finished
 
-**State:** open, small, and mis-recorded as done. See
-[contradiction 2](#2-contradictions-reconciled).
+**State:** LANDED for text. The sweep reports 0 surface lines and 5 deferred,
+all of them fixture names inside one test file. Filenames stay Portuguese by an
+explicit management decision, recorded below as `deferred-api` rather than as
+remaining work. It was previously mis-recorded as done while genuinely open; see
+[contradiction 2](#2-contradictions-reconciled) for that history.
 
 **Partly landed.** The display-free surface is now guarded by
 `tools/en_us_sweep.lua` and `tools/en_us_scope.txt`. `lint_asserts.lua`'s
@@ -684,12 +689,19 @@ one grep in `run.sh` for a string no driver has printed in some time.
 `REGUA OK` / `REGUA TORTA` became `RULER OK` / `RULER CROOKED`, and unlike the
 battery banner that one really is parsed, by `sala_de_teste.sh`.
 
-**Filenames remain, deliberately.** They are command-line keys by this project's
-own `deferred-api` definition: typed by hand, pasted into Discord, quoted in
-published release notes and saved in shell history. A rename is atomic in git
-and broken everywhere else the moment an old command is re-run. Recommended
-against; Kim's call, with a deprecation path written up in `EXECUTION_STATE.md`
-if he wants it anyway.
+**Filenames stay Portuguese. Decided, not pending.** `bateria.sh`,
+`folga_locais.sh`, `mutantes.sh`, `sala_de_teste.sh`, `instala_hooks.sh`,
+`so_comentarios.sh`, `juiz/`, `ajusta.lua`, `calibra.sh`, `gera.sh`,
+`rodada.sh`, `monta.sh`, `dados/escolhas.txt` and `Laboratorio.command` are
+**`deferred-api`**, by this project's own definition of that zone: "option
+values and command-line keys that a rename would break for anyone with a script
+or a saved command."
+
+They are typed by hand, pasted into Discord, quoted in release notes that are
+already published, and saved in shell history. A rename is atomic inside git and
+broken everywhere else the moment an old command is re-run. This is a closed
+decision and not a backlog item: T1.5 is finished, and a future contributor
+reading `bateria.sh` learns one word rather than inheriting a migration.
 
 **What changes:** a contributor running the battery stops reading
 `BATTERY RED`, and the remaining tool output stops depending on Portuguese

@@ -24,6 +24,16 @@
 #                           saved command. A translation here is an API change
 #                           and needs its own decision.
 #
+#                           TOOL FILENAMES ARE IN THIS ZONE. Decided 2026-08-11:
+#                           bateria.sh, mutantes.sh, juiz/, ajusta.lua and the
+#                           rest keep their Portuguese names. They are typed by
+#                           hand, pasted into Discord, quoted in published
+#                           release notes and saved in shell history, so a
+#                           rename is atomic inside git and broken everywhere
+#                           else. This sweep never matched a filename anyway;
+#                           the note is here so the next person to notice does
+#                           not reopen it as unfinished work.
+#
 #   internal                identifiers, internal test names and fixtures.
 #                           Nobody reads these as product text.
 #

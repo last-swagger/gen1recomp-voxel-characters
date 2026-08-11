@@ -1295,8 +1295,9 @@ the conversion. That equality is the real evidence: if any driver's verdict word
 had broken, its counter would have read zero verdicts and reported
 "NO VERDICT (the driver measured nothing)" rather than a lower pass count.
 
-**Filenames were NOT renamed, and that is a recommendation rather than a
-shortfall.** See the note under the next implementable item.
+**Filenames were NOT renamed, and Kim has since closed that as a decision**
+rather than leaving it pending: they are `deferred-api`, not surface text. See
+the section below.
 
 ## T1.5 slice 4: the banner is en-US, and the verdict lines are a contract
 
@@ -1419,48 +1420,53 @@ typing so the headless gate can exercise the write path.
 **Round 4 is still not runnable.** No recorded choice carries a reason yet, and
 the critic that would take the test has already seen round 3's key.
 
-## Filenames: the last en-US item, and the case for leaving them
+## Filenames stay Portuguese: decided, and closed
 
-Kim's condition for this was "only consider filenames if every reference can
-change in one atomic commit". Inside the repository that is achievable. Outside
-it is not, and outside is where the references that matter live.
+**Kim's decision, 2026-08-11: do not rename them.** They are `deferred-api`, not
+remaining surface text, and T1.5 is finished rather than partly done.
 
 `bateria.sh`, `folga_locais.sh`, `mutantes.sh`, `sala_de_teste.sh`,
 `instala_hooks.sh`, `so_comentarios.sh`, `juiz/`, `ajusta.lua`, `calibra.sh`,
 `gera.sh`, `rodada.sh`, `monta.sh`, `dados/escolhas.txt` and
-`Laboratorio.command` are typed by hand, pasted into Discord, quoted in release
-notes already published, written into this file and the roadmap as reproduction
-commands, and saved in shell history and in the machine notes for the MBP. A
-rename lands cleanly in git and breaks every one of those the moment somebody
-re-runs an old command.
+`Laboratorio.command` are command-line keys by the definition already written
+into `en_us_scope.txt`: "option values and command-line keys that a rename would
+break for anyone with a script or a saved command."
 
-The project already has a rule for this and it fits exactly. `en_us_scope.txt`
-defines `deferred-api` as "not prose. Option values and command-line keys that a
-rename would break for anyone with a script or a saved command. A translation
-here is an API change and needs its own decision." A tool filename is a
-command-line key by that definition.
+They are typed by hand, pasted into Discord, quoted in release notes that are
+already published, written into this file as reproduction commands, and saved in
+shell history and in the MBP notes. A rename lands cleanly in git and breaks
+every one of those the moment somebody re-runs an old command.
 
-**So the recommendation is not to rename them, and it is Kim's call rather than
-mine.** The cost is that a contributor reads `bateria.sh` and has to learn one
-word; the benefit of renaming is that same word, against breaking every command
-anyone has saved. If Kim wants it anyway, the honest way is a deprecation: keep
-the old names as thin forwarding scripts for a release, then delete them.
+**Nothing is pending on this.** No deprecation shims, no forwarding scripts, no
+follow-up item. A contributor reads `bateria.sh` and learns one word, which is
+cheaper than a migration nobody asked for.
 
 ## The next implementable item
 
-**A calibration session with reasons, which needs Kim at the keyboard.** The
-field exists and is gated; what it does not have is data. Round 4 cannot run on
-zero annotated choices, and inventing them would be worse than having none.
+**T2.1, the authored character layer**, started here as a narrow data-and-gate
+slice. It is the architectural door both the creator tooling and richer FX walk
+through, and everything above it is now landed or decided.
 
-What that session looks like, so it costs Kim as little as possible: open the
-lab in choice mode, keep picking at the usual two keystrokes, and press `w` only
-on the pairs where the reason is easy to say. Twenty annotated choices out of a
-normal session is plenty; they do not need to be consecutive and they do not
-need to be eloquent.
+**Blocked on Kim, and not workable around:**
 
-**Independent of that, still open and display-free:** the remainder of T1.5, the
-`BATTERY OK`/`RED` banner and the 86 remaining Portuguese lines in
-`tools/ingame` and `tools/render` output, plus filenames.
+- **A calibration session with reasons.** The field exists and is gated; what it
+  does not have is data. Round 4 of T1.4 cannot run on zero annotated choices,
+  and inventing them would be worse than having none. The session is cheap: open
+  the lab in choice mode, keep picking at the usual two keystrokes, and press `w`
+  only on the pairs where the reason comes easily. Twenty annotated choices out
+  of a normal session is plenty, and they need be neither consecutive nor
+  eloquent.
+- **A critic that has not seen round 3's answer key.** Even with reasons
+  recorded, the critic that would sit the test already knows its palette rule
+  over-picks A and that Kim's picks are near even. Any improvement could not be
+  separated into "the exemplar taught it" and "it corrected a bias it was just
+  told about". Needs a fresh session or a different model.
+
+Those two are the WHOLE of what blocks T1.4 round 4. The code side is done.
+
+**Closed, so nobody reopens them:** T1.5 is finished, with Portuguese tool
+filenames kept deliberately as `deferred-api`; T1.2 landed both slices; T2.3
+landed all four.
 
 **Out of reach for any amount of autonomous work**, unchanged: K1 to K5 in the
 table above, and hiding the runner's window, which needs a separate macOS user
