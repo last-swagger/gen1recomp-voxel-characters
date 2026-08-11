@@ -592,6 +592,16 @@ cheap experiment, showing it a pair Kim decided along with his reason, is now th
 only one that adds information about the person rather than the pixels. Full
 write-up in `tools/juiz/dados/NOTAS_DO_CRITICO.md`.
 
+**The third experiment cannot be run at all, and that is worth knowing before
+anyone plans around it.** It needs a pair Kim decided together with his reason,
+and no reason was ever recorded: the laboratory writes the pick, the option
+states and nothing else, and a grep across all 106 choices returns zero. The
+information exists only in Kim's head. A protocol for the round is written up
+alongside the round 3 notes, including the one code change it needs, which is a
+reason field on the choice line and is a format change that deserves its own
+gate. Held-out material is not the constraint: 76 of the 106 choices have never
+been sampled.
+
 **Gate:** `calibra.sh conta` already encodes it, and the thresholds are the
 tool's own: at or below the always-commonest-answer baseline the critic knows
 nothing whatever its agreement looks like; above baseline but under 75% it

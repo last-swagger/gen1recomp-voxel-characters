@@ -60,6 +60,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
 | T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed** | recorder proven to see calls, and to catch a stray one at 181 plays |
+| T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **cannot be run; protocol built, no result asserted** | no reason was ever recorded: `lab.lua:571` writes the pick and nothing else, and a grep over all 106 choices returns zero |
 | T1.4 critic context, round 3 | this session | `tools/juiz/dados/*_r3.txt`, `NOTAS_DO_CRITICO.md` | **run, inconclusive; critic NOT approved** | 60.0% against a 53.3% baseline, margin +6.7 inside a +/-12.6 standard error |
 | T2.3 slice 4, playback | this session | `main.lua`, `sfx/*.wav`, `tools/fx_sfx_gate.sh`, docs | **landed** | 637/637; off-guard defeat caught as `1 source(s), 5 play(s)`; full battery green on the MBP with the assets packaged |
 | T2.3 SFX, generated | this session | `tools/fx_sfx.lua`, `tools/fx_sfx_gate.sh`, `tools/bateria.sh` | **landed** | fireball -10.6 dBFS, bolt -10.1, control -91.0; 5 of 5 mutations caught; runtime playback is slice 3 |
@@ -1167,6 +1168,49 @@ are copies of this working tree from the render run. `git clean -nd` in
 `~/Projects/gen1recomp/mods/voxel_characters` lists them and `git clean -fd`
 would remove them, which is Kim's call rather than something to do to somebody
 else's machine automatically.
+
+## T1.4 round 4: the experiment needs an input that does not exist
+
+**No number this time, and that is the finding.**
+
+The third experiment is "show the critic a pair Kim decided together with his
+reason". **The reason was never recorded.** `tools/render/lab.lua:571` writes a
+choice as timestamp, sheet, pose, frame, clock, camera rung, yaw, which option
+was varied, its two values, the pick, and the two full option states. That is
+all of it. A grep for any reason-like word across the 106 choices returns zero.
+Kim pressed a key and the tool wrote which side; the why never left his head.
+
+So the input cannot be recovered from the dataset, and the only place it exists
+is Kim, whom this round's contract forbids asking. Building a result out of an
+invented reason would be worse than having none.
+
+**Held-out pairs were not the blocker.** 76 of the 106 choices were never
+sampled by round 3 (`prepara 30` steps by 3, takes 30, 15 survive the drops), so
+there is ample unseen material whenever there is something to test.
+
+**The second blocker is the critic, which is me.** After round 3 it knows its
+palette rule over-picks A and that Kim's picks are near even. Any improvement it
+showed now could not be separated into "the exemplar taught it" and "it
+corrected a bias it had just been told about". A critic that has seen a key is
+spent for that key's question; round 4 needs a fresh session or a different
+model.
+
+**What was built instead**, written into `NOTAS_DO_CRITICO.md` so the next round
+is turnkey: record the reason at the moment of choice, in a field that avoids
+`|` because `calibra.sh:132` splits the states on it and stays optional so the
+existing 106 choices keep parsing; take the exemplar from a pair whose key is
+already spent, since a contaminated pair is the right thing to teach with and
+the wrong thing to test on; test only on the 76 never-sampled choices;
+pre-register the decision rule and checksum it before seeing any test pair;
+checksum the verdicts before fetching the key; and report the margin against
+always-commonest with its standard error.
+
+**The one code change it needs was deliberately not made here.** Adding a field
+to the choice line touches a format that `calibra.sh` and `ajusta.lua` both
+parse, so it deserves its own slice and its own parser gate over the existing
+file. Doing it as a footnote to a research round is how a format quietly breaks.
+
+**The critic remains out of the loop.** Nothing in this round changes that.
 
 ## The next implementable item
 

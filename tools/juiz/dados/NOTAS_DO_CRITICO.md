@@ -105,3 +105,56 @@ one set of judgements contaminates the second. Round 2's 62.5% against a 62.5%
 baseline is the closest no-context reference and it is a different pair set.
 
 `gabarito_r3.txt`, `veredito_r3.txt` and `confianca_r3.txt` hold the run.
+
+# Round 4 could not be run, and the reason is not a shortage of pairs
+
+The third experiment is "show the critic a pair Kim decided TOGETHER WITH HIS
+REASON". It needs an input that does not exist.
+
+**No reason was ever recorded.** The laboratory writes a choice as
+
+```
+t=... folha=... pose=... frame=... clock=... rung=... yaw=... opcao=...
+a=... b=... escolha=B | A: <state> | B: <state>
+```
+
+(`tools/render/lab.lua:571`). Timestamp, sheet, pose, frame, clock, camera rung,
+yaw, which option was varied, its two values, the pick, and the two full option
+states. A grep for any reason-like word across all 106 choices returns zero. The
+pick is the entire record: Kim pressed a key and the tool wrote which side.
+
+So the missing information cannot be recovered from the dataset, and the only
+place it exists is Kim. Asking him was outside this round's contract, so the
+honest outcome is a protocol rather than a number.
+
+**Held-out pairs were NOT the blocker.** 76 of the 106 choices were never
+selected by round 3's sampling (`prepara 30` steps by 3 through the file, taking
+30, of which 15 survived the drops). There is more than enough unseen material
+for a clean test set whenever there is something to test.
+
+**And there is a second blocker worth naming, which is me.** After round 3 the
+critic knows its own palette rule over-picks A and that Kim's picks are close to
+even. Any improvement it shows now cannot be separated into "the exemplar
+taught it something" and "it corrected a bias it had just been told about". A
+critic that has seen a key is spent for that key's question. The next round
+needs a critic that has not, which means a fresh session or a different model.
+
+## The protocol for round 4, so it is turnkey when a reason exists
+
+1. **Record the reason at the moment of choice.** One free-text field written by
+   the laboratory alongside the pick. It has to avoid `|`, because
+   `calibra.sh:132` splits the two states on that character, and it has to be
+   optional so the 106 existing choices keep parsing. This is the only code
+   change the experiment needs and it deserves its own gate: a parser test over
+   the existing file plus one with a reason attached.
+2. **Choose the exemplar from a pair whose key is already spent**, such as one
+   from round 3 where the critic was wrong. A contaminated pair is exactly the
+   right thing to teach with and exactly the wrong thing to test on.
+3. **Test only on held-out**, drawn from the 76 never-sampled choices, via
+   `VC_ESCOLHAS` pointing at a filtered file.
+4. **Pre-register the decision rule in writing and checksum it** before seeing
+   any test pair, so "the rule changed because of the exemplar" is auditable
+   rather than asserted afterwards.
+5. **Checksum the verdicts before fetching the key**, as round 3 did.
+6. **Report the margin against always-commonest with its standard error**, and
+   keep the critic out of the loop unless the margin clears it.
