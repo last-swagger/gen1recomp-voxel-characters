@@ -548,7 +548,7 @@ cmd_selftest() {
   espera 1 "a failure verdict fails (EN)" native --label ruim2 -- "echo PASSED; echo FAILED x"
   espera 1 "a nonzero exit fails" native --label saiu -- "echo PASSED; exit 3"
   espera 1 "a missing required string fails" native --label falta \
-    --verdict 'REGUA OK' -- "echo PASSED; echo something else"
+    --verdict 'RULER OK' -- "echo PASSED; echo something else"
 
   # Artifacts: a tool that rendered nothing did not render.
   espera 1 "no artifact when one was required fails" native --label semart \

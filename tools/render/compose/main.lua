@@ -39,7 +39,7 @@
 -- heavy work, so the tool dies at the timeout with an empty log.
 do
   local function handler(msg)
-    io.stdout:write("ERRO DE LOVE: " .. tostring(msg) .. "\n")
+    io.stdout:write("LOVE ERROR: " .. tostring(msg) .. "\n")
     io.stdout:write(debug.traceback("", 2) .. "\n")
     io.stdout:flush()
     os.exit(1)
@@ -239,7 +239,7 @@ local function prepareHalves(c, pad)
   if not bg then
     -- No corner agrees with the others, so there is no background to find and
     -- cropping would be a guess. Draw the images whole and say why.
-    print("aviso: nao achei cor de fundo nos cantos, entao nao vou recortar")
+    print("warning: no background colour in the corners, so nothing is cropped")
     for _, part in ipairs({ c.before, c.after }) do
       part.w, part.h = part.image:getWidth(), part.image:getHeight()
     end

@@ -13,7 +13,7 @@
 return function()
   local function handler(msg)
     msg = tostring(msg)
-    io.stdout:write("ERRO DE LOVE: " .. msg .. "\n")
+    io.stdout:write("LOVE ERROR: " .. msg .. "\n")
     io.stdout:write(debug.traceback("", 2) .. "\n")
     io.stdout:flush()
     os.exit(1)

@@ -53,7 +53,7 @@ return function(game)
   local vereditos = {}
   local function veredito(nome, ok, detalhe)
     vereditos[#vereditos + 1] = { nome = nome, ok = ok }
-    nota("%-3s %s  %s", nome, ok and "PASSOU" or "FALHOU", detalhe or "")
+    nota("%-3s %s  %s", nome, ok and "PASSED" or "FAILED", detalhe or "")
   end
 
   nota("=== gate de pixel do canal de vida ===")
@@ -103,7 +103,7 @@ return function(game)
     local ok = game.mods and game.mods.events
       and pcall(game.mods.events.emit, game.mods.events, "mod.options_changed",
         { mod = "voxel_characters", key = chave, value = valor })
-    if not ok then nota("AVISO: a troca de %s NAO foi emitida", chave) end
+    if not ok then nota("WARNING: the change of %s was NOT emitted", chave) end
     return ok
   end
 
@@ -192,13 +192,13 @@ return function(game)
     -- character on screen and therefore the scale of the numbers below, so it's
     -- recorded so that whoever compares two runs knows whether they can.
     if not degrauOk then
-      nota("nota: parei em %.0f graus e nao em 35; os numeros abaixo sao " ..
+      nota("note: stopped at %.0f degrees and not 35; the numbers below are " ..
         "comparaveis entre si, nao com os de outra corrida.",
         math.deg(tonumber(VoxelState.angle) or 0))
     end
   else
     U.tap(game, "3"); U.wait(20)
-    nota("AVISO: sem VoxelState, nao deu para pinar o degrau de camera")
+    nota("WARNING: no VoxelState, so the camera rung could not be pinned")
   end
   U.wait(30)
 
@@ -414,7 +414,7 @@ return function(game)
     opcao("lag", 1.2); U.wait(20)
     local andou, comLag = tentaPasso(direcao)
     local dLag = andou and difere(semLag, comLag) or -1
-    nota("piso (LAG off nos dois lados): %d pixels; um passo para %s, com e sem MOTION LAG: %d pixels diferentes",
+    nota("floor (LAG off on both sides): %d pixels; one step to %s, with and without MOTION LAG: %d pixels diferentes",
       piso, direcao, dLag)
     veredito("V7", piso >= 0 and dLag > piso + 40,
       "o atraso tem que superar o piso de ruido entre duas corridas identicas")
@@ -445,7 +445,7 @@ return function(game)
     opcao("footfall", 0.7); U.wait(20)
     local andou2, b = tentaPasso(direcao or "left")
     local d = (andou1 and andou2) and difere(a, b) or -1
-    nota("piso (FOOTFALL off nos dois lados): %d pixels; um passo, com e sem FOOTFALL: %d pixels diferentes",
+    nota("floor (FOOTFALL off on both sides): %d pixels; one step, with and without FOOTFALL: %d pixels diferentes",
       piso, d)
     veredito("V10", piso >= 0 and d > piso + 40,
       "a pisada tem que superar o piso de ruido entre duas corridas identicas")
@@ -491,8 +491,8 @@ return function(game)
     U.wait(30)
     local controleLigado = parDeQuadros()
     local controleOk = controleBase >= 0 and controleLigado > controleBase + 40
-    nota("controle positivo (quarto vazio): envelope de %d OFF, %d ligado (%s)",
-      controleBase, controleLigado, controleOk and "OK" or "FALHOU")
+    nota("positive control (empty room): envelope of %d OFF, %d on (%s)",
+      controleBase, controleLigado, controleOk and "OK" or "FAILED")
     opcao("breath", "off"); opcao("sway", "off"); opcao("lag", "off")
     U.wait(20)
 
@@ -524,7 +524,7 @@ return function(game)
     local on2 = mede(240); desliga()
     local off = (off1 + off2) / 2
     local on = (on1 + on2) / 2
-    nota("custo por quadro na cidade, A/B/A/B depois de aquecer:")
+    nota("cost per frame in town, A/B/A/B after warming up:")
     nota("  desligado  %.3f e %.3f ms   media %.3f", off1, off2, off)
     nota("  ligado     %.3f e %.3f ms   media %.3f", on1, on2, on)
     nota("  diferenca  %.3f ms de 16.7 ms de orcamento (%.1f%%)",
@@ -537,7 +537,7 @@ return function(game)
     -- best possible result.
     local ruido = math.max(math.abs(off1 - off2), math.abs(on1 - on2))
     local diferenca = math.abs(on - off)
-    nota("  piso de ruido da regua: %.3f ms", ruido)
+    nota("  noise floor of the ruler: %.3f ms", ruido)
     -- The criterion IS the noise floor, with an absolute ceiling only as a safety net: the
     -- previous version failed with 0.503 ms against a floor of 0.577 and printed
     -- "below the noise" on the same line, because the condition was a fixed limit of
@@ -558,12 +558,12 @@ return function(game)
     -- floor is any good, and the message says which of the two spoke.
     local pisoUtil = ruido < 3.0
     if not pisoUtil then
-      nota("  piso de %.3f ms e alto demais: maquina ocupada, a medida perde "
+      nota("  a floor of %.3f ms is too high: busy machine, the measurement loses "
            .. "poder. Rode de novo com a maquina quieta.", ruido)
     end
     veredito("V8", controleOk and off > 0 and on > 0 and aceitavel and pisoUtil,
       string.format("controle positivo %s (envelope OFF %d, ligado %d); diferenca %.3f ms contra piso de ruido %.3f ms: %s",
-        controleOk and "OK" or "FALHOU", controleBase, controleLigado, diferenca, ruido, diferenca < ruido
+        controleOk and "OK" or "FAILED", controleBase, controleLigado, diferenca, ruido, diferenca < ruido
           and "abaixo do ruido, o custo nao e mensuravel aqui"
           or "acima do ruido, e um custo real"))
   end
@@ -578,9 +578,9 @@ return function(game)
   local todos = true
   for _, v in ipairs(vereditos) do
     if not v.ok then todos = false end
-    nota("%-3s %s", v.nome, v.ok and "PASSOU" or "FALHOU")
+    nota("%-3s %s", v.nome, v.ok and "PASSED" or "FAILED")
   end
-  nota("VEREDITO: %s", todos and "A RESPIRACAO CHEGA NA TELA" or "LER ACIMA")
+  nota("VERDICT: %s", todos and "A RESPIRACAO CHEGA NA TELA" or "LER ACIMA")
 
   opcao("breath", "off"); opcao("blink", "on")
   U.wait(10)

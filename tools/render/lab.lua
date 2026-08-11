@@ -86,7 +86,7 @@ local labMontaPar
 local function labGrava(linha)
   local caminho = love.filesystem.getSaveDirectory() .. "/" .. ctx.opts.labfile
   local f = io.open(caminho, "a")
-  if not f then print("NAO CONSEGUI GRAVAR A ESCOLHA em " .. caminho); return false end
+  if not f then print("COULD NOT RECORD THE CHOICE in " .. caminho); return false end
   f:write(linha .. "\n")
   f:close()
   return true
@@ -120,7 +120,7 @@ end
 local function labMalha(nomeFolha, frame, valores)
   local path = ctx.SPRITE_DIR .. nomeFolha .. ".png"
   local ok, data = pcall(ctx.loadImageData, path)
-  if not ok then return nil, "sem folha: " .. path end
+  if not ok then return nil, "no sheet: " .. path end
   local sw, sh = data:getDimensions()
   local def = { image = path, frames = math.max(1, math.floor(sh / 16)) }
   if frame >= def.frames then frame = frame % def.frames end
@@ -331,13 +331,13 @@ function love.labsetup()
       la[#la + 1] = o.key
     end
   end
-  print("laboratorio: " .. #lab.opcoes .. " opcoes mexem na malha e aparecem aqui")
+  print("laboratory: " .. #lab.opcoes .. " options change the mesh and show up here")
   print("  aqui:  " .. table.concat(aqui, ", "))
-  print("  sem efeito na malha: " .. table.concat(la, ", "))
+  print("  no effect on the mesh: " .. table.concat(la, ", "))
   print(string.format("  classificacao: %d construcoes em %.1f s, varrendo o " ..
     "relogio ate %.1f s de %.2f em %.2f e as poses 0 e 3",
     construcoes, custo, LAB_CLOCK_ATE, LAB_CLOCK_PASSO, LAB_CLOCK_PASSO))
-  print("  folhas: " .. #lab.folhas)
+  print("  sheets: " .. #lab.folhas)
 
   love.window.setMode(1280, 800, { depth = 24, vsync = 1 })
   love.window.setTitle("voxel characters - laboratorio")
@@ -356,10 +356,10 @@ function love.labsetup()
     lab.ab = true
     labMontaPar()
     if lab.par then
-      print(string.format("modo escolha: %s, %s, %s contra %s",
+      print(string.format("choice mode: %s, %s, %s contra %s",
         lab.par.folha, lab.par.opcao.key, lab.par.rotuloA, lab.par.rotuloB))
     else
-      print("modo escolha: NENHUM PAR (nenhuma opcao com dois niveis)")
+      print("choice mode: NO PAIR (no option with two levels)")
     end
   end
 end
@@ -485,7 +485,7 @@ local function labParDoArquivo()
       end
       f:close()
     end
-    print(string.format("laboratorio: %d pares pedidos pelo juiz em %s",
+    print(string.format("laboratory: %d pairs requested by the judge em %s",
       #labFilaPares, ctx.opts.labpares))
   end
   local item = table.remove(labFilaPares, 1)
@@ -535,7 +535,7 @@ local function labSorteiaParValido()
     local p = labSorteiaPar()
     if p then return p end
   end
-  print("modo escolha: 40 sorteios sem par visivel; ver a lista de opcoes")
+  print("choice mode: 40 sorteios sem par visivel; ver a lista de opcoes")
   return nil
 end
 
@@ -1037,11 +1037,11 @@ function love.labupdate(dt)
       -- gate cannot perform and therefore the one most likely to ship unread.
       lab.motivo = ctx.opts.labreason or ""
       labEscolhe(ctx.opts.labpick)
-      print(string.format("escolha simulada gravada: %d escolhas, %d pulos",
+      print(string.format("simulated choice recorded: %d choices, %d skips",
         lab.escolhas, lab.pulos))
     elseif lab.quadros > 204 then
       print(string.format(
-        "laboratorio ok: %d construcoes em %d quadros, %d fps, %d folhas, %d opcoes",
+        "laboratory ok: %d construcoes em %d quadros, %d fps, %d folhas, %d opcoes",
         lab.construcoes, lab.quadros, love.timer.getFPS(), #lab.folhas,
         #lab.opcoes))
       love.event.quit()

@@ -93,7 +93,7 @@ ssh "$DESTINO" 'export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH; cd ~/Project
   linha "offline suite" "$(luajit $L/tests/voxel_chars_test.lua 2>&1 | tail -1)" "checks passed"
   linha "assertion linter" "$(luajit $L/tools/lint_asserts.lua 2>&1 | tail -1)" "nenhuma"
   linha "local slack" "$(bash $L/tools/folga_locais.sh 2>&1 | tail -1)" "OK"
-  linha "ruler" "$(bash $L/tools/render/check.sh 2>&1 | tail -1)" "REGUA OK"
+  linha "ruler" "$(bash $L/tools/render/check.sh 2>&1 | tail -1)" "RULER OK"
   linha "packaging" "$(python3 tools/modkit.py validate $L 2>&1 | tail -1)" "ok"
   linha "life pixel" "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/probe_life.lua "$LOVE" . 2>&1 | grep -E "^\[vida\] VEREDITO" | tail -1)" "CHEGA NA TELA"
   linha "menu" "$(POKEPORT_VERSION=blue POKEPORT_DRIVER=$L/tools/ingame/menu.lua "$LOVE" . 2>&1 | grep -E "^\[menu\] VEREDITO" | tail -1)" "O JOGADOR ESPERA"

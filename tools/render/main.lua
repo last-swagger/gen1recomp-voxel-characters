@@ -42,7 +42,7 @@ local HostMatrix = require("host_matrix")
 -- where the script already reads, which is stdout.
 function love.errorhandler(msg)
   msg = tostring(msg)
-  io.stdout:write("ERRO DE LOVE: " .. msg .. "\n")
+  io.stdout:write("LOVE ERROR: " .. msg .. "\n")
   io.stdout:write(debug.traceback("", 2) .. "\n")
   io.stdout:flush()
   os.exit(1)
@@ -65,7 +65,7 @@ local MAIN_PATH = os.getenv("VOXEL_CHARS_MAIN")
 do
   local f = io.open(MAIN_PATH, "r")
   if f then f:close() else
-    io.stderr:write("VOXEL_CHARS_MAIN aponta para arquivo inexistente: "
+    io.stderr:write("VOXEL_CHARS_MAIN points at a file that does not exist: "
       .. MAIN_PATH .. "\n")
     os.exit(2)
   end
@@ -441,7 +441,7 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
     if Voxel3D.draw and Voxel3D.draw ~= drawAntes then
       print("LABMOTION: the mod wrapped Voxel3D.draw, the life channel is live")
     else
-      print("LABMOTION FALHOU: the mod did NOT wrap Voxel3D.draw, so nothing "
+      print("LABMOTION FAILED: the mod did NOT wrap Voxel3D.draw, so nothing "
         .. "matrix-based can be previewed. Check probeCapabilities.")
     end
   end
@@ -453,7 +453,7 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
     end
     for _, chave in ipairs(pedidas) do
       if not conhecidas[chave] then
-        print("OPCAO DESCONHECIDA: " .. chave ..
+        print("UNKNOWN OPTION: " .. chave ..
           "  (o mod nao define essa chave; a medicao sairia com o padrao " ..
           "e voce nao notaria)")
         love.event.quit(2)
@@ -487,8 +487,8 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
       if uvSig(SpriteBillboards.mesh(def, frame)) ~= open then hit = t break end
     end
     love.timer.getTime = realTime
-    print(hit and string.format("BLINKSCAN fecha em t=%.2f s", hit)
-               or "BLINKSCAN nao fecha em 10 s")
+    print(hit and string.format("BLINKSCAN closes at t=%.2f s", hit)
+               or "BLINKSCAN does not close in 10 s")
   end
 
   if mesh and mesh.original then
@@ -804,7 +804,7 @@ local function selftest()
           "classificacao acha frente, tras e topo")
   end
 
-  print(string.format("autoteste do harness: %d/%d", checks - fails, checks))
+  print(string.format("harness selftest: %d/%d", checks - fails, checks))
   return fails == 0
 end
 

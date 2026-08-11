@@ -46,15 +46,15 @@ POKEPORT_VERSION="$VERSAO" POKEPORT_DRIVER="$DRIVER" "$LOVE" . > "$LOG" 2>&1
 
 # The driver says how many frames it recorded. Counting files instead of
 # believing the log already caught a run that died halfway and looked complete.
-ESPERADOS=$(grep -oE 'fim, [0-9]+ quadros' "$LOG" | grep -oE '[0-9]+' | tail -1)
+ESPERADOS=$(grep -oE 'end, [0-9]+ frames' "$LOG" | grep -oE '[0-9]+' | tail -1)
 N=$(find "$SAVE" -maxdepth 1 -name 'vc_trailer_*.png' | wc -l | tr -d ' ')
 if [ -z "$ESPERADOS" ]; then
-  echo "FALHOU: the shot list did not reach the end"
+  echo "FAILED: the shot list did not reach the end"
   tail -5 "$LOG"
   exit 1
 fi
 echo "frames: $N recorded, $ESPERADOS expected"
-[ "$N" -ge "$ESPERADOS" ] || { echo "FALHOU: frames are missing"; exit 1; }
+[ "$N" -ge "$ESPERADOS" ] || { echo "FAILED: frames are missing"; exit 1; }
 
 TMP="$SAIDA/.quadros"
 mkdir -p "$TMP"

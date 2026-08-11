@@ -59,16 +59,16 @@ return function(game)
   local vereditos = {}
   local function veredito(nome, ok, detalhe)
     vereditos[#vereditos + 1] = { nome = nome, ok = ok }
-    nota("%-3s %s  %s", nome, ok and "PASSOU" or "FALHOU", detalhe or "")
+    nota("%-3s %s  %s", nome, ok and "PASSED" or "FAILED", detalhe or "")
   end
   local function fim()
     nota("")
     local todos = true
     for _, v in ipairs(vereditos) do
-      nota("%-3s %s", v.nome, v.ok and "PASSOU" or "FALHOU")
+      nota("%-3s %s", v.nome, v.ok and "PASSED" or "FAILED")
       todos = todos and v.ok
     end
-    nota("VEREDITO: %s", todos
+    nota("VERDICT: %s", todos
       and "O GRID PINTA O MUNDO E NAO PINTA GENTE, COMO O HOST QUER"
       or "AINDA NAO")
   end

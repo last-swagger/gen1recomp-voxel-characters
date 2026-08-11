@@ -52,7 +52,7 @@ return function(game)
   local vereditos = {}
   local function veredito(nome, ok, detalhe)
     vereditos[#vereditos + 1] = { nome = nome, ok = ok }
-    nota("%-3s %s  %s", nome, ok and "PASSOU" or "FALHOU", detalhe or "")
+    nota("%-3s %s  %s", nome, ok and "PASSED" or "FAILED", detalhe or "")
   end
 
   local function topo() return game.stack:top() end
@@ -225,7 +225,7 @@ return function(game)
     and "A em STATUS e em LIFE deixa o menu aberto"
     or table.concat(ruins, "; "))
   if getmetatable(topo()) ~= OptionsMenu then
-    nota("menu fechado e nao consegui reabrir; parando aqui"); return
+    nota("the menu closed and would not reopen; stopping here"); return
   end
 
   -- ---------------------------------------------------------------- M5, M6
@@ -373,9 +373,9 @@ return function(game)
   local todos = true
   for _, v in ipairs(vereditos) do
     if not v.ok then todos = false end
-    nota("%-3s %s", v.nome, v.ok and "PASSOU" or "FALHOU")
+    nota("%-3s %s", v.nome, v.ok and "PASSED" or "FAILED")
   end
-  nota("VEREDITO: %s", todos and "O MENU FAZ O QUE O JOGADOR ESPERA"
+  nota("VERDICT: %s", todos and "O MENU FAZ O QUE O JOGADOR ESPERA"
     or "LER ACIMA")
   U.wait(10)
 end

@@ -68,14 +68,14 @@ render() {  # $1 = output file, $2 = opt=, $3 = VOXEL_CHARS_MAIN or empty
     bash "$AQUI/../love.sh" mods/voxel_characters/tools/render "${args[@]}" \
       > /dev/null || return 1
   fi
-  [ -f "$SAVE_RENDER/$out" ] || { echo "FALHOU: the harness did not write $out"; return 1; }
+  [ -f "$SAVE_RENDER/$out" ] || { echo "FAILED: the harness did not write $out"; return 1; }
 }
 
 ANTES_MAIN=""
 if [ -n "$before_tag" ]; then
   ANTES_MAIN="$(mktemp -t vc_before).lua"
   git -C "$REPO/mods/voxel_characters" show "$before_tag:main.lua" > "$ANTES_MAIN" \
-    || { echo "FALHOU: could not read main.lua from $before_tag"; exit 1; }
+    || { echo "FAILED: could not read main.lua from $before_tag"; exit 1; }
   echo "before: main.lua from tag $before_tag"
 fi
 

@@ -43,6 +43,10 @@
 #      release rehearsal. Both patterns are lifted from those files and run
 #      against what `verdict` really prints. It found release.sh printing 5 of
 #      11 gates on its first run;
+#   7f. the strings the display-backed gates grep for. Renaming one side of
+#      those pairs does not turn a gate red, it turns it GREEN AND EMPTY, and
+#      the only end-to-end proof is a full battery on a machine with a screen.
+#      This is the cheap static half that runs on every commit;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -130,6 +134,10 @@ else
   printf "   %-44s SKIPPED (no ffmpeg)\n" "fx sfx"
 fi
 
+passo "7f. every string a gate greps for is still printed"
+"$LUAJIT" "$MOD/tools/output_contract.lua" 2>&1 | tail -6
+verdict "output contract" "${PIPESTATUS[0]}"
+
 passo "7e. the battery's verdicts still reach their readers"
 bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9
 verdict "verdict contract" "${PIPESTATUS[0]}"
@@ -149,27 +157,27 @@ fi
 if [ "$MODO" = "tudo" ]; then
   passo "9. in-game gates (slow, needs the game)"
   # THE VERDICT IS COUNTED FROM BOTH SIDES, and that is the whole design of
-  # this step. Every driver prints one `NAME PASSOU` or `NAME FALHOU` per
+  # this step. Every driver prints one `NAME PASSED` or `NAME FAILED` per
   # check. Grepping for a success word alone passes a run where the game never
   # booted and printed nothing, which is the failure this project has already
   # had: a comparison declared DIFFEREM against a file that did not exist, and
   # a gate that counted files and passed a neutralised mod by one sample.
   #
-  # So: zero FALHOU is not enough. There must also be at least one PASSOU, or
+  # So: zero FAILED is not enough. There must also be at least one PASSED, or
   # the driver produced no verdict at all and the correct answer is "no
   # measurement", not "pass".
   for d in probe_life menu probe_draw probe_fp probe_grid; do
     SAIDA=$(POKEPORT_VERSION=blue POKEPORT_DRIVER="$MOD/tools/ingame/$d.lua" \
             bash "$MOD/tools/love.sh" . 2>&1)
-    NFALHOU=$(printf '%s' "$SAIDA" | grep -cE '\b(FALHOU|FAILED)\b')
-    NPASSOU=$(printf '%s' "$SAIDA" | grep -cE '\b(PASSOU|PASSED)\b')
-    if [ "$NPASSOU" -eq 0 ]; then
+    NFAILED=$(printf '%s' "$SAIDA" | grep -cE '\bFAILED\b')
+    NPASSED=$(printf '%s' "$SAIDA" | grep -cE '\bPASSED\b')
+    if [ "$NPASSED" -eq 0 ]; then
       printf "   %-44s NO VERDICT (the driver measured nothing)\n" "$d"
       printf '%s' "$SAIDA" | tail -2 | sed 's/^/       /'
       VERMELHA=1
     else
-      [ "$NFALHOU" -eq 0 ] && R=0 || R=1
-      printf "     %d passed, %d failed\n" "$NPASSOU" "$NFALHOU"
+      [ "$NFAILED" -eq 0 ] && R=0 || R=1
+      printf "     %d passed, %d failed\n" "$NPASSED" "$NFAILED"
       verdict "$d" "$R"
     fi
   done

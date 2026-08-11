@@ -32,12 +32,7 @@
 #
 # ---------------------------------------------------------------------------
 
-# --- the harness and the drivers: output is parsed by gates that need LOVE ---
-mods/voxel_characters/tools/ingame          deferred-needs-love  in-game drivers; bateria greps their PASSOU/FALHOU verdicts and only LOVE can exercise them
-mods/voxel_characters/tools/render          deferred-needs-love  harness output is parsed by check.sh, the ruler, which needs a display
 
-# --- convertible, but the gate is a full battery ---
-mods/voxel_characters/tools/bateria.sh      deferred-full-battery  the banner is converted; what is left is the in-game verdict counter, which greps the drivers' Portuguese and can only drop it once tools/ingame is converted
 # mutantes.sh was listed here and the gate rejected the entry: its output is
 # already en-US ("MUTANTES OK: the suite killed all ..."). The exemption had
 # been written from a crude grep that counted IDENTIFIERS, not printed text,

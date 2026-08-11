@@ -151,7 +151,7 @@ return function(game)
         end
       end
       U.log("VC driver: opcao " .. chave .. "=" .. valor ..
-        (emitiu and " (evento emitido)" or " (FALHOU o evento: A/B nao vale)")
+        (emitiu and " (evento emitido)" or " (FAILED o evento: A/B nao vale)")
         .. (chegou and (" (o mod le: " .. tostring(status) .. ")")
             or " (NAO CONSEGUI LER DE VOLTA do mod)"))
       if not emitiu then
@@ -300,8 +300,8 @@ return function(game)
 
     local piso = difere(com1, com2)
     local dif, amostras = difere(com1, sem)
-    U.log(string.format("VC driver: controle piso %d, mod ligado contra "
-      .. "desligado %d, de %d amostras", piso, dif, amostras))
+    U.log(string.format("VC driver: control floor %d, mod on against "
+      .. "off %d, of %d amostras", piso, dif, amostras))
   end
 
   U.log("VC driver: fim, " .. n .. " fotos")

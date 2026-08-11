@@ -25,9 +25,9 @@
 #      release.sh's, both LIFTED OUT of those files rather than restated here;
 #   3. a FAILING verdict line matches NEITHER, or the summary would report a
 #      failure as a success, which is worse than printing nothing;
-#   4. the in-game verdict greps accept English as well as Portuguese, which is
-#      what lets the drivers be converted without a flag day;
-#   5. no Portuguese banner text survives anywhere under tools/.
+#   4. every in-game driver PRINTS an English verdict and every counter
+#      ACCEPTS one, plus the ruler's banner against the one thing that reads it;
+#   5. no retired Portuguese banner (BATERIA, REGUA) survives under tools/.
 #
 # Everything real is lifted from the file that owns it. A copy of a regex in a
 # gate is a copy that goes stale, and a stale copy passes while the real one
@@ -116,48 +116,82 @@ else
   done
 fi
 
-# ------------------------------------------- 4. the in-game greps are bilingual
+# ------------------------------- 4. the in-game verdict contract, both halves
 #
-# This is what lets the drivers under tools/ingame be converted one at a time
-# instead of in a flag day. If a counter ever stops accepting one language, a
-# converted driver silently counts as zero verdicts.
-for arquivo in "$BATERIA" "$MOD/tools/runner/runner.sh" "$MOD/tools/ingame/monta.sh"; do
-  nome="${arquivo#$MOD/}"
-  linhas=$(grep -nE "(PASSOU|FALHOU)" "$arquivo" | grep -E "grep" || true)
-  if [ -z "$linhas" ]; then
-    printf "  %-40s no verdict grep\n" "$nome"
-    continue
+# THIS CHECK WAS INVERTED ONCE THE DRIVERS WERE CONVERTED, and the old version
+# is worth describing because it went hollow rather than red. It required the
+# counters to accept Portuguese as well as English, which was right while the
+# drivers still printed Portuguese. When they stopped and the alternatives came
+# out of the greps, it found no Portuguese to check and reported "no verdict
+# grep" -- passing, and measuring nothing at all.
+#
+# So it now states what is true after the conversion, which is also stronger:
+# every driver must PRINT an English verdict, and every counter must ACCEPT one.
+# Either half alone can be satisfied by a file that has stopped working.
+DRIVERS="$MOD/tools/ingame/probe_life.lua $MOD/tools/ingame/menu.lua
+         $MOD/tools/ingame/probe_draw.lua $MOD/tools/ingame/probe_fp.lua
+         $MOD/tools/ingame/probe_grid.lua"
+for d in $DRIVERS; do
+  nome="${d#$MOD/}"
+  if ! grep -q 'PASSED' "$d" || ! grep -q 'FAILED' "$d"; then
+    diga "$nome no longer prints an English verdict, so every counter reads it"
+    diga "  as a driver that measured nothing"
+    falhas=$((falhas + 1))
+  elif ANTIGO=$(grep -nE '"(PASSOU|FALHOU)"' "$d" | head -1); [ -n "$ANTIGO" ]; then
+    # The offending line is captured into a variable rather than interpolated
+    # into the message, so the en-US sweep does not read this gate's own search
+    # pattern as Portuguese output. Contorting the message would have been the
+    # other way round: an exemption to keep a wording.
+    diga "$nome still prints a Portuguese verdict, which no counter accepts"
+    diga "  any more: $ANTIGO"
+    falhas=$((falhas + 1))
+  else
+    printf "  %-40s prints PASSED/FAILED\n" "$nome"
   fi
-  mau=0
-  while IFS= read -r l; do
-    case "$l" in
-      *PASSOU*PASSED*|*PASSED*PASSOU*|*FALHOU*FAILED*|*FAILED*FALHOU*) ;;
-      *) diga "$nome greps a Portuguese verdict with no English alternative:"
-         diga "  $(printf '%s' "$l" | sed 's/^[0-9]*: *//')"
-         mau=1 ;;
-    esac
-  done <<EOF
-$linhas
-EOF
-  [ "$mau" -eq 1 ] && falhas=$((falhas + 1))
-  [ "$mau" -eq 0 ] && printf "  %-40s verdict greps accept both\n" "$nome"
 done
+
+for arquivo in "$BATERIA" "$MOD/tools/ingame/monta.sh"; do
+  nome="${arquivo#$MOD/}"
+  if grep -qE "grep[^|]*(PASSED|FAILED)" "$arquivo"; then
+    printf "  %-40s counts PASSED/FAILED\n" "$nome"
+  else
+    diga "$nome has no verdict counter that accepts English; a converted driver"
+    diga "  would read as silent"
+    falhas=$((falhas + 1))
+  fi
+done
+
+# The ruler has a banner too, and the same acronym blind spot: the sweep does
+# not match REGUA any more than it matched BATERIA. `sala_de_teste.sh` compares
+# against it by string, so this pair is a real coupling and not just prose.
+CHECK="$MOD/tools/render/check.sh"
+SALA="$MOD/tools/sala_de_teste.sh"
+if grep -q '"RULER OK"' "$CHECK" && grep -q '"RULER OK"' "$SALA"; then
+  printf "  %-40s ruler banner matches its reader\n" "check.sh / sala_de_teste.sh"
+elif ! grep -q '"RULER OK"' "$CHECK"; then
+  diga "check.sh no longer prints RULER OK"
+  falhas=$((falhas + 1))
+else
+  diga "sala_de_teste.sh compares against a ruler banner check.sh does not print"
+  falhas=$((falhas + 1))
+fi
 
 # --------------------------------------------- 5. no Portuguese banner is left
 #
 # The en-US sweep cannot catch this one: it matches Portuguese WORDS, and
-# `BATERIA` is not in its list precisely because it looks like an acronym.
+# neither `BATERIA` nor `REGUA` is in its list, precisely because both look
+# like acronyms.
 #
 # This file is excluded from its own search: it has to name the old string in
 # order to explain what it is looking for. Excluded BY EXACT PATH rather than by
 # a pattern, so it cannot quietly grow into an exemption for anything else.
-RESTOS=$(grep -rl "BATERIA" "$MOD/tools" 2>/dev/null | grep -v "^$MOD/tools/verdict_gate\.sh$" || true)
+RESTOS=$(grep -rlE "BATERIA|REGUA" "$MOD/tools" 2>/dev/null | grep -v "^$MOD/tools/verdict_gate\.sh$" || true)
 if [ -n "$RESTOS" ]; then
-  diga "the Portuguese banner still appears in:"
+  diga "a retired Portuguese banner still appears in:"
   printf '%s\n' "$RESTOS" | sed "s|^$MOD/|      |"
   falhas=$((falhas + 1))
 else
-  printf "  %-40s gone from tools/\n" "the old BATERIA banner"
+  printf "  %-40s gone from tools/\n" "the old BATERIA/REGUA banners"
 fi
 
 if [ "$falhas" -eq 0 ]; then

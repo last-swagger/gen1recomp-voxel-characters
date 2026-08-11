@@ -84,7 +84,7 @@ return function(game)
       end
     end
     if not existe then
-      log("opcao desconhecida: %s (voxel_characters nao tem essa chave)", CHAVE)
+      log("unknown option: %s (voxel_characters nao tem essa chave)", CHAVE)
       return
     end
   end
@@ -104,7 +104,7 @@ return function(game)
     local ok = game.mods and game.mods.events
       and pcall(game.mods.events.emit, game.mods.events, "mod.options_changed",
         { mod = "voxel_characters", key = chave, value = valor })
-    if not ok then log("AVISO: a troca de %s NAO foi emitida", chave) end
+    if not ok then log("WARNING: a troca de %s NAO foi emitida", chave) end
     return ok
   end
 
@@ -496,6 +496,6 @@ return function(game)
   legendaTag = nil
   legendaAlpha = 0
   love.draw = desenhoOriginal
-  log("quadros por lado: %d", QUADROS)
+  log("frames per side: %d", QUADROS)
   U.wait(10)
 end

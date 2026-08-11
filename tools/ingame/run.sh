@@ -135,10 +135,10 @@ rm -f "$MARCADOR" 2>/dev/null
 
 ESPERADAS="${VC_FOTOS:-}"
 if [ -z "$ESPERADAS" ]; then
-  ESPERADAS=$(grep -oE 'fim, [0-9]+ fotos' "$LOG" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
+  ESPERADAS=$(grep -oE 'end, [0-9]+ photos' "$LOG" 2>/dev/null | grep -oE '[0-9]+' | tail -1)
 fi
 if [ -z "$ESPERADAS" ]; then
-  echo "GATE FALHOU: the driver never reached the end"
+  echo "GATE FAILED: the driver never reached the end"
   echo "  log at $LOG ($(wc -l < "$LOG" | tr -d ' ') lines), version $VERSAO"
   grep -E 'preso_fora_do_mundo|opcao_sem_efeito|driver error' "$LOG" 2>/dev/null | head -3
   exit 1
@@ -156,21 +156,21 @@ if [ "$N" -ge "$ESPERADAS" ]; then
   # chosen fraction. With the mod deliberately neutralized, the difference
   # came out 175 of 87552 against a fixed threshold of 175: it passed by a
   # hair, by chance.
-  CTRL=$(grep -oE 'controle piso [0-9-]+, mod ligado contra desligado [0-9-]+, de [0-9]+' "$LOG" | tail -1)
-  PISO=$(echo "$CTRL" | sed -nE 's/.*piso (-?[0-9]+).*/\1/p')
-  DIF=$(echo "$CTRL" | sed -nE 's/.*desligado (-?[0-9]+).*/\1/p')
-  TOT=$(echo "$CTRL" | sed -nE 's/.*de ([0-9]+)$/\1/p')
+  CTRL=$(grep -oE 'control floor [0-9-]+, mod on against off [0-9-]+, of [0-9]+' "$LOG" | tail -1)
+  PISO=$(echo "$CTRL" | sed -nE 's/.*floor (-?[0-9]+).*/\1/p')
+  DIF=$(echo "$CTRL" | sed -nE 's/.*against (-?[0-9]+).*/\1/p')
+  TOT=$(echo "$CTRL" | sed -nE 's/.*of ([0-9]+)$/\1/p')
   if [ -z "${DIF:-}" ] || [ -z "${TOT:-}" ] || [ -z "${PISO:-}" ]; then
-    echo "GATE FALHOU: the driver did not measure the control"
+    echo "GATE FAILED: the driver did not measure the control"
     exit 1
   fi
   if [ "$PISO" -lt 0 ] || [ "$DIF" -lt 0 ]; then
-    echo "GATE FALHOU: some capture of the control did not come out"
+    echo "GATE FAILED: some capture of the control did not come out"
     exit 1
   fi
   MIN=$((PISO * 3 + 200))
   if [ "$DIF" -lt "$MIN" ]; then
-    echo "GATE FALHOU: with the mod on, the screen does not differ enough from"
+    echo "GATE FAILED: with the mod on, the screen does not differ enough from"
     echo "  it off: $DIF against floor $PISO (minimum $MIN, of $TOT samples)."
     echo "  Either there is no character of ours in this scene, or the mod does nothing."
     exit 1
@@ -192,7 +192,7 @@ if [ "$N" -ge "$ESPERADAS" ]; then
   exit 0
 fi
 
-echo "GATE FALHOU: $N photos (expected $ESPERADAS)"
+echo "GATE FAILED: $N photos (expected $ESPERADAS)"
 echo "  log at $LOG ($(wc -l < "$LOG" | tr -d ' ') lines)"
 echo "  version used: $VERSAO"
 exit 1

@@ -290,7 +290,7 @@ function love.features()
       local path = ctx.SPRITE_DIR .. folha .. ".png"
       local ok, data = pcall(ctx.loadImageData, path)
       if not ok then
-        io.stderr:write("sem folha: " .. path .. "\n")
+        io.stderr:write("no sheet: " .. path .. "\n")
       else
         local sw, sh = data:getDimensions()
         local def = { image = path, frames = math.max(1, math.floor(sh / 16)) }
@@ -326,7 +326,7 @@ function love.features()
         -- the fit as if it were data. And juiz.sh's only completeness check
         -- is a line count, which a line of zeros satisfies.
         if not mesh then
-          io.stderr:write("SEM MALHA: " .. folha .. "\t" .. estado .. "\n")
+          io.stderr:write("NO MESH: " .. folha .. "\t" .. estado .. "\n")
           falhas = falhas + 1
         else
         local f = featuresDaMalha(mesh, kinds)
@@ -366,7 +366,7 @@ function love.features()
     end
   end
   entrada:close()
-  io.stderr:write(string.format("features de %d variantes, %d sem malha\n", linhas, falhas))
+  io.stderr:write(string.format("features for %d variants, %d with no mesh\n", linhas, falhas))
   -- ACTUALLY EXIT, and this is the reason for three lines instead of one.
   --
   -- love.event.quit() alone is not enough: it only schedules the exit, and the

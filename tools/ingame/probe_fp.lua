@@ -64,17 +64,17 @@ return function(game)
   local vereditos = {}
   local function veredito(nome, ok, detalhe)
     vereditos[#vereditos + 1] = { nome = nome, ok = ok }
-    nota("%-3s %s  %s", nome, ok and "PASSOU" or "FALHOU", detalhe or "")
+    nota("%-3s %s  %s", nome, ok and "PASSED" or "FAILED", detalhe or "")
   end
 
   local function fim()
     nota("")
     local todos = true
     for _, v in ipairs(vereditos) do
-      nota("%-3s %s", v.nome, v.ok and "PASSOU" or "FALHOU")
+      nota("%-3s %s", v.nome, v.ok and "PASSED" or "FAILED")
       todos = todos and v.ok
     end
-    nota("VEREDITO: %s", todos
+    nota("VERDICT: %s", todos
       and "O SOLIDO SOBREVIVE A PRIMEIRA PESSOA" or "AINDA NAO")
   end
 
@@ -95,7 +95,7 @@ return function(game)
     local ok = game.mods and game.mods.events
       and pcall(game.mods.events.emit, game.mods.events, "mod.options_changed",
         { mod = "voxel_characters", key = chave, value = valor })
-    if not ok then nota("AVISO: a troca de %s NAO foi emitida", chave) end
+    if not ok then nota("WARNING: the change of %s was NOT emitted", chave) end
     return ok
   end
 
@@ -258,13 +258,13 @@ return function(game)
   opcao("depth", 3); U.wait(8)
   total(com)
   local melhor = { dir = "down", delta = difere(com, sem) }
-  nota("controle no blend %.2f e %.2f: mod ligado contra desligado %d de %d",
+  nota("controle no blend %.2f e %.2f: mod on against desligado %d de %d",
        bCom, bSem, melhor.delta, total())
   veredito("P1", math.abs(bCom - bSem) <= 0.05 and bCom > 0.02 and bCom < 0.9,
     string.format("as duas medidas casaram no meio da entrada: blend %.2f e "
       .. "%.2f", bCom, bSem))
   if math.abs(bCom - bSem) > 0.05 then
-    nota("blends diferentes: a medida seria da camera, nao da opcao")
+    nota("different blends: the measurement would be of the camera, not the option")
     return fim()
   end
 
@@ -295,7 +295,7 @@ return function(game)
   local b3, s1 = ladoNoBlend("solid")
   local piso = difere(c1, c2)
   local sinal = difere(c1, s1)
-  nota("blend %.2f/%.2f/%.2f: piso CARD-CARD %d, sinal CARD-SOLID %d de %d",
+  nota("blend %.2f/%.2f/%.2f: floor CARD-CARD %d, signal CARD-SOLID %d of %d",
        b1, b2, b3, piso, sinal, total())
   veredito("P3", sinal > piso * 2 + 20,
     string.format("o SOLID muda a tela: %d contra piso %d", sinal, piso))
@@ -340,18 +340,18 @@ return function(game)
     local PISO_MAX = total() * 0.05
     if math.abs(bA - bF) > 0.03 or math.abs(bA - bS) > 0.03 then
       descartadas = descartadas + 1
-      nota("  descartada: blends %.2f / %.2f / %.2f nao bateram", bA, bF, bS)
+      nota("  discarded: blends %.2f / %.2f / %.2f did not agree", bA, bF, bS)
     else
       local p = difere(imgA, imgF)
       local d = difere(imgA, imgS)
       if p > PISO_MAX then
         descartadas = descartadas + 1
-        nota("  descartada: blend %.2f com piso %d (%.1f%%), a cena nao estava"
+        nota("  discarded: blend %.2f with floor %d (%.1f%%), the scene was not"
              .. " parada", bA, p, p / total() * 100)
       else
         usadas = usadas + 1
         if d > piorSinal then piorSinal, piorBlend, piorPiso = d, bA, p end
-        nota("  blend %.2f   piso %d (%.1f%%)   CARD-SOLID %d (%.1f%%)",
+        nota("  blend %.2f   floor %d (%.1f%%)   CARD-SOLID %d (%.1f%%)",
              bA, p, p / total() * 100, d, d / total() * 100)
       end
     end

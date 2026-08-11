@@ -41,13 +41,13 @@ return function(game)
     -- had frozen when it had only stopped being able to write.
     local okw, err = love.filesystem.write("vc_probe.txt",
       table.concat(linhas, "\n") .. "\n")
-    if not okw then print("[probe] AVISO: nao consegui escrever: " .. tostring(err)) end
+    if not okw then print("[probe] WARNING: could not write: " .. tostring(err)) end
   end
 
   local vereditos = {}
   local function veredito(nome, ok, detalhe)
     vereditos[#vereditos + 1] = { nome = nome, ok = ok, detalhe = detalhe }
-    nota("%-4s %s  %s", nome, ok and "PASSOU" or "FALHOU", detalhe or "")
+    nota("%-4s %s  %s", nome, ok and "PASSED" or "FAILED", detalhe or "")
   end
 
   nota("=== passo 1: a posicao por instancia chega limpa? ===")
@@ -149,13 +149,13 @@ return function(game)
       tostring(love.window and love.window.hasFocus and love.window.hasFocus()))
   end
 
-  nota("antes do teleport (quadro %d) %s", U.frame(), ambiente())
+  nota("before the teleport (frame %d) %s", U.frame(), ambiente())
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   local mapa, tx, ty = Pouso.escolher(game, "VIRIDIAN_CITY", 17, 17)
   U.teleport(game, mapa, tx, ty, "down")
-  nota("depois do teleport (quadro %d) %s", U.frame(), ambiente())
+  nota("after the teleport (frame %d) %s", U.frame(), ambiente())
   U.wait(60)
-  nota("depois de esperar 60 quadros (quadro %d) %s", U.frame(), ambiente())
+  nota("after waiting 60 frames (frame %d) %s", U.frame(), ambiente())
   local ow = game.overworld
   if not (ow and game.stack:top() == ow and ow.entities) then
     veredito("P1", false, "nao cheguei ao mundo")
@@ -178,7 +178,7 @@ return function(game)
   veredito("P1", #desenhos > 0,
     string.format("%d desenhos de personagem num quadro", #desenhos))
   if #desenhos == 0 then
-    nota("sem desenho de personagem nao da para medir mais nada")
+    nota("with no character drawn there is nothing else to measure")
     love.graphics.captureScreenshot("vc_probe_sem_desenho.png")
     return
   end
@@ -195,7 +195,7 @@ return function(game)
     local g = porOrigem[d.de]
     g[#g + 1] = d
   end
-  nota("passadas por quadro: %d", #ordemOrigem)
+  nota("passes per frame: %d", #ordemOrigem)
   for _, origem in ipairs(ordemOrigem) do
     nota("  %s  %d desenhos  pull=%s",
       origem, #porOrigem[origem], tostring(porOrigem[origem][1].pull))
@@ -348,7 +348,7 @@ return function(game)
       local ok, esperado = bate(observa(), alvo)
       if not ok then
         ruins = ruins + 1
-        nota("  degrau %d: nenhum desenho com m[12]=%.1f", i, esperado)
+        nota("  rung %d: no draw with m[12]=%.1f", i, esperado)
       end
     end
     veredito("P6", ruins == 0, string.format(
@@ -398,7 +398,7 @@ return function(game)
   end
   game.input.state["down"] = false
   U.wait(20)
-  nota("a camera se moveu em %d dos 24 quadros de caminhada", camAndou)
+  nota("the camera moved in %d of the 24 walking frames", camAndou)
 
   -- P7 only counts if the player was located in some frame. Without this, if
   -- achaJogador never matches in any of the 24 frames, saltoMax stays at 0 and nan
@@ -420,9 +420,9 @@ return function(game)
   local todos = true
   for _, v in ipairs(vereditos) do
     if not v.ok then todos = false end
-    nota("%-4s %s", v.nome, v.ok and "PASSOU" or "FALHOU")
+    nota("%-4s %s", v.nome, v.ok and "PASSED" or "FAILED")
   end
-  nota("VEREDITO: %s", todos and "A POSICAO CHEGA LIMPA"
+  nota("VERDICT: %s", todos and "A POSICAO CHEGA LIMPA"
     or "ALGO CHEGOU SUJO, ler acima")
 
   love.graphics.captureScreenshot("vc_probe_fim.png")

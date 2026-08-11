@@ -50,15 +50,15 @@ for spec in "$@"; do
       echo "   ok  $(basename "$ab")"
     else
       FALHOS+=("$spec (published nothing)")
-      echo "   FALHOU: clip.sh succeeded but produced no side-by-side"
+      echo "   FAILED: clip.sh succeeded but produced no side-by-side"
     fi
   else
     # Both languages, because the drivers are being converted one at a time.
     # A counter that knows only one of them reads a converted driver as silent.
-    motivo=$(grep -oE '(FALHOU|FAILED).*|opcao desconhecida.*|unknown option.*' \
+    motivo=$(grep -oE 'FAILED.*|unknown option.*' \
              "$SAIDA/$nome.log" | head -1)
     FALHOS+=("$spec ${motivo:-unknown}")
-    echo "   FALHOU: ${motivo:-see $SAIDA/$nome.log}"
+    echo "   FAILED: ${motivo:-see $SAIDA/$nome.log}"
   fi
 done
 

@@ -670,8 +670,26 @@ already been fixed, and this second copy had been missed. It also found
 `tools/ingame/monta.sh` grepping a Portuguese verdict with no English
 alternative, which the next slice would have broken silently.
 
-The remaining deferred strings live in `tools/ingame` and `tools/render`, whose
-output is parsed by display-backed gates, plus filenames and API/data values.
+**`tools/ingame` and `tools/render` are done too.** The sweep is at **5 deferred
+lines**, all of them fixture names inside one test file, and both directory-wide
+deferrals are deleted because the sweep's own stale-exemption rule demanded it
+the moment they stopped matching anything.
+
+That conversion touched every string a display-backed gate greps for, which is
+the dangerous kind: renaming one side does not turn a gate red, it turns it
+green and empty. `tools/output_contract.lua` runs as step 7f and requires every
+prose literal a gate searches for to still be printed by something, statically
+and in milliseconds. It caught two half-done conversions in the bulk pass, plus
+one grep in `run.sh` for a string no driver has printed in some time.
+`REGUA OK` / `REGUA TORTA` became `RULER OK` / `RULER CROOKED`, and unlike the
+battery banner that one really is parsed, by `sala_de_teste.sh`.
+
+**Filenames remain, deliberately.** They are command-line keys by this project's
+own `deferred-api` definition: typed by hand, pasted into Discord, quoted in
+published release notes and saved in shell history. A rename is atomic in git
+and broken everywhere else the moment an old command is re-run. Recommended
+against; Kim's call, with a deprecation path written up in `EXECUTION_STATE.md`
+if he wants it anyway.
 
 **What changes:** a contributor running the battery stops reading
 `BATTERY RED`, and the remaining tool output stops depending on Portuguese

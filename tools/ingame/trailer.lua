@@ -389,5 +389,5 @@ return function(game)
   restauraHora()
   restauraMods()
   log("cortes: %s", table.concat(cortes, " "))
-  log("fim, %d quadros a %d fps, %.1f s", n, FPS, n / FPS)
+  log("end, %d frames a %d fps, %.1f s", n, FPS, n / FPS)
 end

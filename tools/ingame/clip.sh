@@ -86,9 +86,9 @@ cd "$REPO" || exit 1
 echo "version: $VERSAO   option: $OPCAO"
 VC_CLIP_OPT="$OPCAO" POKEPORT_VERSION="$VERSAO" POKEPORT_DRIVER="$DRIVER" \
   "$LOVE" . > "$LOG" 2>&1
-QUADROS=$(grep -oE 'quadros por lado: [0-9]+' "$LOG" | grep -oE '[0-9]+' | tail -1)
+QUADROS=$(grep -oE 'frames per side: [0-9]+' "$LOG" | grep -oE '[0-9]+' | tail -1)
 if [ -z "$QUADROS" ]; then
-  echo "FALHOU: the driver did not finish"
+  echo "FAILED: the driver did not finish"
   tail -5 "$LOG"
   exit 1
 fi
@@ -97,7 +97,7 @@ N_OFF=$(find "$SAVE" -maxdepth 1 -name 'vc_clip_off_*.png' | wc -l | tr -d ' ')
 N_ON=$(find "$SAVE" -maxdepth 1 -name 'vc_clip_on_*.png' | wc -l | tr -d ' ')
 echo "frames recorded: $N_OFF off, $N_ON on"
 if [ "$N_OFF" -lt 10 ] || [ "$N_ON" -lt 10 ]; then
-  echo "FALHOU: too few frames"
+  echo "FAILED: too few frames"
   exit 1
 fi
 
@@ -177,7 +177,7 @@ psnr() {  # $1 $2 = png; prints the average PSNR, or empty
 DENTRO=$(psnr "$TMP/vc_clip_off_0010.png" "$TMP/vc_clip_piso_0010.png")
 ENTRE=$(psnr "$TMP/vc_clip_off_0010.png" "$TMP/vc_clip_on_0010.png")
 if [ -z "$DENTRO" ] || [ -z "$ENTRE" ]; then
-  echo "FALHOU: could not measure the frames (ffmpeg without psnr?)"
+  echo "FAILED: could not measure the frames (ffmpeg without psnr?)"
   exit 1
 fi
 printf "psnr within one side %s, between the sides %s\n" "$DENTRO" "$ENTRE"
@@ -185,13 +185,13 @@ printf "psnr within one side %s, between the sides %s\n" "$DENTRO" "$ENTRE"
 # that means a still scene, and then the comparison loses its reference; on
 # the ENTRE (between) side it means the option changed nothing, which is a
 # direct fail.
-case "$ENTRE" in inf|"") echo "FALHOU: both sides are identical at frame 10"; exit 1;; esac
+case "$ENTRE" in inf|"") echo "FAILED: both sides are identical at frame 10"; exit 1;; esac
 case "$DENTRO" in
   inf) echo "  (still scene: no animation, any difference between sides is the option)";;
   *)
     MAIOR=$(awk -v a="$ENTRE" -v b="$DENTRO" 'BEGIN{print (a < b) ? 1 : 0}')
     if [ "$MAIOR" != "1" ]; then
-      echo "FALHOU: the sides differ LESS from each other ($ENTRE) than one side"
+      echo "FAILED: the sides differ LESS from each other ($ENTRE) than one side"
       echo "  differs from itself ($DENTRO). That is the animation, not the option."
       echo "  A clip like this looks like a comparison without being one."
       exit 1
@@ -276,7 +276,7 @@ if [ -f "$TMP/vc_clip_title_0001.png" ]; then
     -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
     || { echo "ffmpeg failed attaching the title card"; exit 1; }
 else
-  echo "AVISO: no title card frame from clip.lua, shipping without one"
+  echo "WARNING: no title card frame from clip.lua, shipping without one"
   cp "$TMP/nucleo-ab.mp4" "$SAIDA/$CHAVE-$SUFIXO-ab.mp4"
 fi
 

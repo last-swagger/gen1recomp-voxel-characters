@@ -41,16 +41,16 @@ medido() {
 }
 
 # 1. Internal conventions: axes, setVertex forms, frame count.
-OUT=$($LOVE $H selftest=1 2>&1 | grep "autoteste")
-say "autoteste de convencoes" "$OUT"
+OUT=$($LOVE $H selftest=1 2>&1 | grep "selftest")
+say "conventions selftest" "$OUT"
 # Compares the TWO numbers for real, instead of matching a pattern with a
 # backreference. `grep -qE "([0-9]+)/\1$"` accepted "12/2", because the group
 # matches the trailing "2" of "12", and accepted "0/0", which is a selftest
 # with zero cases. A backreference in ERE is also undefined in POSIX and
 # blows up under ugrep.
-PASSOU=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1)
+PASSED=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f1)
 DE=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f2)
-[ -n "${PASSOU:-}" ] && [ -n "${DE:-}" ] && [ "$PASSOU" = "$DE" ] && [ "$DE" -gt 0 ] || FAIL=1
+[ -n "${PASSED:-}" ] && [ -n "${DE:-}" ] && [ "$PASSED" = "$DE" ] && [ "$DE" -gt 0 ] || FAIL=1
 
 # 2. Conformance: from the front, at pitch zero, the SLAB has to be identical
 #    to the original card. This catches an inverted depth sign, a wrong
@@ -59,7 +59,7 @@ DE=$(echo "$OUT" | grep -oE "[0-9]+/[0-9]+" | tail -1 | cut -d/ -f2)
 for s in red blue snorlax poke_ball nurse; do
   R=$($LOVE $H sprite=$s shapes=flat,slab frames=0 yaws=0 pitch=0 cell=256 \
       metrics=1 out=chk_$s.png 2>&1 | grep slab | grep -o "IoU [0-9.]*" | head -1)
-  say "conformidade $s" "$R"
+  say "conformance $s" "$R"
   [ "$R" = "IoU 1.000" ] || FAIL=1
 done
 
@@ -70,7 +70,7 @@ done
 for fr in 1 2 3 4 5; do
   R=$($LOVE $H sprite=red shapes=flat,slab frames=$fr yaws=0 pitch=0 cell=256 \
       metrics=1 out=chk_f$fr.png 2>&1 | grep slab | grep -o "IoU [0-9.]*" | head -1)
-  say "conformidade red frame $fr" "$R"
+  say "conformance red frame $fr" "$R"
   [ "$R" = "IoU 1.000" ] || FAIL=1
 done
 
@@ -91,34 +91,34 @@ done
 for fr in 3 5; do
   R=$($LOVE $H sprite=red shapes=slab frames=$fr yaws=0 rungs=75 cell=140 \
       blink=on blinkscan=1 out=chk_b$fr.png 2>&1 | grep BLINKSCAN)
-  say "red pisca andando, frame $fr" "$R"
+  say "red blinks while walking, frame $fr" "$R"
   # ANCHORED AT THE START OF THE MESSAGE, and this `BLINKSCAN ` cost a whole
-  # audit: the harness prints "BLINKSCAN fecha em t=..." or "BLINKSCAN nao
+  # audit: the harness prints "BLINKSCAN closes at t=..." or "BLINKSCAN nao
   # fecha em 10 s", and the second CONTAINS the first as a substring. A grep
   # for "fecha em" matched both, so deleting the blink entirely left these
-  # three checks green, and the two negative ones ("nao fecha") too, because
+  # three checks green, and the two negative ones ("does not close") too, because
   # there the absence becomes truth. The five blink checks survived the
   # removal of the feature they exist to measure.
-  echo "$R" | grep -q "BLINKSCAN fecha em" || FAIL=1
+  echo "$R" | grep -q "BLINKSCAN closes at" || FAIL=1
 done
 
 R=$($LOVE $H sprite=girl shapes=slab frames=3 yaws=0 rungs=75 cell=140 \
     blink=on blinkscan=1 out=chk_bgirl.png 2>&1 | grep BLINKSCAN)
-say "girl NAO pisca andando, olho nao transfere" "$R"
-echo "$R" | grep -q "nao fecha" || FAIL=1
+say "girl does NOT blink walking, the eye does not transfer" "$R"
+echo "$R" | grep -q "does not close" || FAIL=1
 
 R=$($LOVE $H sprite=red shapes=slab frames=1 yaws=0 rungs=75 cell=140 \
     blink=on blinkscan=1 out=chk_b1.png 2>&1 | grep BLINKSCAN)
-say "frame 1 de costas NAO pisca" "$R"
-echo "$R" | grep -q "nao fecha" || FAIL=1
+say "frame 1 from behind does NOT blink" "$R"
+echo "$R" | grep -q "does not close" || FAIL=1
 
 # 3. The blink happens. The window is 0.12 s in a period of seconds, so
 #    sampling time from far away proves nothing: I already concluded it was
 #    not working when it was.
 R=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=75 cell=140 \
     blink=on blinkscan=1 out=chk_blink.png 2>&1 | grep BLINKSCAN)
-say "piscada dispara" "$R"
-echo "$R" | grep -q "BLINKSCAN fecha em" || FAIL=1
+say "the blink fires" "$R"
+echo "$R" | grep -q "BLINKSCAN closes at" || FAIL=1
 
 # 4. The compositor accepts a caption with an equals sign. This bug showed up
 #    twice, identical both times, and the symptom is "file not found", which
@@ -126,7 +126,7 @@ echo "$R" | grep -q "BLINKSCAN fecha em" || FAIL=1
 R=$($LOVE $H/compose out=chk_compose.png \
     "t=0.4 uma legenda com igual=$HOME/Library/Application Support/LOVE/render/chk_red.png" \
     2>&1 | grep -cE "WROTE")
-say "compositor aceita '=' na legenda" "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
+say "the compositor accepts '=' in a caption" "$([ "$R" = "1" ] && echo ok || echo FAILED)"
 [ "$R" = "1" ] || FAIL=1
 
 # 5. THE RULER MEASURES ITSELF.
@@ -145,7 +145,7 @@ A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=220 \
     metrics=1 out=chk_iso.png 2>&1 | grep "^  slab" | grep -o "art *[0-9.]*")
 B=$($LOVE $H sprite=red shapes=flat,slab,carved frames=0 yaws=0 rungs=35 cell=220 \
     metrics=1 out=chk_juntos.png 2>&1 | grep "^  slab" | grep -o "art *[0-9.]*")
-say "medicao nao vaza entre celulas" "sozinho $A / ao lado do carved $B"
+say "measurement does not leak between cells" "alone $A / beside carved $B"
 medido "$A" && medido "$B" && [ "$A" = "$B" ] || FAIL=1
 
 # 5b. The generic option pass-through reaches the mod. Without this, a new
@@ -154,7 +154,7 @@ A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     metrics=1 out=chk_o0.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
 B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     opt="front_shape:0.12" metrics=1 out=chk_o1.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
-say "opcao generica chega no mod" "sem opcao $A / com opcao $B"
+say "a generic option reaches the mod" "sem opcao $A / com opcao $B"
 # Guarded on both sides: without it, a run that DIES leaves B empty, "niveis 3"
 # differs from "", and the check goes green claiming the option got through.
 # And the harness dies on purpose on an unknown key (5c right below), so
@@ -164,8 +164,8 @@ medido "$A" && medido "$B" && [ "$A" != "$B" ] || FAIL=1
 # 5c. An unknown key must not pass silently: a typo turns into "I measured
 #     with the option off and did not notice".
 R=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=120 \
-    opt="chave_que_nao_existe:1" metrics=1 out=chk_o2.png 2>&1 | grep -c "OPCAO DESCONHECIDA")
-say "chave de opcao desconhecida grita" "$([ "$R" -ge 1 ] && echo ok || echo FALHOU)"
+    opt="chave_que_nao_existe:1" metrics=1 out=chk_o2.png 2>&1 | grep -c "UNKNOWN OPTION")
+say "chave de unknown option grita" "$([ "$R" -ge 1 ] && echo ok || echo FAILED)"
 [ "$R" -ge 1 ] || FAIL=1
 
 # 5d. The tonal structure needs to DISTINGUISH STRENGTH. The first version
@@ -176,7 +176,7 @@ A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     opt="front_shape:0.12" metrics=1 out=chk_d1.png 2>&1 | grep "front  niveis" | grep -o "desvio [0-9.]*")
 B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
     opt="front_shape:0.22" metrics=1 out=chk_d2.png 2>&1 | grep "front  niveis" | grep -o "desvio [0-9.]*")
-say "estrutura tonal distingue forca" "0.12 -> $A / 0.22 -> $B"
+say "tonal structure tells strength apart" "0.12 -> $A / 0.22 -> $B"
 medido "$A" && medido "$B" && [ "$A" != "$B" ] || FAIL=1
 
 # 6. The LABORATORY opens, and classifies the options on the right side.
@@ -189,11 +189,11 @@ medido "$A" && medido "$B" && [ "$A" != "$B" ] || FAIL=1
 #    up on this side, either it turned into geometry without anyone saying so,
 #    or the classifier broke. Both deserve to stop the queue.
 LAB=$($LOVE $H lab=1 labshot=chk_lab.png sprite=red 2>&1)
-R=$(echo "$LAB" | grep -c "laboratorio ok")
-say "laboratorio abre" "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
+R=$(echo "$LAB" | grep -c "laboratory ok")
+say "the laboratory opens" "$([ "$R" = "1" ] && echo ok || echo FAILED)"
 [ "$R" = "1" ] || FAIL=1
 
-SEM=$(echo "$LAB" | grep "sem efeito na malha:" | sed 's/.*malha: //')
+SEM=$(echo "$LAB" | grep "no effect on the mesh:" | sed 's/.*mesh: //')
 AQUI=$(echo "$LAB" | grep "^  aqui:" | sed 's/.*aqui: *//')
 FALTOU=""
 for k in breath sway lag footfall; do
@@ -207,8 +207,8 @@ done
 for k in depth shape front_shape top_dome step_weight; do
   echo "$AQUI" | grep -q "\b$k\b" || FALTOU="$FALTOU +$k"
 done
-say "classificador poe cada opcao do lado certo" \
-    "$([ -z "$FALTOU" ] && echo ok || echo "FALHOU:$FALTOU")"
+say "the classifier puts every option on the right side" \
+    "$([ -z "$FALTOU" ] && echo ok || echo "FAILED:$FALTOU")"
 [ -z "$FALTOU" ] || FAIL=1
 
 # 7. CHOICE MODE proposes a visible pair and records the choice.
@@ -224,14 +224,14 @@ say "classificador poe cada opcao do lado certo" \
 rm -f "$HOME/Library/Application Support/LOVE/render/chk_escolhas.txt"
 AB=$($LOVE $H lab=1 labab=1 labpick=A labfile=chk_escolhas.txt \
      labshot=chk_lab_ab.png 2>&1)
-R=$(echo "$AB" | grep "modo escolha:" | grep -vc "NENHUM PAR")
-say "modo escolha propoe par visivel" \
-    "$(echo "$AB" | grep -o 'modo escolha: .*' | head -1)"
+R=$(echo "$AB" | grep "choice mode:" | grep -vc "NO PAIR")
+say "choice mode offers a visible pair" \
+    "$(echo "$AB" | grep -o 'choice mode: .*' | head -1)"
 [ "$R" = "1" ] || FAIL=1
 
 LINHAS=$(wc -l < "$HOME/Library/Application Support/LOVE/render/chk_escolhas.txt" 2>/dev/null | tr -d ' ')
-say "a escolha vira linha de arquivo" \
-    "$([ "${LINHAS:-0}" -ge 1 ] && echo "ok, $LINHAS linha" || echo FALHOU)"
+say "the choice becomes a line in a file" \
+    "$([ "${LINHAS:-0}" -ge 1 ] && echo "ok, $LINHAS linha" || echo FAILED)"
 [ "${LINHAS:-0}" -ge 1 ] || FAIL=1
 
 # 7b. THE REASON FIELD, both ways round (roadmap T1.4).
@@ -254,14 +254,14 @@ say "a escolha vira linha de arquivo" \
 #     is the one situation it must not pass in.
 ESC_SEM="$HOME/Library/Application Support/LOVE/render/chk_escolhas.txt"
 if [ ! -s "$ESC_SEM" ]; then
-  say "escolha sem motivo omite o campo" "FALHOU: sem escolha gravada para olhar"
+  say "a choice with no reason omits the field" "FAILED: no recorded choice to look at"
   FAIL=1
 elif grep -q "reason=" "$ESC_SEM"; then
-  say "escolha sem motivo omite o campo" "FALHOU: escreveu reason= sem motivo"
+  say "a choice with no reason omits the field" "FAILED: wrote reason= with no reason"
   FAIL=1
 else
-  say "escolha sem motivo omite o campo" \
-      "ok, $(wc -l < "$ESC_SEM" | tr -d ' ') linha sem o campo"
+  say "a choice with no reason omits the field" \
+      "ok, $(wc -l < "$ESC_SEM" | tr -d ' ') line without the field"
 fi
 
 ESC_COM="$HOME/Library/Application Support/LOVE/render/chk_motivo.txt"
@@ -272,25 +272,25 @@ $LOVE $H lab=1 labab=1 labpick=B labreason="$MOTIVO" \
 VOLTA=$(luajit - "$ESC_COM" mods/voxel_characters/tools/render/reason.lua 2>/dev/null <<'LUA'
 local R = dofile(arg[2])
 local f = io.open(arg[1], "r")
-if not f then print("SEM ARQUIVO"); os.exit(0) end
+if not f then print("NO FILE"); os.exit(0) end
 for linha in f:lines() do
   local m = R.fromLine(linha)
   if m then print(m); f:close(); os.exit(0) end
 end
-f:close(); print("SEM MOTIVO")
+f:close(); print("NO REASON")
 LUA
 )
 if [ "$VOLTA" = "$MOTIVO" ]; then
-  say "escolha com motivo grava e volta igual" "ok"
+  say "a choice with a reason is written and read back" "ok"
 else
-  say "escolha com motivo grava e volta igual" "FALHOU: [$VOLTA]"
+  say "a choice with a reason is written and read back" "FAILED: [$VOLTA]"
   FAIL=1
 fi
 # The reason must not have disturbed the pick or the two states on the way in.
 if luajit mods/voxel_characters/tools/juiz/ajusta.lua --estados "$ESC_COM" 2>/dev/null | grep -q .; then
-  say "a linha com motivo ainda parseia no juiz" "ok"
+  say "the line with a reason still parses in the judge" "ok"
 else
-  say "a linha com motivo ainda parseia no juiz" "FALHOU"
+  say "the line with a reason still parses in the judge" "FAILED"
   FAIL=1
 fi
 
@@ -306,12 +306,12 @@ red	0	0	depth:10,shape:slab,side_color:body
 ENTRADA
 luajit mods/voxel_characters/tools/juiz/ajusta.lua --pares /tmp/vc_chk_feat.tsv   "" 3 > /tmp/vc_chk_pares.txt 2>/dev/null
 NPARES=$(wc -l < /tmp/vc_chk_pares.txt | tr -d " ")
-say "o juiz propoe par a partir de features"     "$([ "${NPARES:-0}" -ge 1 ] && echo "ok, $NPARES" || echo FALHOU)"
+say "the judge offers a pair from features"     "$([ "${NPARES:-0}" -ge 1 ] && echo "ok, $NPARES" || echo FAILED)"
 [ "${NPARES:-0}" -ge 1 ] || FAIL=1
 
 LAB2=$($LOVE $H lab=1 labab=1 labpares=/tmp/vc_chk_pares.txt labpick=A        labfile=chk_pares.txt labshot=chk_lab_pares.png 2>&1)
-R=$(echo "$LAB2" | grep -c "pares pedidos pelo juiz")
-say "o laboratorio consome os pares do juiz"     "$([ "$R" = "1" ] && echo ok || echo FALHOU)"
+R=$(echo "$LAB2" | grep -c "pairs requested by the judge")
+say "the laboratory consumes the judge pairs"     "$([ "$R" = "1" ] && echo ok || echo FAILED)"
 [ "$R" = "1" ] || FAIL=1
 
 # 9. The explanatory CARD: the before/after figure that goes into the release
@@ -322,8 +322,8 @@ CARDS=mods/voxel_characters/tools/render/cards
 rm -f "$COMPOSE/chk_card1.png" "$COMPOSE/chk_card2.png" "$COMPOSE/chk_sem.png"
 
 bash $H/card.sh $CARDS/shading.card chk_card1.png > /dev/null 2>&1
-say "o card sai da receita" \
-    "$([ -f "$COMPOSE/chk_card1.png" ] && echo ok || echo FALHOU)"
+say "the card comes out of the recipe" \
+    "$([ -f "$COMPOSE/chk_card1.png" ] && echo ok || echo FAILED)"
 [ -f "$COMPOSE/chk_card1.png" ] || FAIL=1
 
 # 9b. FLOOR. Building the same card twice has to produce the same file.
@@ -331,11 +331,11 @@ say "o card sai da receita" \
 #     instead of what changed, and the two checks below mean nothing.
 bash $H/card.sh $CARDS/shading.card chk_card2.png > /dev/null 2>&1
 if [ -f "$COMPOSE/chk_card1.png" ] && [ -f "$COMPOSE/chk_card2.png" ]; then
-  cmp -s "$COMPOSE/chk_card1.png" "$COMPOSE/chk_card2.png" && IGUAL=ok || IGUAL=FALHOU
+  cmp -s "$COMPOSE/chk_card1.png" "$COMPOSE/chk_card2.png" && IGUAL=ok || IGUAL=FAILED
 else
-  IGUAL=FALHOU
+  IGUAL=FAILED
 fi
-say "o mesmo card duas vezes da o mesmo arquivo" "$IGUAL"
+say "the same card twice gives the same file" "$IGUAL"
 [ "$IGUAL" = "ok" ] || FAIL=1
 
 # 9c. The annotation's COORDINATE reaches the drawing.
@@ -359,11 +359,11 @@ for par in "0.20,0.20 chk_p1.png" "0.80,0.80 chk_p2.png"; do
     > /dev/null 2>&1
 done
 if [ -f "$COMPOSE/chk_p1.png" ] && [ -f "$COMPOSE/chk_p2.png" ]; then
-  cmp -s "$COMPOSE/chk_p1.png" "$COMPOSE/chk_p2.png" && ANOT=FALHOU || ANOT=ok
+  cmp -s "$COMPOSE/chk_p1.png" "$COMPOSE/chk_p2.png" && ANOT=FAILED || ANOT=ok
 else
-  ANOT=FALHOU
+  ANOT=FAILED
 fi
-say "a coordenada da anotacao chega ao desenho" "$ANOT"
+say "the annotation coordinate reaches the drawing" "$ANOT"
 [ "$ANOT" = "ok" ] || FAIL=1
 
 # 9d. The REFUSAL fires. Two identical halves announce in writing a change
@@ -374,8 +374,8 @@ $LOVE $H/compose mode=card out=chk_recusa.png \
   "before=A||$SAVE_R/card_antes.png" "after=B||$SAVE_R/card_antes.png" \
   > /dev/null 2>&1
 RC=$?
-say "card recusa metades identicas" \
-    "$([ "$RC" -ne 0 ] && echo "ok, saiu $RC" || echo "FALHOU, saiu 0")"
+say "the card refuses identical halves" \
+    "$([ "$RC" -ne 0 ] && echo "ok, saiu $RC" || echo "FAILED, saiu 0")"
 [ "$RC" -ne 0 ] || FAIL=1
 
 # 10. THE REGION OVERLAY (roadmap item 11, laboratory key `b`) actually draws
@@ -389,13 +389,13 @@ rm -f "$SAVE_R/chk_lab_regoff.png" "$SAVE_R/chk_lab_regon.png"
 $LOVE $H lab=1 sprite=red labregions=0 labshot=chk_lab_regoff.png > /dev/null 2>&1
 $LOVE $H lab=1 sprite=red labregions=1 labshot=chk_lab_regon.png > /dev/null 2>&1
 if [ -f "$SAVE_R/chk_lab_regoff.png" ] && [ -f "$SAVE_R/chk_lab_regon.png" ]; then
-  cmp -s "$SAVE_R/chk_lab_regoff.png" "$SAVE_R/chk_lab_regon.png" && REGIOES=FALHOU || REGIOES=ok
+  cmp -s "$SAVE_R/chk_lab_regoff.png" "$SAVE_R/chk_lab_regon.png" && REGIOES=FAILED || REGIOES=ok
 else
-  REGIOES=FALHOU
+  REGIOES=FAILED
 fi
-say "overlay de regioes muda o desenho" "$REGIOES"
+say "the region overlay changes the drawing" "$REGIOES"
 [ "$REGIOES" = "ok" ] || FAIL=1
 
 echo
-[ $FAIL -eq 0 ] && echo "REGUA OK" || echo "REGUA TORTA: do not trust measurement until it's fixed"
+[ $FAIL -eq 0 ] && echo "RULER OK" || echo "RULER CROOKED: do not trust measurement until it's fixed"
 exit $FAIL

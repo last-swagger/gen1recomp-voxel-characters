@@ -23,12 +23,13 @@ the ruler and all five in-game gates.
 637/637 offline · lint clean · chunk-local headroom 71 of 200 (129 in use)
 modkit ok · option docs ok (17 options, 20 rows) · RUNNER SELFTEST OK (16 cases)
 execution state ok · en-US sweep ok · audio gate ok · fx sfx ok · reason field ok
-verdict contract ok
-REGUA OK (36 checks) · in-game 20/16/16/8/6 passed, 0 failed
+verdict contract ok · output contract ok
+RULER OK (36 checks) · in-game 20/16/16/8/6 passed, 0 failed
 BATTERY OK
 ```
 
-`--rapido` is 12 gates; the reason field is 7d and the verdict contract is 7e.
+`--rapido` is 13 gates; the reason field is 7d, the verdict contract 7e and the
+output contract 7f.
 The figures above are a FULL battery run on the MBP, 2026-08-11, from the
 tempdir copy described under the T1.5 slice 1 write-up.
 
@@ -72,6 +73,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed** | recorder proven to see calls, and to catch a stray one at 181 plays |
 | T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
+| T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
 | T1.4 reason field | this session | `tools/render/{reason,lab,main}.lua`, `tools/juiz/reason_gate.{lua,sh}`, `tools/render/check.sh`, `tools/bateria.sh` | **landed** | 171 states / 30 pairs / 30 key lines byte-identical with a hostile reason on every one of the 106 recorded choices; 7 encoder mutations caught; `REGUA OK` on the MBP with the quote/pipe/equals round trip |
 | T1.4 critic context, round 3 | this session | `tools/juiz/dados/*_r3.txt`, `NOTAS_DO_CRITICO.md` | **run, inconclusive; critic NOT approved** | 60.0% against a 53.3% baseline, margin +6.7 inside a +/-12.6 standard error |
 | T2.3 slice 4, playback | this session | `main.lua`, `sfx/*.wav`, `tools/fx_sfx_gate.sh`, docs | **landed** | 637/637; off-guard defeat caught as `1 source(s), 5 play(s)`; full battery green on the MBP with the assets packaged |
@@ -1225,6 +1227,77 @@ footnote to a research round is how a format quietly breaks.
 
 **The critic remains out of the loop.** Nothing in this round changes that.
 
+## T1.5 slice 5: the display-backed output is en-US, gated statically
+
+The sweep went from **108 deferred lines to 5**, and the five that are left are
+fixture names inside `so_comentarios_test.lua`. Both directory-wide deferrals,
+`tools/ingame` and `tools/render`, are deleted: the sweep's own stale-exemption
+rule demanded it as soon as they stopped matching anything, which is the rule
+working rather than a formality.
+
+**The hazard here is not a red gate, it is a green empty one.** Half these gates
+work by running something under LOVE and grepping its output, so the printed
+text is an interface between two files that never mention each other:
+`check.sh` greps "modo escolha:" and the only thing making that work is a
+`print` in `lab.lua`. Rename one side and the grep matches nothing, the count is
+zero, and several of these checks would simply stop measuring while still
+printing a line.
+
+So `tools/output_contract.lua` came first, as step 7f: for every gate that
+greps, each prose literal it searches for must appear in the source of something
+that prints. It is static, so it runs in milliseconds on every commit, which is
+the point. The end-to-end proof is a full battery on a machine with a screen,
+and that is far too slow to be the only thing between a rename and a dead gate.
+
+**It was useless on its first version and the mutations are what showed it.**
+The producer corpus was a whole directory, and `tools/render` contains
+`check.sh`, so when `lab.lua` stopped printing "modo escolha:" the string was
+still found in check.sh's own grep line. The gate was confirming that check.sh
+greps what check.sh greps; four deliberate half-done renames all passed. Every
+consumer is now excluded from every producer corpus, and the same four are
+caught. Three more rounds of refinement followed, each from a false alarm rather
+than a theory: `.` had to count as regex machinery, a run of two or more spaces
+is a printf column boundary and not text, and Lua string concatenation has to be
+joined back up because `driver.lua` splits `"control floor %d, mod on against "`
+from `"off %d, of %d"` across a seam that only exists in the source.
+
+**It then caught two half-done conversions in my own bulk pass**, which is
+exactly what it was built for: `check.sh` still grepping `autoteste` after the
+harness had started printing `selftest`, and `run.sh` left with a hybrid
+`", mod on against desligado"` in a regex whose other half had moved.
+
+**One find that predates all of this:** `run.sh` greps for `driver error`, and no
+driver has printed it in some time. It sits in a `head -3` of diagnostic hints
+rather than in an assertion, so it fails open, and it is recorded as an
+exemption with that reasoning rather than quietly deleted.
+
+**The verdict contract gate was inverted, not extended.** It used to require the
+in-game counters to accept Portuguese as well as English, which was right while
+the drivers still printed Portuguese. Once they stopped and the alternatives came
+out of the greps, it found no Portuguese to check and reported "no verdict grep":
+passing, and measuring nothing. It now requires every driver to PRINT an English
+verdict and every counter to ACCEPT one, which is both true and stronger, since
+either half alone can be satisfied by a file that has stopped working.
+
+**`REGUA OK` / `REGUA TORTA` became `RULER OK` / `RULER CROOKED`.** Unlike the
+battery banner this one really is parsed: `sala_de_teste.sh:96` compares against
+the string. That pair is now checked too, along with the `runner.sh` selftest
+fixture that used the old banner as a required-string case.
+
+**`runner.sh` deliberately keeps its bilingual counter.** Narrowing it would have
+broken its own selftest, which has a Portuguese fixture precisely to prove the
+counter accepts both, carrying an `# en-us:` escape that says so. Tidying a file
+the sweep does not even flag is not worth breaking a gate for.
+
+**Full battery green on the MBP**, 2026-08-11: 13 offline gates, `RULER OK`, and
+in-game **20/16/16/8/6 passed, 0 failed**, which is exactly the count from before
+the conversion. That equality is the real evidence: if any driver's verdict word
+had broken, its counter would have read zero verdicts and reported
+"NO VERDICT (the driver measured nothing)" rather than a lower pass count.
+
+**Filenames were NOT renamed, and that is a recommendation rather than a
+shortfall.** See the note under the next implementable item.
+
 ## T1.5 slice 4: the banner is en-US, and the verdict lines are a contract
 
 `BATERIA OK` / `BATERIA VERMELHA` are now `BATTERY OK` / `BATTERY RED`, and the
@@ -1345,6 +1418,33 @@ typing so the headless gate can exercise the write path.
 
 **Round 4 is still not runnable.** No recorded choice carries a reason yet, and
 the critic that would take the test has already seen round 3's key.
+
+## Filenames: the last en-US item, and the case for leaving them
+
+Kim's condition for this was "only consider filenames if every reference can
+change in one atomic commit". Inside the repository that is achievable. Outside
+it is not, and outside is where the references that matter live.
+
+`bateria.sh`, `folga_locais.sh`, `mutantes.sh`, `sala_de_teste.sh`,
+`instala_hooks.sh`, `so_comentarios.sh`, `juiz/`, `ajusta.lua`, `calibra.sh`,
+`gera.sh`, `rodada.sh`, `monta.sh`, `dados/escolhas.txt` and
+`Laboratorio.command` are typed by hand, pasted into Discord, quoted in release
+notes already published, written into this file and the roadmap as reproduction
+commands, and saved in shell history and in the machine notes for the MBP. A
+rename lands cleanly in git and breaks every one of those the moment somebody
+re-runs an old command.
+
+The project already has a rule for this and it fits exactly. `en_us_scope.txt`
+defines `deferred-api` as "not prose. Option values and command-line keys that a
+rename would break for anyone with a script or a saved command. A translation
+here is an API change and needs its own decision." A tool filename is a
+command-line key by that definition.
+
+**So the recommendation is not to rename them, and it is Kim's call rather than
+mine.** The cost is that a contributor reads `bateria.sh` and has to learn one
+word; the benefit of renaming is that same word, against breaking every command
+anyone has saved. If Kim wants it anyway, the honest way is a deprecation: keep
+the old names as thin forwarding scripts for a release, then delete them.
 
 ## The next implementable item
 
