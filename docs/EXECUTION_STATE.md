@@ -100,9 +100,9 @@ Nothing in it is waiting on engineering, and nothing below it should be
 | # | What is needed | Why nobody else can | State of the rest |
 |---|---|---|---|
 | K1 | A personal access token for `last-swagger` | Credential. A release author is set at creation and cannot be edited afterwards, so this only fixes forward. | `release.sh` built and rehearsed; `--publicar` required to publish |
-| K2 | His eye on the options that ship OFF: `FOOTFALL`, `CAMERA FIT`, `FRONT SHAPE`, `TOP DOME`, `STEP WEIGHT`, `PART LAG`, `ATTENTION`, `FIRST PERSON` | Taste, and he is the one who ships it | every one has a clip recipe; `monta.sh` can assemble them |
+| K2 | **NO LONGER A RELEASE BLOCKER.** Decided 2026-08-11: all seven ship OFF, which is the house rule anyway, so the release does not wait on taste. His eye is still wanted on `FRONT SHAPE`, `TOP DOME`, `STEP WEIGHT`, `PART LAG`, `ATTENTION`, `FIRST PERSON`, `FOOTFALL` whenever he wants it | Taste, and he is the one who ships it | montage filmed, seven of seven published; `CAMERA FIT` turned out to be an action row and not an option |
 | K3 | The judge against critic call on `FRONT SHAPE` and `TOP DOME` | A taste question dressed as a measurement, and both sides are measured | both arguments written up in `tools/juiz/dados/NOTAS_DO_CRITICO.md` |
-| K4 | Explicit approval to push, tag, publish or post | Outward facing and not reversible | local commits on a feature branch are routine |
+| K4 | **PARTLY GRANTED** 2026-08-11: branch push authorised and done (`origin/vida-v2`, 130 commits). Tag, publish and post still need his word | Outward facing and not reversible | the personal memo and the internal briefs were kept out, including from history, before the push |
 | K5 | Unpausing the battle probe | He paused it | nothing, deliberately |
 
 **Not on this table, and worth the distinction:** the `native-offscreen`
@@ -1480,6 +1480,34 @@ half-finished couplings, three of them mine.
 harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
+
+## Four decisions from Kim, 2026-08-11
+
+Asked one at a time, with the measured numbers beside each option, after he read
+the review memo.
+
+**1. All seven OFF options ship OFF, and K2 stops blocking the release.** The
+house rule was already "a visual change the community has not seen ships off", so
+holding the release for a taste verdict was buying nothing. The seven ship
+available and disabled; his eye is still wanted, with no deadline attached to it.
+
+The practical effect: `T1.6` and `T0.4` are no longer waiting on judgement. What
+is left there is a credential.
+
+**2. The sleeping characters are RATIFIED.** `gambler_asleep`, `sleeping_boy` and
+`snorlax` keep `attention = 0`. I had made that call for him and it now has his
+word behind it, which matters because it is the one behavioural change in this
+stretch that a player could notice without turning anything on.
+
+**3. No authored pixel, for now.** The count stays at zero by DECISION and not
+merely by default, which is a stronger statement than the gate alone makes. The
+mod keeps its promise to derive everything from the player's own ROM;
+`docs/DISCLOSURE_DRAFT.md` waits for the day that changes.
+
+**4. Kim runs the publish step himself.** I rehearse the release end to end and
+hand him the exact `--publicar` command; the token never passes through me. That
+is also the shape `release.sh` was already built for: rehearsal is its default
+and somebody has to type `--publicar` on purpose.
 
 ## K2: the option montage, filmed, with three results worth reading
 

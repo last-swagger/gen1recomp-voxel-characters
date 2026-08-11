@@ -411,7 +411,10 @@ agent with no other context and see whether it starts in the right place.
 
 ### T0.4 Release identity and publishing
 
-**State:** blocked on Kim (`K1`). Kept in tier 0 so it is visible, and kept
+**State:** blocked on Kim (`K1`), and now ONLY on the credential: he decided on
+2026-08-11 to run the publish step himself, so the token never reaches an agent.
+Everything up to `--publicar` is mine to rehearse. Kept in tier 0 so it is
+visible, and kept
 separate from implementation so nothing useful waits on a credential.
 
 **What changes:** the project stops publishing under the wrong account, and the
@@ -742,7 +745,12 @@ reports no verdict rather than a pass.
 
 ### T1.6 Release positioning, and the clip that earns it
 
-**State:** blocked on Kim (`K2`), with the engineering done.
+**State:** UNBLOCKED by decision, 2026-08-11. All seven filmable OFF options ship
+OFF, which is the house rule anyway, so the release no longer waits on a taste
+verdict. The montage is filmed and seven of seven published; Kim's eye is still
+wanted and no longer on the critical path. `CAMERA FIT` turned out to be an
+action row rather than an option, so the count was seven plus an action all
+along.
 
 **What changes:** the next release contains the subset of built-but-off options
 that Kim's eye approves, each with a clip or card that shows a player why to
