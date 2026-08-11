@@ -23,6 +23,9 @@ package.path = "./?.lua;./?/init.lua;" .. package.path
 local AO = require("ao_proto")
 local Lab = require("lab")
 local Features = require("features")
+-- One definition of the host's matrix, shared with the offline suite so the
+-- laboratory cannot drift from what the suite proves (roadmap T1.1).
+local HostMatrix = require("host_matrix")
 
 -- ERROR GOES TO STDOUT AND KILLS THE PROCESS, instead of opening a window and waiting.
 --
@@ -127,6 +130,9 @@ local opts = {
   -- changes what the mod installs, and every measurement this project trusts
   -- was taken without it.
   labmotion = "",
+  -- Runs the lab for a few frames, prints what the motion preview did, quits.
+  -- A lab that can only be inspected by looking at it cannot be gated.
+  labquit = "",
   -- `labpares=<file>` makes the laboratory offer the pairs the judge
   -- requested, instead of rolling. See labParDoArquivo.
   labpares = "",
@@ -354,10 +360,18 @@ local function flatCard(imageData, frames, frame)
   }
 end
 
+local LAST_HANDLE = nil
+local LABMOTION_DITO = false
+
 local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
   package.loaded["src.render.Assets"] = nil
   package.loaded["src.mods.Semver"] = nil
   local handle = makeVoxelHandle(imageData)
+  -- Kept so the laboratory can reach the SAME host instance the mesh was built
+  -- under, and therefore the same wrapped Voxel3D.draw. A fresh handle would
+  -- have a fresh mod with fresh life state, and the preview would restart its
+  -- animation on every frame.
+  LAST_HANDLE = handle
   local stored = {
     depth = depth, shape = shape, side_color = sideColor,
     ground_shade = opts.ground ~= "" and opts.ground or nil,
@@ -413,7 +427,12 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
   -- compared after. If the mod replaced it, the draw channel is live and the
   -- matrix-only options exist in here. If it did not, say so loudly rather
   -- than let a later preview quietly show nothing.
-  if opts.labmotion == "1" then
+  -- ONCE, not once per build. The laboratory reloads the mod for every mesh it
+  -- constructs, and classifying the options builds hundreds: the first version
+  -- of this printed 2799 identical lines and buried everything else in the log,
+  -- which is its own kind of useless. The fact is worth stating exactly once.
+  if opts.labmotion == "1" and not LABMOTION_DITO then
+    LABMOTION_DITO = true
     if Voxel3D.draw and Voxel3D.draw ~= drawAntes then
       print("LABMOTION: the mod wrapped Voxel3D.draw, the life channel is live")
     else
@@ -980,7 +999,31 @@ local function drawCell(row, yaw, x, y, size, asProvenance, asCellId, asOverlay)
   local prevScissor = { love.graphics.getScissor() }
   love.graphics.setScissor(x, y, size, size)
   local cam = cellCamera(row, yaw, x, y, size, asProvenance)
-  local verts = project(row.mesh.verts, cam)
+
+  -- T1.1 slice 2: an optional MESH-SPACE transform, applied before projecting.
+  --
+  -- This is how the laboratory previews the options that live in the draw
+  -- matrix. `row.lifeDelta` is not computed here and not computed anywhere in
+  -- this harness: it is `H^-1 * M'`, the difference between the host matrix
+  -- handed to the mod and the matrix the mod's own wrap returned. The algebra
+  -- of breath, sway, lag, footfall and attention stays in main.lua, where it
+  -- ships, so a preview cannot agree with itself and disagree with the game.
+  --
+  -- Nothing sets `row.lifeDelta` unless labmotion is on, so every existing
+  -- measurement takes the same path it always took. Verified rather than
+  -- asserted: the ruler passes with this present, and a render with the flag on
+  -- is byte-identical to one with it off.
+  local fonte = row.mesh.verts
+  if row.lifeDelta then
+    local movidos = {}
+    for i = 1, #fonte do
+      local v = fonte[i]
+      local vx, vy, vz = HostMatrix.apply(row.lifeDelta, v[1], v[2], v[3])
+      movidos[i] = { vx, vy, vz, v[4], v[5], v[6] }
+    end
+    fonte = movidos
+  end
+  local verts = project(fonte, cam)
   if SHADE_OVERRIDE and not asProvenance then
     for i = 1, #row.mesh.verts, 4 do
       local v = SHADE_OVERRIDE[row.kinds[(i - 1) / 4 + 1]]
@@ -1075,6 +1118,13 @@ local ctx = {
   projectScreen = projectScreen,
   fail = fail,
   getLabSchema = function() return LAB_SCHEMA end,
+  -- T1.1: the lab previews matrix-only options through the mod's own draw
+  -- wrap. It needs the shared host matrix and a way to reach the draw channel;
+  -- both are nil-safe when labmotion is off.
+  HostMatrix = HostMatrix,
+  motionOn = function() return opts.labmotion == "1" end,
+  voxel3D = function() return LAST_HANDLE and
+    LAST_HANDLE.exports.lib.require("Voxel3D") or nil end,
 }
 Lab.init(ctx)
 Features.init(ctx)

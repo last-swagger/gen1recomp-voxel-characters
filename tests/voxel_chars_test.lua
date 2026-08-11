@@ -6673,6 +6673,62 @@ do
     check(igual, "T1.1: HostMatrix.forRung is the host matrix the suite proves")
   end
 
+  -- T1.1 slice 2: THE INVARIANT THE PREVIEW RESTS ON.
+  --
+  -- The laboratory previews motion by asking the mod's own draw wrap what it
+  -- made of the host matrix, and drawing the difference: `H^-1 * M'`. Two
+  -- properties decide whether that is safe to put on screen, and neither is
+  -- obvious enough to assume.
+  --
+  --   OFF must be exactly nothing. With every life option off the mod returns
+  --   M' = H, so the difference is the identity and the preview cannot move a
+  --   vertex it should not. Without this, a lab with everything switched off
+  --   could still drift, and nobody would know which part was lying.
+  --
+  --   ON must be something. A difference that stays identity with BREATH on
+  --   means the preview would render a still image and look like a working
+  --   feature, which is the failure this repository keeps paying for.
+  do
+    local rung = 35
+    local angulo = math.rad(rung)
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      angulo, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle, soEsta({})))
+    local mesh = modules.SpriteBillboards.mesh(
+      { image = "sheet.png", frames = 1 }, 0)
+    local host = HostMatrix.forRung(rung)
+
+    local paradoIdentidade = true
+    withLoveTime(3.7, function()
+      modules.Voxel3D.drawCalls = {}
+      modules.Voxel3D.draw(mesh, "tex", host, 6, nil)
+      local saida = modules.Voxel3D.drawCalls[1].model
+      paradoIdentidade = HostMatrix.isIdentity(
+        HostMatrix.lifeDelta(rung, saida), 1e-9)
+    end)
+    check(paradoIdentidade,
+      "T1.1: with every life option off, the preview delta is the identity")
+
+    local handle2, modules2 = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      angulo, nil, nil, nil, nil, true)
+    loadWith(makeMod(handle2, soEsta({ breath = 0.035 })))
+    local mesh2 = modules2.SpriteBillboards.mesh(
+      { image = "sheet.png", frames = 1 }, 0)
+    local mexeu = false
+    for i = 0, 40 do
+      withLoveTime(i * 0.15, function()
+        modules2.Voxel3D.drawCalls = {}
+        modules2.Voxel3D.draw(mesh2, "tex", host, 6, nil)
+        local saida = modules2.Voxel3D.drawCalls[1].model
+        if not HostMatrix.isIdentity(HostMatrix.lifeDelta(rung, saida), 1e-6) then
+          mexeu = true
+        end
+      end)
+    end
+    check(mexeu,
+      "T1.1: with BREATH on, the preview delta is NOT the identity")
+  end
+
   -- And the axis has to be CLEAN: scaling on y cannot push the body
   -- forward or backward. Drift on z is the symptom of operating in the
   -- wrong space, and it is what stops directional secondary motion from

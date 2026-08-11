@@ -55,7 +55,8 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.5 en-US, slice 2 | this session | `tools/en_us_sweep.lua`, `tools/en_us_scope.txt`, `release.sh`, `release_check.sh`, `so_comentarios.{lua,sh}`, `audio_gate.sh`, `runner/runner.sh` | **landed** | surface 22 lines to 0; 101 deferred lines declared with reasons; 4 broken states proved to fail |
 | T1.5 en-US, slice 3 (`ajusta.lua`) | Codex desktop, verified by this session | `tools/juiz/ajusta.lua`, `tools/en_us_scope.txt` | **landed** | `--autoteste` green; `--estados` TSV intact at 171 rows x 4 cols; sweep surface 0 |
 | item 16 follow-up: life ceiling | this session | `tests/voxel_chars_test.lua` | **landed** | 621/621; ceiling now sweeps 6 life options and reacts to ATTENTION at 3.5 where it did not before |
-| T1.1 lab motion, gate + bridge | this session | `tools/render/host_matrix.lua`, `tests/voxel_chars_test.lua`, `tools/render/main.lua` | **gate landed, preview not wired** | 623/623; identity host rejected at 74% error; REGUA OK on the MBP and renders byte-identical with the channel on and off |
+| T1.1 lab motion, gate + bridge | this session | `tools/render/host_matrix.lua`, `tests/voxel_chars_test.lua`, `tools/render/main.lua` | **landed** | 625/625; identity host rejected at 74% error; REGUA OK and renders byte-identical with the channel on and off |
+| T1.1 slice 2, preview wired | this session | `tools/render/{main,lab,host_matrix}.lua` | **landed** | `LABPROBE motion=off options=9 moved=false` against `motion=on options=16 moved=true`; REGUA OK |
 
 ## Blocked on Kim
 
@@ -709,22 +710,68 @@ proportional, so not even a unit-free ratio survives the comparison. Comparing
 the lab against the game needs a probe that measures displacement per rung, and
 that is a separate item rather than a precondition.
 
+## T1.1 slice 2: the preview runs the mod's code, not a copy of it
+
+**The rule the manager set, and the design that follows from it:** nothing in
+the harness recomputes breath, sway, lag, footfall or attention. The laboratory
+hands the mod's own wrapped `Voxel3D.draw` the shared host matrix, reads back
+what came out, and draws the difference `H^-1 * M'`. Since H is a pure rotation
+its inverse is exact, and a preview built this way cannot agree with itself
+while disagreeing with the game.
+
+`drawCell` gained an optional mesh-space transform applied before projecting.
+Nothing sets it unless `labmotion` is on.
+
+**The invariant that makes it safe to put on screen**, asserted offline rather
+than assumed: with every life option off the mod returns `M' = H`, so the
+difference is the identity and the preview cannot move a vertex it should not.
+The companion check is the one that matters more, because a still preview looks
+like a working feature: with BREATH on the difference must NOT be the identity.
+
+**Measured on the MBP:**
+
+| Run | Result |
+|---|---|
+| lab without the flag | `LABPROBE motion=off options=9 moved=false` |
+| lab with the flag | `LABPROBE motion=on options=16 moved=true` |
+| the ruler, flag present | `REGUA OK` |
+| render, flag on against flag off | byte-identical |
+
+Nine options against sixteen is the whole point: the seven that live in the draw
+matrix were invisible in there and now exist.
+
+`labquit=1` is what made any of this gateable. A laboratory that can only be
+inspected by looking at it cannot be part of a battery, and "I saw it move" is
+not evidence anyone can re-run.
+
+**Two defects of my own, both found by running it:**
+
+1. **The diagnostic printed 2799 times.** The lab reloads the mod for every mesh
+   it builds, and classifying the options builds hundreds. A log that buries
+   everything else is its own kind of useless. Prints once now.
+2. **A mis-specified fixture, not a failing gate.** I checked "flag on, all life
+   off" expecting `moved=false` and got `moved=true`. The lab initialises from
+   schema DEFAULTS and ignores `opt=`, and BREATH ships ON at SUBTLE, so
+   `moved=true` was correct and the test was wrong. The invariant it was
+   reaching for is the offline one above, which does hold. Worth writing down:
+   the answer looked like a failure and the setup was the failure.
+
 ## The next implementable item
 
-**T1.1 slice 2: wire the preview into the lab.** Everything it needs now exists
-and is proven: the shared matrix, the gate that rejects a wrong one, and a draw
-channel that installs the mod's real wrap without disturbing the ruler.
+**T1.2, named anchors and animation events.** T1.1 is done, and it leaves T1.2
+better supplied than it would have been: the lab can now show a character
+moving under the mod's real transform, which is where an anchor that drifts
+would become visible.
 
-The shape of the remaining work: the lab calls `Voxel3D.draw` with
-`HostMatrix.forRung(rung)`, reads back what the mod's wrap made of it, and
-applies that matrix when projecting the cell. `drawCell` projects vertices
-itself, so it needs to accept a transform. Using the wrap rather than
-recomputing `lifeApply` is the point: the preview then runs the mod's real
-transform code, not a second copy of the algebra.
+The order this project works in: build the measuring driver first, prove it
+reports a wrong anchor as wrong, and only then add the anchors it measures. The
+gate is a driver recording anchor positions through a walk cycle with
+`MOTION LAG`, `ATTENTION` and `PART LAG` on, checking each stays within a stated
+tolerance of the part it names, at all four camera rungs.
 
-**Then T1.2, named anchors and animation events**, which needs a display to
-verify and has the MBP proven as a verification host by two full battery runs
-and a ruler run in this session.
+**Still out of reach for any amount of autonomous work:** K1 to K5, and hiding
+the runner's window, which needs a separate macOS user session, a Space or a
+second display.
 
 Why T1.2 before T1.1: anchors are read-only geometry derived from a mesh that
 already exists, so the gate is a driver recording positions through a walk cycle

@@ -72,4 +72,47 @@ function M.apply(m, x, y, z)
          m[9] * x + m[10] * y + m[11] * z + m[12]
 end
 
+function M.mul(a, b)
+  local r = {}
+  for i = 0, 3 do
+    for j = 1, 4 do
+      r[i * 4 + j] = a[i * 4 + 1] * b[j]
+                   + a[i * 4 + 2] * b[4 + j]
+                   + a[i * 4 + 3] * b[8 + j]
+                   + a[i * 4 + 4] * b[12 + j]
+    end
+  end
+  return r
+end
+
+-- WHAT THE LIFE CHANNEL DID, expressed in mesh space.
+--
+-- The mod's draw wrap is handed the host matrix H and returns M'. The
+-- difference between them is the life transform, and `H^-1 * M'` is that
+-- difference in the space the harness's vertices already live in. H is a pure
+-- rotation about x, so its inverse is the rotation by the negative angle: no
+-- general inversion, no numerical drift.
+--
+-- THIS IS NOT A SECOND COPY OF `lifeApply`. Nothing here computes breath, sway,
+-- lag, footfall or attention. The mod computes M' with its own shipped code and
+-- this only asks what changed, which is the whole point: a preview built on a
+-- reimplementation would agree with itself and disagree with the game.
+--
+-- The invariant that makes it safe to draw: with every life option off, the mod
+-- returns M' = H, so this returns the identity and the preview cannot move
+-- anything. That is asserted in the offline suite rather than assumed.
+function M.lifeDelta(rungDeg, model)
+  local inversa = M.rotX(-(math.rad(rungDeg) - math.pi / 2))
+  return M.mul(inversa, model)
+end
+
+function M.isIdentity(m, tol)
+  tol = tol or 1e-9
+  local eye = { 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 }
+  for i = 1, 16 do
+    if math.abs(m[i] - eye[i]) > tol then return false end
+  end
+  return true
+end
+
 return M

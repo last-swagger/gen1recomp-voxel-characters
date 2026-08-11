@@ -292,7 +292,12 @@ function love.labsetup()
   local custo = love.timer.getTime() - t0
   local aqui, la = {}, {}
   for _, o in ipairs(ctx.getLabSchema()) do
-    if geometrica[o.key] then
+    -- T1.1: with the draw channel on, an option that touches no vertex is no
+    -- longer useless in here. The preview runs it through the mod's own wrap,
+    -- so BREATH, SWAY, MOTION LAG, FOOTFALL, ATTENTION and PART LAG become
+    -- controls that do something. Without the flag the old rule stands: a
+    -- control that cannot move anything is worse than an absent one.
+    if geometrica[o.key] or ctx.motionOn() then
       lab.opcoes[#lab.opcoes + 1] = o
       aqui[#aqui + 1] = o.key
     else
@@ -779,6 +784,13 @@ local function labDrawAB()
     { 0.45, 0.48, 0.53, 1 })
 end
 
+-- T1.1 slice 2: makes the laboratory answerable without a person at the
+-- keyboard. `labquit=1` runs a few frames, prints what the motion preview
+-- actually did, and exits. Without it there is no way to gate any of this: a
+-- lab you can only inspect by looking at it cannot be part of a battery, and
+-- "I saw it move" is not evidence anybody else can re-run.
+local sonda = { quadros = 0, mexeu = false, exposto = nil }
+
 function love.labdraw()
   love.graphics.clear(ctx.state.bg[1], ctx.state.bg[2], ctx.state.bg[3], 1, true, true)
   if lab.ab then return labDrawAB() end
@@ -790,6 +802,42 @@ function love.labdraw()
   love.graphics.rectangle("fill", VX, VY, VS, VS)
 
   if lab.row and lab.row.mesh then
+    -- T1.1 slice 2: ask the MOD what the matrix should be, every frame.
+    --
+    -- Nothing here computes the animation. The host matrix goes in, the mod's
+    -- wrapped Voxel3D.draw runs its shipped code, and the difference between
+    -- what went in and what came out is what gets drawn. That difference is
+    -- the identity whenever every life option is off, which the offline suite
+    -- asserts, so this cannot move anything it should not.
+    lab.row.lifeDelta = nil
+    if ctx.motionOn() then
+      local V = ctx.voxel3D()
+      if V and V.draw and V.drawCalls then
+        local host = ctx.HostMatrix.forRung(lab.rung or 35)
+        V.drawCalls = {}
+        V.draw(lab.row.mesh, lab.row.texture, host, 6, nil)
+        local chamada = V.drawCalls[#V.drawCalls]
+        if chamada and chamada.model then
+          lab.row.lifeDelta =
+            ctx.HostMatrix.lifeDelta(lab.rung or 35, chamada.model)
+          if not ctx.HostMatrix.isIdentity(lab.row.lifeDelta, 1e-6) then
+            sonda.mexeu = true
+          end
+        end
+      end
+    end
+
+    -- The probe, and it reports what happened rather than what was intended.
+    if ctx.opts.labquit == "1" then
+      sonda.quadros = sonda.quadros + 1
+      sonda.exposto = sonda.exposto or #lab.opcoes
+      if sonda.quadros >= 90 then
+        print(string.format("LABPROBE motion=%s options=%d moved=%s",
+          ctx.motionOn() and "on" or "off", sonda.exposto,
+          tostring(sonda.mexeu)))
+        love.event.quit(0)
+      end
+    end
     love.graphics.setDepthMode("less", true)
     love.graphics.setShader(ctx.state.shader)
     love.graphics.setColor(1, 1, 1, 1)
