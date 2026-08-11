@@ -101,9 +101,9 @@ Nothing in it is waiting on engineering, and nothing below it should be
 |---|---|---|---|
 | K1 | A personal access token for `last-swagger` | Credential. A release author is set at creation and cannot be edited afterwards, so this only fixes forward. | `release.sh` built and rehearsed; `--publicar` required to publish |
 | K2 | **NO LONGER A RELEASE BLOCKER.** Decided 2026-08-11: all seven ship OFF, which is the house rule anyway, so the release does not wait on taste. His eye is still wanted on `FRONT SHAPE`, `TOP DOME`, `STEP WEIGHT`, `PART LAG`, `ATTENTION`, `FIRST PERSON`, `FOOTFALL` whenever he wants it | Taste, and he is the one who ships it | montage filmed, seven of seven published; `CAMERA FIT` turned out to be an action row and not an option |
-| K3 | The judge against critic call on `FRONT SHAPE` and `TOP DOME` | A taste question dressed as a measurement, and both sides are measured | both arguments written up in `tools/juiz/dados/NOTAS_DO_CRITICO.md` |
+| K3 | **RESOLVED** 2026-08-11: Kim keeps both as they are. The judge reports what he picked and he is the final ruler; the critic's objection stays recorded as a disagreement rather than a veto | A taste question dressed as a measurement, and both sides are measured | both arguments written up in `tools/juiz/dados/NOTAS_DO_CRITICO.md` |
 | K4 | **PARTLY GRANTED** 2026-08-11: branch push authorised and done (`origin/vida-v2`, 130 commits). Tag, publish and post still need his word | Outward facing and not reversible | the personal memo and the internal briefs were kept out, including from history, before the push |
-| K5 | Unpausing the battle probe | He paused it | nothing, deliberately |
+| K5 | **CONFIRMED PARKED** 2026-08-11. Not built, and not to be built until he says otherwise | He paused it | nothing, deliberately |
 
 **Not on this table, and worth the distinction:** the `native-offscreen`
 measurement was never blocked on Kim, only on a free display. It ran on the MBP
@@ -1480,6 +1480,43 @@ half-finished couplings, three of them mine.
 harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
+
+## Four more decisions from Kim, 2026-08-11, and K3 closes
+
+**K3 is resolved: Kim keeps `FRONT SHAPE` and `TOP DOME` as they are.**
+
+This was the most interesting disagreement either instrument produced, and it is
+worth stating what it was. The judge, fitted on Kim's own 106 choices, ranks both
+options above off. The critic argues against both, and its argument is checkable
+in the source rather than aesthetic: run-step shading manufactures up to six
+tones the artist never drew, and the top-face brightening reaches `255,132,132`,
+which is BRIGHTER than the lightest colour in the source sprite. So the brightest
+pixel on the character becomes invented surface rather than art.
+
+They were never answering the same question. The judge reports what Kim picked;
+the critic reports what is consistent with the art's own system. **Kim is the
+final ruler, and he keeps both.** The critic's objection is recorded as a
+disagreement, not a veto, and it stays in `NOTAS_DO_CRITICO.md` because a
+measured objection that lost is still evidence.
+
+I had omitted K3 from the review memo, which is why it took an extra round to
+surface. That was my error and not a gap in the roadmap.
+
+**Round 4 of T1.4 gets prepared and Kim runs it when he has fifteen minutes.**
+`Calibracao.command` at the repo root opens the laboratory already in choice
+mode with the reason field live. Three keys: arrows choose, `w` writes the
+reason. The naive-critic half is mine to solve with a fresh subagent that has
+never seen round 3's answer key.
+
+**The runner's window stays as it is.** Kim declined the second user session and
+the second display, so visual work continues on the MBP behind the lock and
+`caffeinate`. The output delta is already measured at zero, so what this costs is
+waiting rather than fidelity. Both hangs today came from me dispatching twice, not
+from the arrangement.
+
+**1.7.0 waits for Kim to watch the montage.** His reasoning is the right one and
+worth writing down: if any of the seven is bad enough to cut, cutting before
+publishing is cheaper than after.
 
 ## Four decisions from Kim, 2026-08-11
 
