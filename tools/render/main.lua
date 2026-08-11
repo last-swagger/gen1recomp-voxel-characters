@@ -142,6 +142,13 @@ local opts = {
   -- one thing a headless gate cannot do, and it is exactly the part that would
   -- otherwise ship unchecked.
   labreason = "",
+  -- `authprobe=1` answers one question and exits: can the mod actually FIND its
+  -- authored sheets from in here? The suite proves the loader with a stubbed
+  -- filesystem, which is the loader's logic and not the path. LOVE resolves
+  -- relative paths against the GAME directory, and for the harness that is
+  -- tools/render while `mod.path` is repo-relative, so the two can disagree and
+  -- the only symptom would be AUTHORED REGIONS quietly doing nothing here.
+  authprobe = "",
   -- `labregions=1` forces the region-boundary overlay (key `b` in the
   -- laboratory) on at startup, so the gate can screenshot it without a
   -- keypress: labshot runs with love.labkeys disabled (roadmap item 11).
@@ -366,6 +373,9 @@ local function flatCard(imageData, frames, frame)
 end
 
 local LAST_HANDLE = nil
+-- Kept for authprobe: the question is whether the MOD resolves its authored
+-- sheets from in here, and only the mod can answer that.
+local LAST_MOD = nil
 local LABMOTION_DITO = false
 
 local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
@@ -410,6 +420,7 @@ local function buildGeometry(imageData, def, frame, shape, depth, sideColor)
     end
   end
   local mod = makeMod(handle, stored)
+  LAST_MOD = mod
   -- The chunk is compiled ONCE and re-executed per build. Before this it
   -- reparsed 2800 lines for every mesh, which nobody noticed with twenty
   -- cells and which dominates the cost when the laboratory builds hundreds
@@ -810,6 +821,44 @@ end
 
 function love.load(argv)
   parseArgs(argv)
+  -- FIRST, because it answers a question about the environment rather than
+  -- about a render, and because at chunk scope `opts` has not been parsed yet:
+  -- the first version of this probe sat above and silently never fired.
+  if opts.authprobe == "1" then
+    -- ONE QUESTION, and it is about the filesystem rather than about the mod:
+    -- can a repo-relative `mod.path` be resolved from in here? LOVE resolves
+    -- relative paths against the GAME directory, which for the harness is
+    -- tools/render and for the real game is the repo root. The loader's own
+    -- logic is already proved by the suite against a stubbed filesystem; what
+    -- that cannot prove is the path, and a path that does not resolve would
+    -- make AUTHORED REGIONS silently do nothing in every card and judge pair.
+    -- Builds one mesh first, because the mod is loaded lazily and asking an
+    -- unloaded mod what it can see answers nothing.
+    local okImg, img = pcall(loadImageData,
+      (opts.spritedir ~= "" and opts.spritedir or SPRITE_DIR) .. "/red.png")
+    if okImg then
+      pcall(buildGeometry, img, { image = "red.png", frames = 6 },
+        0, "slab", 3, "body")
+    end
+    local caminho = "mods/voxel_characters/authored/sheets/red.lua"
+    local viu = love.filesystem.getInfo and love.filesystem.getInfo(caminho)
+    local direto = io.open(caminho, "r")
+    if direto then direto:close() end
+    local aqui = love.filesystem.getSource and love.filesystem.getSource()
+    local raiz = tostring(aqui):gsub("/mods/voxel_characters/tools/render$", "")
+    print(string.format("AUTHPROBE love=%s source=%s root=%s mount=%s fs=%s",
+      tostring(love.getVersion and select(1, love.getVersion())),
+      tostring(aqui), raiz, "n/a", viu and "FOUND" or "MISSING")
+      .. "  io=" .. (direto and "FOUND" or "MISSING")
+      .. "  mod=" .. (function()
+        local m = LAST_MOD and LAST_MOD._authoredRegions
+          and LAST_MOD._authoredRegions("red")
+        if not m then return "NIL" end
+        local n = 0; for _ in pairs(m) do n = n + 1 end
+        return n .. " frames"
+      end)())
+    return love.event.quit()
+  end
   if opts.selftest == "1" then
     local ok = selftest()
     return love.event.quit(ok and 0 or 1)

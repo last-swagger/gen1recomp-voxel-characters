@@ -745,10 +745,39 @@ local function authoredRegions(base)
   if hit ~= nil then return hit or nil end
   local dados = nil
   local caminho = (mod.path or ".") .. "/authored/sheets/" .. base .. ".lua"
+  -- TWO READERS, and the second one exists because of a measured defect.
+  --
+  -- LOVE resolves a relative path against the GAME directory. In the real game
+  -- that is the repo root, so this path resolves and the mod works. In the
+  -- render harness the game directory is `tools/render`, so it does NOT, and
+  -- `authprobe=1` reported `sheet=MISSING`: AUTHORED REGIONS would have
+  -- silently done nothing in the laboratory, in every card and in every judge
+  -- pair, while working perfectly in the game. A feature the ruler cannot see
+  -- is a feature nobody can judge.
+  --
+  -- Mounting the repo root in the harness was the first attempt and LOVE 11
+  -- refuses it: `mount` only accepts a path inside the save directory or the
+  -- source. So the fallback lives here, reading the same relative path through
+  -- plain Lua io, which resolves whenever the process was started from the repo
+  -- root -- which is how every tool in this project is documented to run.
+  --
+  -- It is a read of a file this mod SHIPS, never of the player's data.
+  local chunk
   if love and love.filesystem and love.filesystem.getInfo
      and love.filesystem.getInfo(caminho) then
-    local okLoad, chunk = pcall(love.filesystem.load, caminho)
-    if okLoad and chunk then
+    local okLoad, c = pcall(love.filesystem.load, caminho)
+    if okLoad then chunk = c end
+  else
+    local f = io.open(caminho, "r")
+    if f then
+      local texto = f:read("*a")
+      f:close()
+      local okLoad, c = pcall(loadstring or load, texto, "@" .. caminho)
+      if okLoad then chunk = c end
+    end
+  end
+  do
+    if chunk then
       local okRun, folha = pcall(chunk)
       -- `living` and measured, or nothing. Both halves matter: the kind keeps
       -- objects out, and the measurements are the only part this path uses.

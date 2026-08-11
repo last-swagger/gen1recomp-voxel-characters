@@ -234,6 +234,30 @@ say "the choice becomes a line in a file" \
     "$([ "${LINHAS:-0}" -ge 1 ] && echo "ok, $LINHAS linha" || echo FAILED)"
 [ "${LINHAS:-0}" -ge 1 ] || FAIL=1
 
+# 7a2. THE RULER CAN SEE THE AUTHORED LAYER AT ALL (roadmap T2.1).
+#
+#      This check exists because the answer was NO and nobody would have
+#      noticed. LOVE resolves a relative path against the GAME directory: for
+#      the real game that is the repo root, so the mod finds its own shipped
+#      files, and for this harness it is tools/render, so it does not.
+#      AUTHORED REGIONS worked in the game and did nothing here -- in the
+#      laboratory, in every card, in every judge pair. A feature the ruler
+#      cannot see is a feature that reads as absent, which is the worst kind of
+#      measurement this project can produce.
+#
+#      Mounting the repo root was the first fix and LOVE 11 refuses it; the mod
+#      now falls back to plain io for a file it ships. This check is what stops
+#      that regressing quietly.
+AUTH=$($LOVE $H authprobe=1 2>&1 | grep -o 'AUTHPROBE.*')
+say "a regua enxerga a camada authored" \
+    "$(printf '%s' "$AUTH" | grep -o 'mod=.*' || echo FAILED)"
+# The count is DATA, so it is matched as a class and asserted separately. The
+# output contract gate caught the first version of this line: it grepped for
+# "mod=6 frames" as one literal, and no source contains that string, because
+# the harness composes it from a format and a number at runtime.
+printf '%s' "$AUTH" | grep -qE "mod=[0-9]+ frames" || FAIL=1
+[ "$(printf '%s' "$AUTH" | sed -nE 's/.*mod=([0-9]+) frames.*/\1/p')" = "6" ] || FAIL=1
+
 # 7b. THE REASON FIELD, both ways round (roadmap T1.4).
 #
 #     `tools/juiz/reason_gate.sh` proves the format is safe and that the judge

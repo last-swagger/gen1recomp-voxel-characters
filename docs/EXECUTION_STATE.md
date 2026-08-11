@@ -74,6 +74,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
+| T2.1 defect: the ruler could not see the authored layer | this session | `main.lua`, `tools/render/{main,check}.sh`, `tools/render/main.lua` | **fixed** | `authprobe` reported `fs=MISSING`; now `io=FOUND mod=6 frames`, checked by the ruler on every run |
 | T2.2 slice 1, preset format | this session | `authored/preset.lua`, `tools/preset_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | 67 sheets measured to ONE three-tone ramp; all 255 presets round-trip exactly; 14 refusals; 5 of 5 mutations caught |
 | T2.1 slice 3, regions drive PART LAG | this session | `main.lua`, `tests/voxel_chars_test.lua`, `tools/authored_gate.lua`, `tools/ingame/menu.lua`, `README.md`, `CHANGELOG.md` | **landed** | 643/643; AUTHORED REGIONS OFF by default, one entry point; 5 of 5 runtime mutations caught after two gaps were closed; full battery green on the MBP |
 | T2.1 slice 2, regions measured | this session | `tools/measure_regions.py`, `authored/sheets/red.lua`, `authored/schema.lua`, `tools/authored_gate.lua`, `tools/bateria.sh` | **landed** | 6 frames measured off the real sprite; 20 refusals enforced; 5 of 5 stale-region mutations caught; found the walk bob and the absent bag |
@@ -1423,6 +1424,56 @@ typing so the headless gate can exercise the write path.
 
 **Round 4 is still not runnable.** No recorded choice carries a reason yet, and
 the critic that would take the test has already seen round 3's key.
+
+## The ruler could not see the authored layer at all, and nothing said so
+
+Found while preparing the A/B pair T2.1 and T2.4 both need. It is the most
+useful thing this stretch produced, and it was invisible to every gate.
+
+**LOVE resolves a relative path against the GAME directory.** For the real game
+that is the repo root, so `mods/voxel_characters/authored/sheets/red.lua`
+resolves and the mod works. For the render harness the game directory is
+`tools/render`, so the same read fails. `AUTHORED REGIONS` therefore worked
+perfectly in the game and did **nothing at all** in the laboratory, in every
+card and in every judge pair.
+
+**Why no gate caught it.** The suite proves the loader against a STUBBED
+filesystem, which tests the loader's logic and says nothing about the path. The
+authored gate reads the files with `dofile` from the repo root, where they
+obviously exist. Both were green and both were answering a different question
+from the one that mattered.
+
+A one-shot probe, `authprobe=1`, asked the only question that did:
+
+```
+AUTHPROBE ... fs=MISSING  io=FOUND  mod=6 frames        (after the fix)
+AUTHPROBE ... fs=MISSING                                (before)
+```
+
+**Two wrong fixes before the right one.** The probe first sat at chunk scope and
+never fired, because `opts` is not parsed until `love.load`. Then the harness
+tried to `love.filesystem.mount` the repo root, and LOVE 11 refuses: mount only
+accepts a path inside the save directory or the source. The fix that works is a
+fallback in the mod itself, reading the same relative path through plain Lua io
+when LOVE cannot see it, which resolves whenever the process started from the
+repo root: how every tool here is documented to run. It reads a file the mod
+SHIPS, never the player's data.
+
+**Now checked by the ruler on every run**, so it cannot regress quietly: the
+ruler asserts the mod resolves all six of Ash's measured frames from inside the
+harness.
+
+**The output contract gate then caught my check.** It grepped `mod=6 frames` as
+one literal, and no source contains that string, because the harness composes it
+from a format and a number at runtime. The count is data, so it is matched as a
+character class and asserted separately. That gate has now caught four
+half-finished couplings, three of them mine.
+
+**A note for whoever ships audio next:** `sfx` playback uses the same
+`(mod.path or ".") .. "/..."` shape, so it is presumably invisible to the
+harness for the same reason. It works in the game, which is where it is gated,
+so nothing is broken today. It is worth knowing before somebody tries to hear an
+effect in the laboratory and concludes the sound is missing.
 
 ## T2.2 slice 1: the preset format, and the measurement that shaped it
 
