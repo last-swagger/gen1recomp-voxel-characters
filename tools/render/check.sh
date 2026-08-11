@@ -249,7 +249,7 @@ say "the choice becomes a line in a file" \
 #      now falls back to plain io for a file it ships. This check is what stops
 #      that regressing quietly.
 AUTH=$($LOVE $H authprobe=1 2>&1 | grep -o 'AUTHPROBE.*')
-say "a regua enxerga a camada authored" \
+say "the ruler can see the authored layer" \
     "$(printf '%s' "$AUTH" | grep -o 'mod=.*' || echo FAILED)"
 # The count is DATA, so it is matched as a class and asserted separately. The
 # output contract gate caught the first version of this line: it grepped for
@@ -289,7 +289,7 @@ $LOVE $H sprite=red shapes=slab frames=0 yaws=0 pitch=0 cell=128 \
 $LOVE $H sprite=red shapes=slab frames=0 yaws=0 pitch=0 cell=128 \
   out=chk_p_rt.png preset="$PRESET_B" > /dev/null 2>&1
 
-say "o preset sobrevive ao round trip" \
+say "the preset survives a round trip" \
     "$([ -n "$PRESET_B" ] && [ "$PRESET_A" = "$PRESET_B" ] && echo ok || echo "FAILED: [$PRESET_B]")"
 [ "$PRESET_A" = "$PRESET_B" ] || FAIL=1
 
@@ -313,17 +313,53 @@ for i in range(0, len(a), 4):
 print("alpha_diff=%d colour_diff=%d" % (alpha_diff, colour_diff))
 PYEOF
 )
-say "o preset recolore sem mexer na silhueta" "$SIL"
+say "the preset recolours without moving the silhouette" "$SIL"
 case "$SIL" in
   "alpha_diff=0 colour_diff="*) [ "${SIL##*colour_diff=}" -gt 0 ] || FAIL=1 ;;
   *) FAIL=1 ;;
 esac
 
 if cmp -s "$SAVE_RENDER/chk_p_on.png" "$SAVE_RENDER/chk_p_rt.png"; then
-  say "o card do preset e byte identico apos round trip" "ok"
+  say "the preset card is byte identical after a round trip" "ok"
 else
-  say "o card do preset e byte identico apos round trip" "FAILED"
+  say "the preset card is byte identical after a round trip" "FAILED"
   FAIL=1
+fi
+
+# 7a4. A COMPOSED CHARACTER IS STILL MADE OF THE PLAYER'S OWN PIXELS (T2.2).
+#
+#      The part stack answers one of T2.2's open questions -- "are parts shipped
+#      as art, generated from existing sprites, or both?" -- with `generated`,
+#      and that answer is only worth anything if it is true. So the check is
+#      about PROVENANCE, not about looks:
+#
+#        the composed sheet must still report artist pixels and zero authored
+#        ones, because every pixel came out of another of the player's own
+#        sheets;
+#        it must differ from the base, or nothing was composed;
+#        the widest seam step is REPORTED and never judged. Donor sheets have
+#        different silhouettes, so a step is expected; whether a given one looks
+#        wrong is Kim's call and not a gate's.
+rm -f "$SAVE_RENDER/chk_parts.png"
+PARTS=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 pitch=0 cell=128 \
+  metrics=1 out=chk_parts.png parts="hair:blue,feet:youngster" 2>&1)
+say "parts come from another of the player sheets" \
+    "$(printf '%s' "$PARTS" | grep -o 'PARTS .*seam step [0-9]* px' | head -1 || echo FAILED)"
+printf '%s' "$PARTS" | grep -qE "widest seam step [0-9]+ px" || FAIL=1
+
+# Provenance must be untouched: recombination adds no faces and ships no pixels.
+PROV=$(printf '%s' "$PARTS" | grep -oE "art +[0-9.]+%   auth +[0-9.]+%" | head -1)
+say "composing invents no pixel at all" "${PROV:-FAILED}"
+case "$PROV" in
+  *"auth   0.0%") ;;
+  *) FAIL=1 ;;
+esac
+
+if cmp -s "$SAVE_RENDER/chk_p_off.png" "$SAVE_RENDER/chk_parts.png" 2>/dev/null; then
+  say "composing changes the character" "FAILED: identical to the base"
+  FAIL=1
+else
+  say "composing changes the character" "ok"
 fi
 
 # 7b. THE REASON FIELD, both ways round (roadmap T1.4).

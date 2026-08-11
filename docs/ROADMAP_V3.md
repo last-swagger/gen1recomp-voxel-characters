@@ -916,6 +916,12 @@ a later surprise:
 
 - Does the creator apply only to the player, or also to NPC sheets?
 - Are parts shipped as art, generated from existing sprites, or both?
+  **ANSWERED: generated.** `parts=hair:blue,feet:youngster` composes a character
+  from other sheets' measured regions, and the provenance metric reports
+  `art 100.0%  auth 0.0%` on the result. Every pixel is still the player's own,
+  so a part picker needs to ship nothing. The seam step between donors is
+  reported as a number and never judged, because whether 3 pixels reads wrong is
+  a taste question.
 - How do custom colours interact with the Game Boy palette and with the judge's
   current features? The critic's objection is directly relevant here: the art
   has a coherent two-level tone system, and an arbitrary hue picker manufactures

@@ -154,6 +154,13 @@ local opts = {
   -- lives, per the roadmap: not a game-facing UI and not save data. Nothing in
   -- the shipped mod reads a preset, so the runtime is untouched.
   preset = "",
+  -- `parts=hair:blue,feet:youngster` composes a character out of OTHER SHEETS'
+  -- rows (roadmap T2.2, the part stack). Answers one of that item's open
+  -- questions -- "are parts shipped as art, generated from existing sprites, or
+  -- both?" -- with `generated`, which is the only answer that keeps the mod's
+  -- promise: every pixel is still the player's own ROM art, just recombined, so
+  -- provenance stays artist-only and nothing ships.
+  parts = "",
   -- `labregions=1` forces the region-boundary overlay (key `b` in the
   -- laboratory) on at startup, so the gate can screenshot it without a
   -- keypress: labshot runs with love.labkeys disabled (roadmap item 11).
@@ -299,6 +306,76 @@ local function aplicaPreset(imageData, texto, sheetName)
       .. "the original and the comparison would prove nothing"
   end
   return trocados
+end
+
+-- A PART STACK, BUILT FROM THE PLAYER'S OWN SHEETS (roadmap T2.2).
+--
+-- Copies the measured rows of a region out of a DONOR sheet and into the base
+-- one. Every pixel written came from the player's ROM, so the provenance metric
+-- still reports artist pixels and the authored count stays zero: this is
+-- recombination, not authorship, and it is the only version of a part picker
+-- that does not break the mod's core promise.
+--
+-- WHY THE SEAM IS MEASURED AND NOT JUDGED. Donor sheets have different
+-- silhouettes, so a hair region from a wider head leaves a step where it meets
+-- the base body. Whether a given step looks wrong is Kim's call and not a
+-- gate's, so this reports the largest width jump at a seam as a NUMBER and
+-- refuses nothing on those grounds. What it does refuse is the case with no
+-- taste in it at all: a donor that cannot supply the region.
+local function aplicaPartes(imageData, spec, sheetName, dirSprites)
+  local Preset = dofile("mods/voxel_characters/authored/preset.lua")
+  local base = dofile("mods/voxel_characters/authored/sheets/" .. sheetName .. ".lua")
+  if not (base and base.measured) then
+    return nil, sheetName .. " ships no measured bounds, so a region has no rows"
+  end
+  local capOk = {}
+  for _, q in ipairs(base.hairFrames or {}) do capOk[q] = true end
+
+  local maiorSalto, trocados = 0, 0
+  for par in spec:gmatch("[^,]+") do
+    local regiao, doador = par:match("^%s*(%w+)%s*:%s*([%w_]+)%s*$")
+    if not regiao then return nil, "unreadable part spec: " .. par end
+    if regiao == "head" then
+      return nil, "this project has no measured head boundary; see T2.1 slice 2"
+    end
+    local okD, dImg = pcall(loadImageData, dirSprites .. doador .. ".png")
+    if not okD then return nil, "no donor sheet at " .. doador end
+    local dw, dh = dImg:getDimensions()
+    local w, h = imageData:getDimensions()
+    if dw ~= w then
+      return nil, string.format("%s is %d wide and %s is %d; a part swap needs "
+        .. "the same cell width", doador, dw, sheetName, w)
+    end
+    for quadro, m in pairs(base.measured) do
+      local y0 = quadro * 16
+      if y0 + 15 < h and y0 + 15 < dh then
+        for ly = 0, 15 do
+          local aqui
+          if m.footSplit and ly >= m.footSplit then aqui = "feet"
+          elseif capOk[quadro] and m.lightFreeBottom
+            and ly <= m.lightFreeBottom then aqui = "hair"
+          elseif m.top and ly >= m.top and ly <= m.bottom then aqui = "body" end
+          if aqui == regiao then
+            local largAntes, largDepois = 0, 0
+            for lx = 0, w - 1 do
+              local _, _, _, a = imageData:getPixel(lx, y0 + ly)
+              if a > 0 then largAntes = largAntes + 1 end
+              local r, g, b, da = dImg:getPixel(lx, y0 + ly)
+              imageData:setPixel(lx, y0 + ly, r, g, b, da)
+              if da > 0 then largDepois = largDepois + 1 end
+            end
+            trocados = trocados + 1
+            local salto = math.abs(largDepois - largAntes)
+            if salto > maiorSalto then maiorSalto = salto end
+          end
+        end
+      end
+    end
+  end
+  if trocados == 0 then
+    return nil, "the part spec matched no rows, so nothing was composed"
+  end
+  return trocados, maiorSalto
 end
 
 local function makeVoxelHandle(imageData)
@@ -1004,6 +1081,13 @@ function love.load(argv)
       .. sprite .. ".png"
     local ok, data = pcall(loadImageData, path)
     if not ok then return fail("no sprite at " .. path) end
+    if opts.parts ~= "" then
+      local n, salto = aplicaPartes(data, opts.parts, sprite,
+        (opts.spritedir ~= "" and opts.spritedir or SPRITE_DIR))
+      if not n then return fail("parts: " .. tostring(salto)) end
+      print(string.format("PARTS %s composed onto %s, %d row(s), widest seam "
+        .. "step %d px", opts.parts, sprite, n, salto))
+    end
     if opts.preset ~= "" then
       local n, err = aplicaPreset(data, opts.preset, sprite)
       if not n then return fail("preset: " .. tostring(err)) end

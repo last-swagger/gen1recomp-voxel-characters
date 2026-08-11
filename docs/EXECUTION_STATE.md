@@ -75,6 +75,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
 | T2.1 defect: the ruler could not see the authored layer | this session | `main.lua`, `tools/render/{main,check}.sh`, `tools/render/main.lua` | **fixed** | `authprobe` reported `fs=MISSING`; now `io=FOUND mod=6 frames`, checked by the ruler on every run |
+| T2.2 part stack, generated not shipped | this session | `tools/render/{main.lua,check.sh}` | **landed** | `art 100.0% auth 0.0%` on a composed character; 21 rows from two donor sheets; widest seam step reported at 3 px, never judged |
 | T2.4 question 2, attention temperament | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 644/644; three sleeping sheets stop noticing the player; 4 of 4 mutations caught; every untabled sheet byte-identical |
 | T2.4 clip pair, cell against measured bands | this session | `tools/ingame/clip.{lua,sh}` | **built; the ANSWER is Kim's** | `psnr within one side 35.27, between the sides 29.65`, so the difference is real in motion; `VC_CLIP_FIXO` added because PART LAG and AUTHORED REGIONS are unfilmable alone |
 | T2.5 lab randomiser | this session | `tools/randomiza.lua`, `tools/randomiza_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | deterministic from a seed; 4 of 4 real mutations caught, 1 equivalent mutant identified as uncatchable |
@@ -1479,6 +1480,41 @@ half-finished couplings, three of them mine.
 harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
+
+## T2.2 part stack: a composed character, made of the player's own pixels
+
+T2.2 asks an open question — "are parts shipped as art, generated from existing
+sprites, or both?" — and the answer is **generated**, because it is the only one
+that keeps the mod's promise intact.
+
+`parts=hair:blue,feet:youngster` copies the measured rows of a region out of a
+DONOR sheet into the base one. Every pixel written came from the player's own
+ROM, so the metric is unchanged:
+
+```
+PARTS hair:blue,feet:youngster composed onto red, 21 row(s), widest seam step 3 px
+  slab   pitch 0   yaw 0   art 100.0%   auth 0.0%   top 0.0%   side 0.0%   base 0.0%
+```
+
+**`art 100.0%  auth 0.0%` on a character composed out of three different people.**
+This is recombination, not authorship, and it means a part picker does not have
+to ship a single pixel to exist.
+
+**The seam is MEASURED AND NOT JUDGED**, which is the design decision worth
+keeping. Donor sheets have different silhouettes, so hair from a wider head
+leaves a step where it meets the base body. Whether a 3-pixel step looks wrong is
+Kim's call, so the harness reports the widest one as a number and refuses nothing
+on those grounds. What it does refuse is the case with no taste in it: a donor
+that cannot supply the region, and `head`, which has no measured boundary.
+
+**All of it is possible because every sheet shares one geometry.** Measured: 16x16
+cells, and frame 0 of `red`, `blue`, `youngster` and `nurse` all occupy rows 0..15
+and columns 1..14. A part swap between them is geometrically sound rather than
+hopeful.
+
+**No UI.** The mechanism exists and nothing drives it but a harness flag. A picker
+is interface work with no evidence yet that anyone wants it, and the roadmap put
+this item in the lab on purpose.
 
 ## T2.4 question 2: attention gets per-sheet temperament, and sleepers stop watching
 
