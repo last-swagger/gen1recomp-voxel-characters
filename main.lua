@@ -441,6 +441,26 @@ local OPTIONS = {
     -- counts as a request, not as approval: nobody has seen it yet.
     help = "Keeps characters solid in first person instead of falling back to the flat card. Needs the host's draw channel.",
   },
+  {
+    key = "demo_fx",
+    label = "DEMO FX",
+    levels = { { "OFF", "off" }, { "FIREBALL", "fireball" }, { "BOLT", "bolt" } },
+    defaultIndex = 1,
+    -- A CAPABILITY DEMO, and the release note has to say so in those words.
+    --
+    -- It exists to show that this mod can own character effects with a
+    -- position, a lifetime and a sound, rather than only passive body
+    -- deformation. It is NOT Gen 1 authentic, it is not a combat system, and
+    -- nothing it does reaches save data, battles, link play or an encounter.
+    --
+    -- Fired by a REAL EVENT from a REAL ANCHOR: one effect per footfall,
+    -- leaving the character's hand. Both came from roadmap T1.2, which is why
+    -- that was built first.
+    --
+    -- OFF by the house rule, and here the rule matters more than usual: this is
+    -- the first thing the mod draws that is not the player's own art.
+    help = "A capability demo, not a Gen 1 feature: the character throws a small effect from its hand on each footstep. Off by default.",
+  },
 }
 
 local OPTION_BY_KEY = {}
@@ -677,6 +697,31 @@ local meshBlink = setmetatable({}, { __mode = "k" })
 -- draws twenty five of them.
 local meshBands = setmetatable({}, { __mode = "k" })
 local REGION_BANDS = 4
+
+-- THE FX DEMO (roadmap T2.3), one table instead of a dozen chunk locals.
+--
+-- A capability demo and nothing more: it shows that this mod can own character
+-- effects with a position, a lifetime and a sound, not just passive body
+-- deformation. It is NOT Gen 1 authentic and the release note has to say so.
+--
+-- Isolated by construction. It reads the anchors and events T1.2 built, draws
+-- through the same `Voxel3D.draw` the bodies use, and touches no save data, no
+-- battle, no link play and no encounter. Turning it off returns the previous
+-- frame exactly, which the gate checks by counting draw calls rather than by
+-- looking.
+--
+-- ONE TABLE, because `main.lua` has a chunk-local budget and exceeding it is a
+-- compile error for every player. Two families, both deliberately cheap:
+-- FIREBALL travels and fades, BOLT flashes in place and dies fast.
+local FX = {
+  vivos = {},          -- active effects, oldest first
+  malhas = {},         -- one mesh per family, built once and reused
+  MAX = 4,             -- a bound, so a runaway trigger cannot allocate forever
+  FAMILIAS = {
+    fireball = { vida = 0.55, passo = 26, tam = 2.6, sobe = 3 },
+    bolt     = { vida = 0.18, passo = 0,  tam = 1.5, sobe = 9 },
+  },
+}
 
 -- ANIMATION EVENTS (roadmap T1.2 slice 2), a one-frame mailbox.
 --
@@ -3085,6 +3130,13 @@ local function lifeAdvance(inst, px, py, now, rate)
   local passada = math.floor(inst.andado / SHARED.LIFE_CELL)
   if inst.passada and passada > inst.passada then
     eventoNovo("footfall")
+    -- A ONE-SHOT OF ITS OWN for the FX demo, rather than reading the mailbox.
+    -- The mailbox is emptied by whoever READS it, and the demo is not its
+    -- owner: an internal consumer that drained it would starve the external
+    -- one, and one that read without draining would see every past footstep
+    -- again on every frame. Measured: that spawned an effect per frame and no
+    -- effect ever appeared to expire.
+    inst.fxPendente = true
   end
   inst.passada = passada
   local vel = math.sqrt(vx * vx + vz * vz) / LAG_REFERENCE_SPEED
@@ -3580,7 +3632,68 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   -- z (casterMatrix ends in S(1,1,0)) and reintroducing depth there would
   -- have no meaning.
   local novoSol = sunModel and lifeApply(sunModel, s, kx, 0, sx, corr) or nil
-  return originalDraw(mesh, texture, novo, pull, novoSol)
+  local resultado = originalDraw(mesh, texture, novo, pull, novoSol)
+
+  -- THE FX DEMO (roadmap T2.3), after the body and never instead of it.
+  --
+  -- Spawn is driven by a REAL EVENT and positioned from a REAL ANCHOR: a
+  -- footfall fires one effect from the character's hand. Both of those came
+  -- from T1.2 and neither is invented here, which is the point of having built
+  -- them first.
+  --
+  -- Only on the FIRST draw of a frame for this instance. The host draws every
+  -- character twice for the water reflection and PART LAG issues one call per
+  -- band, so advancing the effects on every call would run their lifetimes at
+  -- up to eight times speed and spawn several per step.
+  local demo = optionState.demo_fx
+  if demo and demo ~= "off" and inst.fxQuadro ~= now then
+    inst.fxQuadro = now
+    local fam = FX.FAMILIAS[demo]
+    local ancoras = meshAnchors[mesh]
+    if fam and ancoras then
+      if inst.fxPendente and #FX.vivos < FX.MAX then
+        inst.fxPendente = false
+        local a = ancoras.hand
+        -- CARRIES THE RESOLVED FAMILY, not the option's name.
+        --
+        -- It used to store `demo` and look the family up again when retiring,
+        -- which quietly made the off path guarded in THREE places: the option
+        -- check, the family lookup at spawn, and that second lookup. Three
+        -- guards sound safer and are worse, because a gate cannot prove any of
+        -- them: defeating one or two changed nothing observable, so the off
+        -- path passed whether or not it worked. One guard that a test can break
+        -- is worth more than three nobody can.
+        FX.vivos[#FX.vivos + 1] = {
+          f = fam, nasceu = now,
+          x = (model[4] or 0) + a.x - 8, y = a.y, z = (model[12] or 0),
+        }
+      end
+      -- Advance and retire. An effect that never dies is a leak that looks
+      -- like a feature for the first ten seconds, so the age check runs before
+      -- anything is drawn and the list is rebuilt rather than patched.
+      local vivos = {}
+      for _, e in ipairs(FX.vivos) do
+        local idade = now - e.nasceu
+        local f = e.f
+        if f and idade < f.vida then
+          vivos[#vivos + 1] = e
+          local t = idade / f.vida
+          local m = {
+            f.tam * (1 - t * 0.6), 0, 0, e.x + f.passo * t,
+            0, f.tam * (1 - t * 0.6), 0, e.y + f.sobe * t,
+            0, 0, f.tam * (1 - t * 0.6), e.z,
+            0, 0, 0, 1,
+          }
+          -- Reuses the character's own mesh as the effect's shape. A demo does
+          -- not need art of its own to prove the channel works, and shipping
+          -- art here would break the mod's promise for a prototype.
+          originalDraw(mesh, texture, m, pull, nil)
+        end
+      end
+      FX.vivos = vivos
+    end
+  end
+  return resultado
 end
 
 local function voxelMesh(def, frame)
@@ -3930,4 +4043,23 @@ function mod._animEvents()
   local saida = eventosPendentes
   eventosPendentes = {}
   return saida
+end
+
+-- HOW MANY EFFECTS ARE ALIVE (roadmap T2.3), a test hook and not an API.
+--
+-- Exists because the first gate for the FX demo inferred liveness from the
+-- NUMBER OF DRAW CALLS in a frame, and that turned out to be too coarse to
+-- prove anything: with both off-guards deliberately defeated, the OFF run still
+-- passed, because spawns are rare and the driver was not sampling the frames
+-- where an effect happened to be alive. A gate that cannot fail on a broken off
+-- path is not guarding the off path.
+--
+-- Counting the live list directly removes the sampling question entirely: an
+-- effect that exists is counted whether or not a draw call landed on the frame
+-- the test looked at.
+--
+-- Internal, like `_anchors` and `_animEvents`, for the same reason: the roadmap
+-- holds a public presentation API until two real consumers exist.
+function mod._fxVivos()
+  return #FX.vivos
 end

@@ -8,10 +8,10 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
-**Four new options, and all four are off until you turn them on.** Nothing here
-changes what a player sees by default; `ATTENTION`, `PART LAG` and `FOOTFALL`
-start at `OFF` and `FIRST PERSON` starts at `CARD`, per the house rule that a
-visual change the community has not seen yet ships off. The rest of this entry
+**Five new options, and all five are off until you turn them on.** Nothing here
+changes what a player sees by default; `ATTENTION`, `PART LAG`, `FOOTFALL` and
+`DEMO FX` start at `OFF` and `FIRST PERSON` starts at `CARD`, per the house rule
+that a visual change the community has not seen yet ships off. The rest of this entry
 is tooling, tests and the project's own language, plus one defect in shipped
 behaviour that the tooling found.
 
@@ -77,6 +77,19 @@ behaviour that the tooling found.
   person, and there is nothing to see at a settled first person view either
   way. It is worth the entry and the exit: your own body used to collapse to a
   flat card exactly when the camera came closest to it.
+
+- **`DEMO FX: OFF / FIREBALL / BOLT` is a capability demo**, off by default and
+  honest about what it is. The character throws a small effect from its hand
+  each time a foot lands: `FIREBALL` travels and fades, `BOLT` flashes and is
+  gone. It is not a Gen 1 feature, not a combat system, and it reaches no save
+  data, battle, link play or encounter.
+
+  It is built on two things that had to exist first. The mod now knows where a
+  character's **hand** is, derived from the vertices the builder emitted rather
+  than from a bounding box, and it knows the moment a **foot lands**, as an edge
+  on the stride it was already counting. The effect uses both, so it leaves the
+  right place at the right time instead of appearing in the middle of the body
+  whenever a frame happens to pass.
 
 ### Fixed
 

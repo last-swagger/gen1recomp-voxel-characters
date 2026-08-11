@@ -59,6 +59,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.1 slice 2, preview wired | this session | `tools/render/{main,lab,host_matrix}.lua` | **landed** | `LABPROBE motion=off options=9 moved=false` against `motion=on options=16 moved=true`; REGUA OK |
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
+| T2.3 FX demo | this session | `main.lua`, `README.md`, `CHANGELOG.md`, `tests/voxel_chars_test.lua`, `tools/ingame/menu.lua` | **landed** | 634/634; 5 of 5 mutations caught after the gate was rebuilt to count live effects; full battery green on the MBP |
 
 ## Blocked on Kim
 
@@ -893,6 +894,66 @@ with the wrap and the mesh-provider path both touched.
 
 **Scope unchanged**: all three candidate events turned out to be measurable, so
 `ROADMAP_V3.md` needed no correction this time.
+
+## T2.3: the gate was blind, and rebuilding it changed the code
+
+**The demo works and is committed. The interesting part is the two rounds it
+took to be able to prove it.**
+
+`DEMO FX: OFF / FIREBALL / BOLT`, off by default. One effect per footfall,
+leaving the character's hand, drawn through the same `Voxel3D.draw` the bodies
+use, reading the anchors and the footfall edge T1.2 built. FIREBALL travels and
+fades over 0.55 s, BOLT flashes for 0.18 s. No save data, no battle, no link
+play, no encounter. Chunk-local cost: 71 free.
+
+**Round one measured the wrong thing.** The first gate inferred liveness from
+the NUMBER OF DRAW CALLS in a frame. It could not fail: with both off-guards
+deliberately defeated, the OFF run still passed. Draw-call counting confuses "no
+effect exists" with "no effect was drawn on the frame I happened to sample", and
+spawns are rare enough that the difference decided the answer.
+
+**Round two counts live effects directly**, through `mod._fxVivos()`, an
+internal test hook alongside `_anchors` and `_animEvents`. That removed the
+sampling question, and immediately exposed something better.
+
+**The off path had THREE guards, and that was a defect rather than safety.** The
+option check, the family lookup at spawn, and a second family lookup when
+retiring. Because a spawned effect stored the option's NAME and the retire pass
+looked it up again, defeating one or two guards produced effects that died the
+instant they were born: nothing observable changed, so the gate passed either
+way. Three guards nobody can test are worth less than one that a test can break.
+The effect now carries the resolved family, and the off path is a single
+checkable thing.
+
+**The bound needed a scenario that provokes it.** At walking pace a footstep
+arrives every 0.53 s against a 0.55 s lifetime, so about one effect is alive at
+a time and removing `FX.MAX` changes nothing. The gate now also sprints: four px
+per frame puts a footstep every four frames against a 33 frame lifetime, where
+without a cap eight or nine would pile up.
+
+**Five mutations, five caught**, where the first gate caught three:
+
+| Mutation | Round one | Round two |
+|---|---|---|
+| both off-guards defeated | blind | `with DEMO FX off, 2 effect(s) were alive` |
+| `FX.MAX` removed | blind | caught by the sprint |
+| effects never expire | caught | caught |
+| spawns every frame | caught | caught |
+| both families same lifetime | caught | caught |
+
+**And the full battery caught what no offline gate could.** The in-game `menu`
+driver failed with `nao esperadas: [demo_fx]` and `esperado 19 nossas`: it keeps
+its own list of the rows a player should see, which is the point of it. Adding
+the option to that list is part of adding the option. Nothing offline could have
+told me, and the manager's rule about running the MBP when the wrap is touched
+is what surfaced it.
+
+**No SFX yet.** The audio gate from T1.3 is built, proven and still green, but
+nothing generates sound: procedural samples plus a captured WAV through
+`audio_gate.sh` is the next slice, and shipping a silent "SFX" would be the
+promise this item is supposed to avoid.
+
+## The next implementable item
 
 ## The next implementable item
 

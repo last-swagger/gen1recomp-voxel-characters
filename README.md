@@ -74,7 +74,7 @@ that fork.
 
 ## What you can turn on
 
-There are 19 rows under `OPTIONS`. The first two are read only, and the third
+There are 20 rows under `OPTIONS`. The first two are read only, and the third
 is a button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
@@ -107,6 +107,8 @@ ATTENTION      OFF / SUBTLE / CLEAR              default OFF    they lean toward
 PART LAG       OFF / LOW / HIGH                  default OFF    the head arrives after the body
 
 FIRST PERSON   CARD / SOLID                      default CARD   solid through the first person blend
+
+DEMO FX        OFF / FIREBALL / BOLT             default OFF    a capability demo, not a Gen 1 feature
 ```
 
 **If you only try one thing, try `BREATH: SUBTLE`.** It is half a pixel of
@@ -168,6 +170,20 @@ So this is not a solid body you can walk around in first person. There is
 nothing to see at a settled first person view either way. What it is worth is
 the entry and the exit: your own body used to collapse to a flat card exactly
 when the camera came closest to it, and now it does not.
+
+### DEMO FX is a demo, and the name is the honest part
+
+Turn it on and the character throws a small effect from its hand every time a
+foot lands. Two kinds: `FIREBALL` travels and fades, `BOLT` flashes and is gone.
+
+**This is not a Gen 1 feature and it is not pretending to be one.** It exists to
+show that this mod can own character effects with a position, a lifetime and a
+sound, rather than only bending the body. It touches nothing: no save data, no
+battles, no link play, no encounters, no gameplay of any kind. Switch it off and
+the next frame is exactly what it was before.
+
+Where the effect comes out of is not a guess. The mod knows where the
+character's hand is, and when a foot lands, and it uses both.
 
 ### CAMERA FIT, and why thickness is not one number
 

@@ -150,6 +150,7 @@ return function(game)
     { "footfall", "FOOTFALL" }, { "attention", "ATTENTION" },
     { "part_lag", "PART LAG" },
     { "first_person", "FIRST PERSON" },
+    { "demo_fx", "DEMO FX" },
   }
   local faltando, foraDeOrdem, anterior = {}, {}, 0
   for _, esperada in ipairs(ESPERADAS) do

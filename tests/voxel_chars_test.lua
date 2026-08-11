@@ -1226,7 +1226,7 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 13, "hook anexa as rows, mais STATUS, LIFE e CAMERA FIT")
+  eq(#rows, 14, "hook anexa as rows, mais STATUS, LIFE e CAMERA FIT")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
   eq(rows[3].label, "LIFE", "hook anexa a row de LIFE logo depois do STATUS")
   eq(rows[4].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE, antes das opcoes")
@@ -4272,7 +4272,7 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 12, "com host, doze rows: STATUS, LIFE, CAMERA FIT e as nove de sempre")
+  eq(#rows, 13, "com host, treze rows: STATUS, LIFE, CAMERA FIT e as dez de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
   eq(rows[2].label, "LIFE", "LIFE vem logo depois do STATUS")
   eq(rows[3].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE")
@@ -5423,8 +5423,8 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 19,
-     "com canal, dezenove rows: STATUS, LIFE, CAMERA FIT e as dezesseis opcoes")
+  eq(#rows, 20,
+     "com canal, vinte rows: STATUS, LIFE, CAMERA FIT e as dezessete opcoes")
   eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
   eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
@@ -7380,6 +7380,159 @@ do
   check(quieto == nil or #quieto == 0,
     string.format("T1.2: with every source off, no event fires (%d arrived)",
       quieto and #quieto or 0))
+end
+
+-- ===================================================================
+-- T2.3: THE FX DEMO, measured by counting LIVE EFFECTS.
+-- ===================================================================
+--
+-- A capability demo, not a combat system and not Gen 1 authentic. It ships OFF
+-- and is isolated from save data, battles, link play and encounters: it reads
+-- the anchors and the footfall edge T1.2 built and draws through the same
+-- channel the bodies use.
+--
+-- WHY THIS COUNTS EFFECTS AND NOT DRAW CALLS. The first version of this gate
+-- inferred liveness from the number of draw calls in a frame, and it could not
+-- fail: with BOTH off-guards deliberately defeated the OFF run still passed,
+-- because spawns are rare and the driver was not sampling the frames where an
+-- effect happened to be alive. Draw-call counting confuses "no effect exists"
+-- with "no effect was drawn on the frame I looked at". `mod._fxVivos()` answers
+-- the first question directly, so the off path is measured rather than
+-- inferred.
+--
+-- FOUR PROOFS, and each one has been shown to fail against a broken build:
+--
+--   1. OFF keeps the live count at ZERO for the whole walk;
+--   2. ON actually produces live effects;
+--   3. the count is BOUNDED, so a trigger cannot pile up without end;
+--   4. the count returns to ZERO once the walking stops, so lifetimes end.
+do
+  local pixels = {}
+  paintBlinkFace(pixels, 16, 16, 0)
+  local RUNG = 35
+
+  -- Walks, then stands still. The tail matters: an effect spawned by the last
+  -- footstep is legitimately alive a few frames later, so a gate that looked at
+  -- the very end would call a correct lifetime a leak.
+  local function anda(estado, quadros, passoPx)
+    passoPx = passoPx or 0.5
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      math.rad(RUNG), nil, nil, nil, nil, true)
+    local mod = loadWith(makeMod(handle, estado))
+    if type(mod._fxVivos) ~= "function" then return nil end
+    local def = { image = "red.png", frames = 1 }
+    local vivos = {}
+    withDrivenClock(function(setClock)
+      for q = 0, quadros do
+        setClock(q / 60)
+        local mesh = modules.SpriteBillboards.mesh(def, 0)
+        local m = HostMatrix.forRung(RUNG)
+        local px = (q < quadros - 60) and (q * passoPx)
+          or ((quadros - 61) * passoPx)
+        m[4], m[12] = px + 8, 8
+        modules.Voxel3D.drawCalls = {}
+        modules.Voxel3D.draw(mesh, "tex", m, 6, nil)
+        -- Counted AFTER the draw, which is when the wrap has spawned, advanced
+        -- and retired for this frame.
+        vivos[q] = mod._fxVivos()
+      end
+    end)
+    return vivos
+  end
+
+  local BASE = { breath = "off", sway = "off", lag = "off", footfall = 0.7,
+                 attention = "off", part_lag = "off", blink = "off" }
+  local function com(fx)
+    local e = {}
+    for k, v in pairs(BASE) do e[k] = v end
+    e.demo_fx = fx
+    return e
+  end
+  local function resumo(v)
+    local pico, quadrosVivos, fim = 0, 0, 0
+    if v then
+      for q = 0, 240 do
+        local n = v[q] or 0
+        if n > pico then pico = n end
+        if n > 0 then quadrosVivos = quadrosVivos + 1 end
+        if q >= 230 and n > 0 then fim = fim + 1 end
+      end
+    end
+    return pico, quadrosVivos, fim
+  end
+
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+
+  local vOff = anda(com("off"), 240)
+  local vFogo = anda(com("fireball"), 240)
+  exige(vOff ~= nil and vFogo ~= nil, "mod._fxVivos is not exposed")
+
+  if vOff and vFogo then
+    local picoOff = resumo(vOff)
+    local picoOn, quadrosOn, fimOn = resumo(vFogo)
+
+    -- 1. OFF, measured directly. Not "no draw call landed": no effect existed,
+    --    on any frame, at any point.
+    exige(picoOff == 0,
+      "with DEMO FX off, %d effect(s) were alive; the off path is not silent",
+      picoOff)
+
+    -- 2. ON really produces effects.
+    exige(quadrosOn > 0,
+      "with DEMO FX on, no effect was ever alive: the demo produces nothing")
+
+    -- 3. BOUNDED. Seven footfalls over 120 px with short lifetimes cannot
+    --    stack high; a per-frame spawn or a missing cap would.
+    exige(picoOn <= 4,
+      "DEMO FX had %d effects alive at once; the cap is 4, so either the "
+      .. "bound is gone or it is spawning per frame", picoOn)
+
+    -- 4. THE LIFETIME ENDS. Nothing spawns in the last second of standing
+    --    still, so anything alive there is immortal.
+    exige(fimOn == 0,
+      "%d of the last frames still had an effect alive after the character "
+      .. "stopped walking, so effects are not expiring", fimOn)
+  end
+
+  check(#problemas == 0,
+    "T2.3: the FX demo is silent when off, alive when on, bounded, and expires ("
+    .. (problemas[1] or "ok") .. ")")
+
+  -- 5. TWO FAMILIES, told apart by how long they live rather than by their
+  --    names. BOLT is 0.18 s and FIREBALL 0.55 s, so the same seven footfalls
+  --    leave the fireball alive for about three times as many frames.
+  local _, quadrosFogo = resumo(anda(com("fireball"), 240))
+  local _, quadrosRaio = resumo(anda(com("bolt"), 240))
+  check(quadrosFogo > 0 and quadrosRaio > 0 and quadrosFogo > quadrosRaio * 1.5,
+    string.format("T2.3: fireball outlives bolt, so they are two families "
+      .. "(%d against %d frames with an effect alive)",
+      quadrosFogo, quadrosRaio))
+
+  -- 6. THE BOUND, exercised by a scenario that actually provokes it.
+  --
+  -- At a walking pace the cap is never reached: footfalls arrive every 0.53 s
+  -- and a fireball lives 0.55 s, so about one is alive at a time and removing
+  -- the cap changes nothing observable. A gate that only ever walks cannot
+  -- prove the bound exists, which is exactly what the mutation run showed.
+  --
+  -- Sprinting at 4 px per frame puts a footstep every 4 frames against a 33
+  -- frame lifetime, so without a cap eight or nine would pile up. With it, the
+  -- count is pinned at four.
+  local corrida = anda(com("fireball"), 180, 4)
+  local picoCorrida = 0
+  if corrida then
+    for q = 0, 180 do
+      local n = corrida[q] or 0
+      if n > picoCorrida then picoCorrida = n end
+    end
+  end
+  check(picoCorrida > 0 and picoCorrida <= 4,
+    string.format("T2.3: the live count stays inside its bound when triggers "
+      .. "arrive faster than effects die (peaked at %d, cap is 4)",
+      picoCorrida))
 end
 
 T.finish("voxel_chars_test")
