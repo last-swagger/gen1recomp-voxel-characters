@@ -715,11 +715,15 @@ local REGION_BANDS = 4
 -- FIREBALL travels and fades, BOLT flashes in place and dies fast.
 local FX = {
   vivos = {},          -- active effects, oldest first
+  nascidos = 0,        -- cumulative spawns, so a gate can match sounds to them
+  sons = {},           -- one source per family, created on first use
   malhas = {},         -- one mesh per family, built once and reused
   MAX = 4,             -- a bound, so a runaway trigger cannot allocate forever
   FAMILIAS = {
-    fireball = { vida = 0.55, passo = 26, tam = 2.6, sobe = 3 },
-    bolt     = { vida = 0.18, passo = 0,  tam = 1.5, sobe = 9 },
+    fireball = { vida = 0.55, passo = 26, tam = 2.6, sobe = 3,
+                 som = "fireball" },
+    bolt     = { vida = 0.18, passo = 0,  tam = 1.5, sobe = 9,
+                 som = "bolt" },
   },
 }
 
@@ -3653,6 +3657,31 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
     if fam and ancoras then
       if inst.fxPendente and #FX.vivos < FX.MAX then
         inst.fxPendente = false
+        FX.nascidos = FX.nascidos + 1
+
+        -- THE SOUND, on the same line as the effect it belongs to.
+        --
+        -- Spawn and play happen in one place so they cannot drift apart. The
+        -- gate's tolerance is a single frame, and the only way to be sure of
+        -- that is for there to be no second code path with its own idea of when
+        -- a footstep happened.
+        --
+        -- Guarded like every other host capability in this file. A host with no
+        -- audio, or a build where love.audio is absent, loses the sound and
+        -- keeps the effect, rather than raising inside the draw path, which is
+        -- the worst possible place for it. The source is created once per
+        -- family and remembered, including the failure, so a missing file is
+        -- not retried on every footstep.
+        if love and love.audio and love.audio.newSource and fam.som then
+          if FX.sons[fam.som] == nil then
+            local ok, fonte = pcall(love.audio.newSource,
+              (mod.path or ".") .. "/sfx/" .. fam.som .. ".wav", "static")
+            FX.sons[fam.som] = (ok and fonte) or false
+          end
+          local fonte = FX.sons[fam.som]
+          if fonte then pcall(function() fonte:play() end) end
+        end
+
         local a = ancoras.hand
         -- CARRIES THE RESOLVED FAMILY, not the option's name.
         --
@@ -4062,4 +4091,13 @@ end
 -- holds a public presentation API until two real consumers exist.
 function mod._fxVivos()
   return #FX.vivos
+end
+
+-- HOW MANY EFFECTS HAVE EVER SPAWNED (roadmap T2.3 slice 4), a test hook.
+--
+-- The audio gate matches one sound to one effect, and it has to count against
+-- SPAWNS rather than against footfalls: the cap can refuse a spawn, and a sound
+-- played for a refused effect would be a noise with nothing behind it.
+function mod._fxNascidos()
+  return FX.nascidos
 end

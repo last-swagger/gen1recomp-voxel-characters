@@ -141,10 +141,20 @@ behaviour that the tooling found.
   that matters instead, which is whether the sound is audible and inside the
   ceiling that keeps a demo effect from sitting on top of the game's music.
   Measured: fireball peaks at -10.6 dBFS and bolt at -10.1, against a -6
-  ceiling and a silent control at -91.0. Nothing plays them yet, and the suite
-  now proves that: a recording audio backend stands in for `love.audio` and
-  asserts the mod requests no sound at all, with a positive control first so
-  that "zero calls" cannot be a broken recorder reporting zero.
+  ceiling and a silent control at -91.0.
+
+  **The two files in `sfx/` are the first thing this mod ships that is not the
+  player's own art**, and the README says so where a player will read it. They
+  are versioned so the mod can play them without carrying a synthesiser, and
+  the gate ties them to the generator byte for byte, so a hand-edited or
+  re-encoded file stops matching rather than becoming a blob nobody re-examines.
+
+  Playback is measured, not assumed. A recording stand-in for `love.audio`
+  proves the contract: nothing at all when the option is off, exactly one sound
+  per effect spawned, never twice in a frame despite the host drawing every
+  character twice, and the sound landing in the same frame as the effect within
+  a sixtieth of a second. A positive control runs first, so "zero calls" cannot
+  be a broken recorder reporting zero.
 
 ### Changed
 

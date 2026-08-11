@@ -59,7 +59,8 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.1 slice 2, preview wired | this session | `tools/render/{main,lab,host_matrix}.lua` | **landed** | `LABPROBE motion=off options=9 moved=false` against `motion=on options=16 moved=true`; REGUA OK |
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 | T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
-| T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed; playback deferred to slice 4** | recorder proven to see calls, and to catch a stray one at 181 plays |
+| T2.3 slice 3, audio capture path | this session | `tests/voxel_chars_test.lua`, docs | **landed** | recorder proven to see calls, and to catch a stray one at 181 plays |
+| T2.3 slice 4, playback | this session | `main.lua`, `sfx/*.wav`, `tools/fx_sfx_gate.sh`, docs | **landed** | 637/637; off-guard defeat caught as `1 source(s), 5 play(s)`; full battery green on the MBP with the assets packaged |
 | T2.3 SFX, generated | this session | `tools/fx_sfx.lua`, `tools/fx_sfx_gate.sh`, `tools/bateria.sh` | **landed** | fireball -10.6 dBFS, bolt -10.1, control -91.0; 5 of 5 mutations caught; runtime playback is slice 3 |
 | T2.3 FX demo | this session | `main.lua`, `README.md`, `CHANGELOG.md`, `tests/voxel_chars_test.lua`, `tools/ingame/menu.lua` | **landed** | 634/634; 5 of 5 mutations caught after the gate was rebuilt to count live effects; full battery green on the MBP |
 
@@ -1052,6 +1053,62 @@ beyond even that and is where the runner's controlled environment would earn its
 keep.
 
 **No MBP for this slice**: only the test file and docs changed.
+
+## T2.3 slice 4: playback, and the mod's first shipped asset
+
+**Kim's call, taken and recorded.** Two WAVs in `sfx/` are versioned and
+packaged. `.modkitignore` is an exclusion list, so anything not named there
+ships: these are the first files this mod distributes that are not read from the
+player's own game. The README's opening promise was edited to say so where a
+player reads it, rather than leaving the sentence technically true by omission.
+
+**What stops them being an opaque blob.** `fx_sfx_gate.sh` regenerates both
+sounds from `tools/fx_sfx.lua` and compares them to the packaged files byte for
+byte, then runs the shipped files through `audio_gate.sh` in their own right.
+Versioned audio is exactly the kind of file nobody re-examines: it arrives once,
+sounds fine to whoever added it, and after that a diff can only say the bytes
+changed. Proved by editing two bytes of `sfx/fireball.wav`, which the gate
+rejects.
+
+**Playback lives on the same line as the spawn**, inside the wrap, guarded by
+`pcall` like every other host capability here. The source is created once per
+family and the failure is remembered too, so a missing file is not retried on
+every footstep. Spawn and play cannot drift apart because there is no second
+code path with its own idea of when a footstep happened.
+
+**The contract, measured:**
+
+| Claim | How |
+|---|---|
+| off plays nothing | recorder sees zero sources and zero plays |
+| one play per spawn | counted against `mod._fxNascidos()`, not against footfalls, because the cap can refuse a spawn |
+| no spam in a frame | plays grouped by instant; the host draws each character twice |
+| same frame as the effect | driver notes the clock when the spawn counter moves, recorder notes it when a sound is asked for, and the two are compared. **Tolerance 1/60 s** |
+| the measured file is the played file | the play argument has to name `sfx/fireball.wav` |
+
+**Sync is two independent observations on purpose.** Comparing a timestamp the
+audio path recorded against one the audio path also supplied would assert that a
+number equals itself. The spawn instant comes from the mod's counter, watched by
+the driver; the play instant comes from the recorder.
+
+**Four mutations caught:** the sound played twice per spawn, a different file
+played, a hand-edited shipped WAV, and the off-guard defeated, which the audio
+assertion caught as `1 source(s), 5 play(s)` alongside the visual one.
+
+**One mutation was ineffective and had to be replaced**, the third time this
+session: putting the fault inside the spawn block proves nothing, because the
+block is already unreachable when the option is off. The meaningful mutation is
+always the upstream guard.
+
+**Full battery green on the MBP**, ruler and all five in-game gates, with
+playback in the wrap and the assets in the package. Both were reasons the run
+was required rather than optional.
+
+**What is still not proved, and it is worth naming.** The recorder shows what
+the mod ASKS for. Nothing here proves a speaker moved: that needs a machine
+recording its own output, which is where the controlled runner would earn its
+keep. The peak that a player would hear is the peak `audio_gate.sh` measured in
+the file, which is the closest honest statement available today.
 
 ## The next implementable item
 

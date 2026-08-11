@@ -7611,6 +7611,12 @@ do
       breath = "off", sway = "off", lag = "off", footfall = 0.7,
       attention = "off", part_lag = "off", blink = "off", demo_fx = fx }))
     local def = { image = "red.png", frames = 1 }
+    -- SPAWN TIMES OBSERVED INDEPENDENTLY of the audio. The driver watches the
+    -- mod's own spawn counter and notes the clock when it moves; the recorder
+    -- notes the clock when a sound is asked for. Comparing two separate
+    -- observations is the only way this measures synchronisation rather than
+    -- asserting that a number equals itself.
+    local nascimentos, antes = {}, 0
     withDrivenClock(function(setClock)
       for q = 0, 180 do
         setClock(q / 60)
@@ -7619,31 +7625,99 @@ do
         m[4], m[12] = q * 0.5 + 8, 8
         modules.Voxel3D.drawCalls = {}
         modules.Voxel3D.draw(mesh, "tex", m, 6, nil)
+        local agora = mod._fxNascidos and mod._fxNascidos() or 0
+        while antes < agora do
+          antes = antes + 1
+          nascimentos[#nascimentos + 1] = q / 60
+        end
       end
     end)
     love.audio = audioAntes
+    reg.nascimentos = nascimentos
     return reg, mod
   end
 
+  -- THE FULL CONTRACT, now that playback exists.
   local regOff = correComAudio("off")
-  local regOn = correComAudio("fireball")
-  check(#regOff.tocadas == 0 and regOff.fontes == 0,
-    string.format("T2.3: with DEMO FX off the mod requests no audio "
-      .. "(%d source(s), %d play(s))", regOff.fontes, #regOff.tocadas))
-  check(#regOn.tocadas == 0 and regOn.fontes == 0,
-    string.format("T2.3: with DEMO FX on the mod is still silent, because "
-      .. "playback is slice 4 and half a feature is worse than none "
-      .. "(%d source(s), %d play(s))", regOn.fontes, #regOn.tocadas))
+  local regFogo, modFogo = correComAudio("fireball")
+  local regRaio, modRaio = correComAudio("bolt")
 
-  -- 3. AND THE HARNESS IS READY FOR THE CONTRACT IT CANNOT CHECK YET. When
-  --    playback lands, these are the four questions it will answer, and the
-  --    recorder already carries the timestamps needed for the last one:
-  --    one play per FX spawn, none when off, no repeats within a frame, and
-  --    the play landing in the SAME frame as the spawn, one sixtieth of a
-  --    second being the declared tolerance.
-  check(type(regOn.tocadas) == "table" and regOn.fontes == 0,
-    "T2.3: the capture harness records timestamps, so slice 4 can measure "
-    .. "sync without building anything new")
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+
+  -- 1. OFF IS SILENT. Not "quiet": no source created and nothing played.
+  exige(#regOff.tocadas == 0 and regOff.fontes == 0,
+    "with DEMO FX off the mod asked for audio (%d source(s), %d play(s))",
+    regOff.fontes, #regOff.tocadas)
+
+  -- 2. EXACTLY ONE PLAY PER SPAWN. Counted against the mod's own spawn total
+  --    rather than against footfalls, because the cap can refuse a spawn and a
+  --    play that happened anyway would be a sound with no effect behind it.
+  local nascidosFogo = modFogo._fxNascidos and modFogo._fxNascidos() or -1
+  local nascidosRaio = modRaio._fxNascidos and modRaio._fxNascidos() or -1
+  exige(nascidosFogo > 0, "fireball spawned nothing, so there is nothing to hear")
+  exige(#regFogo.tocadas == nascidosFogo,
+    "fireball: %d play(s) against %d spawn(s); they have to match one to one",
+    #regFogo.tocadas, nascidosFogo)
+  exige(#regRaio.tocadas == nascidosRaio,
+    "bolt: %d play(s) against %d spawn(s)", #regRaio.tocadas, nascidosRaio)
+
+  -- 3. NO SPAM WITHIN A FRAME. The host draws each character twice for the
+  --    water reflection and PART LAG issues one call per band, so the same
+  --    hazard the visual side has applies to the ear, where it is worse: a
+  --    doubled sound is audible as a flam even when a doubled draw is not.
+  local porInstante = {}
+  for _, t in ipairs(regFogo.tocadas) do
+    local k = string.format("%.5f", t.quando)
+    porInstante[k] = (porInstante[k] or 0) + 1
+    exige(porInstante[k] == 1,
+      "fireball played %d times at the same instant (%s); the reflection draw "
+      .. "is doubling the sound", porInstante[k], k)
+  end
+
+  -- 4. THE SOUND AND THE EFFECT ARE THE SAME EVENT. Declared tolerance: one
+  --    frame at 60 fps. They are spawned in the same wrap call, so anything
+  --    beyond that means the audio is riding a different clock.
+  local TOLERANCIA = 1 / 60
+  exige(#regFogo.tocadas == #regFogo.nascimentos,
+    "fireball: %d sound(s) against %d spawn instant(s), so they cannot be "
+    .. "paired up at all", #regFogo.tocadas, #regFogo.nascimentos)
+  for i, t in ipairs(regFogo.tocadas) do
+    local quandoNasceu = regFogo.nascimentos[i]
+    if quandoNasceu then
+      local fora = math.abs(t.quando - quandoNasceu)
+      exige(fora <= TOLERANCIA,
+        "fireball sound %d landed %.4f s from its effect, past the %.4f s "
+        .. "tolerance", i, fora, TOLERANCIA)
+    end
+  end
+
+  -- 5. IT PLAYS THE FILE THAT WAS MEASURED. fx_sfx_gate.sh proves the shipped
+  --    WAVs are the generator's output and pass the audio gate; this proves the
+  --    mod reaches for those files and not for something else.
+  local nomes = {}
+  for _, t in ipairs(regFogo.tocadas) do
+    nomes[tostring(t.fonte)] = true
+  end
+  local achouFireball = false
+  for nome in pairs(nomes) do
+    if tostring(nome):find("fireball%.wav") then achouFireball = true end
+  end
+  exige(achouFireball,
+    "fireball played something that is not sfx/fireball.wav, so the sound "
+    .. "the gate measured is not the sound the player hears")
+
+  check(#problemas == 0,
+    "T2.3: audio plays once per effect, only when on, in the same frame ("
+    .. (problemas[1] or "ok") .. ")")
+
+  check(#regOff.tocadas == 0 and #regFogo.tocadas > 0
+        and #regRaio.tocadas > 0,
+    string.format("T2.3: off is silent and both families are heard "
+      .. "(off %d, fireball %d, bolt %d)",
+      #regOff.tocadas, #regFogo.tocadas, #regRaio.tocadas))
 end
 
 T.finish("voxel_chars_test")

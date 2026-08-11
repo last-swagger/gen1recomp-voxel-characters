@@ -77,7 +77,41 @@ for som in fireball bolt silence; do
 done
 [ "$falhas" -eq 0 ] && printf "  %-34s ok\n" "generation is byte reproducible"
 
-# 4. the control really is silent. Everything above is measured against it, so
+# 4. THE SHIPPED FILES ARE THE GENERATOR'S OUTPUT, byte for byte.
+#
+# This is what stops sfx/*.wav from being an opaque blob. They are versioned so
+# the mod can play them without carrying a synthesiser, and versioned audio is
+# exactly the kind of file nobody re-examines: it arrives once, sounds fine to
+# whoever added it, and after that a diff can only say the bytes changed. Tying
+# them to the generator means the sound in the package is the sound this gate
+# measured, and a hand-edited or re-encoded file stops matching.
+for som in fireball bolt; do
+  if [ ! -f "$MOD/sfx/$som.wav" ]; then
+    diga "  sfx/$som.wav is missing from the package"
+    falhas=$((falhas + 1))
+  elif ! cmp -s "$TMP/a/$som.wav" "$MOD/sfx/$som.wav"; then
+    diga "  sfx/$som.wav is NOT what fx_sfx.lua produces; the shipped sound and"
+    diga "    the measured sound are different files"
+    falhas=$((falhas + 1))
+  else
+    printf "  %-34s %s\n" "shipped $som matches the generator" \
+      "$(shasum -a 256 "$MOD/sfx/$som.wav" | cut -c1-12)"
+  fi
+done
+
+# The shipped files also have to pass the audio gate in their own right, not
+# only as a copy of something that passed.
+for som in fireball bolt; do
+  if [ -f "$MOD/sfx/$som.wav" ]; then
+    bash "$MOD/tools/audio_gate.sh" "$TMP/a/silence.wav" "$MOD/sfx/$som.wav" \
+      > "$TMP/ship_$som.log" 2>&1 || {
+        diga "  the SHIPPED sfx/$som.wav does not pass the audio gate"
+        sed 's/^/      /' "$TMP/ship_$som.log"
+        falhas=$((falhas + 1)); }
+  fi
+done
+
+# 5. the control really is silent. Everything above is measured against it, so
 #    a "silent" file with signal in it would quietly raise the floor and let a
 #    quiet effect pass as loud.
 PICO=$(ffmpeg -hide_banner -nostdin -i "$TMP/a/silence.wav" -af volumedetect \
