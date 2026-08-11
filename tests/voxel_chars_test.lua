@@ -6993,4 +6993,209 @@ do
         "PART LAG: with nothing to delay, every band gets the same transform")
 end
 
+-- ===================================================================
+-- T1.2: NAMED ANCHORS, measured on a body whose anatomy is known.
+-- ===================================================================
+--
+-- The gate comes before the anchors, on purpose. An anchor is a claim about
+-- WHERE a part of the character is, and the only way to check a claim like that
+-- is against a body somebody built deliberately: on a real sheet nobody can say
+-- where the hand "should" be, so a test written against `red.png` would be
+-- asserting whatever the code happened to produce.
+--
+-- So the body below is synthetic and its anatomy is ground truth:
+--
+--     rows 1-4    head        columns 6-9
+--     rows 5-10   torso       columns 6-9
+--     rows 6-7    ARMS        columns 2-5 and 10-13, the widest thing here
+--     rows 11-15  legs        columns 6-9
+--
+-- `paint` takes rows from the top of the sheet; the builder flips to Y-up, so
+-- row 1 becomes the HIGH y and row 15 the low one.
+do
+  local pixels = {}
+  local W, H = 16, 16
+  local function bloco(x0, x1, y0, y1)
+    for ly = y0, y1 do
+      for lx = x0, x1 do paint(pixels, W, W, 0, lx, ly, 1) end
+    end
+  end
+  bloco(6, 9, 1, 4)     -- head
+  bloco(6, 9, 5, 10)    -- torso
+  bloco(2, 5, 6, 7)     -- left arm, hand at x = 2
+  bloco(10, 13, 6, 7)   -- right arm, hand at x = 13
+  bloco(6, 9, 11, 15)   -- legs
+
+  -- Every life option that moves a body, on at once, and the character walking.
+  -- An anchor that only holds still is not worth naming: the whole reason to
+  -- have one is so an effect can come out of a hand while the hand is moving.
+  local ESTADO = { breath = 0.035, sway = 0.45, lag = 1.2, footfall = 0.7,
+                   attention = 1.0, part_lag = 0.16, blink = "off" }
+
+  -- Where the parts ARE, in mesh space, from the anatomy above. The builder
+  -- flips rows to Y-up with `cellBottom - ly`, so row 1 lands at y = 14 and
+  -- row 15 at y = 0. Arms occupy rows 6 and 7, therefore y 8 and 9.
+  local Y_CABECA, Y_PES = 14, 0
+  local Y_BRACO_BAIXO, Y_BRACO_ALTO = 8, 9
+  local X_MAO_ESQ, X_MAO_DIR = 2, 13
+
+  -- The character has to be MOVING, or half of this measures nothing: MOTION
+  -- LAG and FOOTFALL are driven by velocity, and velocity comes from the
+  -- position the host writes into the matrix. A pure rotation leaves the
+  -- character standing at the origin forever, the springs never wake up, and
+  -- the gate would pass on a body that cannot move.
+  local function hostAndando(rung, px, py)
+    local m = HostMatrix.forRung(rung)
+    m[4], m[12] = px + 8, py + 8
+    return m
+  end
+
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+
+  -- Measures one rung end to end and returns the anchors plus, for each, the
+  -- envelope of how far it travelled in the world while the body was alive.
+  local function mede(rung, torcerAnchors)
+    local angulo = math.rad(rung)
+    local corr = HostMatrix.correction(rung)
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, W, H,
+      angulo, nil, nil, nil, nil, true)
+    local mod = loadWith(makeMod(handle, ESTADO))
+    local mesh = modules.SpriteBillboards.mesh(
+      { image = "sheet.png", frames = 1 }, 0)
+    local a = mod._anchors(mesh)
+    if not a then return nil end
+    if torcerAnchors then a = torcerAnchors(a) end
+
+    -- Somebody is standing close, or ATTENTION contributes nothing and one of
+    -- the three options this gate claims to exercise is asleep. Same lesson the
+    -- life-safety ceiling learned.
+    modules.Voxel3D.eye = { 10, 0, 0 }
+
+    local repouso, envelope = {}, {}
+    for nome in pairs(a) do envelope[nome] = 0 end
+    withDrivenClock(function(setClock)
+      for passo = 0, 90 do
+        setClock(passo / 60)
+        modules.Voxel3D.drawCalls = {}
+        modules.Voxel3D.draw(mesh, "tex",
+          hostAndando(rung, passo * 0.9, 0), 6, nil)
+        local chamadas = modules.Voxel3D.drawCalls
+        if #chamadas > 0 then
+          for nome, p in pairs(a) do
+            -- Each anchor rides the matrix of ITS OWN band. That is the whole
+            -- point of recording the band: with PART LAG on there is one draw
+            -- call per band, and an anchor that read the body's single matrix
+            -- would follow a character that no longer exists.
+            local ch = chamadas[math.min(p.band, #chamadas)]
+            local mx, my, mz = HostMatrix.toMeshSpace(corr, p.x, p.y, p.z)
+            local wx, wy, wz = HostMatrix.apply(ch.model, mx, my, mz)
+            -- Against the body's own travel, so what is left is the LIFE.
+            wx = wx - passo * 0.9
+            if not repouso[nome] then
+              repouso[nome] = { wx, wy, wz }
+            else
+              local r = repouso[nome]
+              local d = math.max(math.abs(wx - r[1]), math.abs(wy - r[2]),
+                                 math.abs(wz - r[3]))
+              if d > envelope[nome] then envelope[nome] = d end
+            end
+          end
+        end
+      end
+    end)
+    return a, envelope, #(meshBandsCount or {})
+  end
+
+  -- ---------------------------------------------------------------- the gate
+  for _, rung in ipairs(HostMatrix.RUNGS) do
+    local a, env = mede(rung)
+    exige(a ~= nil, "rung %d: the mod exposed no anchors at all", rung)
+    if a then
+      -- 1. Named parts sit where those parts are. Ground truth, not opinion:
+      --    this body was built above with its head at the top and its arms
+      --    sticking out at a known height.
+      exige(math.abs(a.head.y - Y_CABECA) < 1.5,
+        "rung %d: head anchor at y=%.1f, the body's head is at %d",
+        rung, a.head.y, Y_CABECA)
+      exige(math.abs(a.feet.y - Y_PES) < 1.5,
+        "rung %d: feet anchor at y=%.1f, the body's feet are at %d",
+        rung, a.feet.y, Y_PES)
+      exige(a.feet.y < a.center.y and a.center.y < a.head.y,
+        "rung %d: feet(%.1f) < centre(%.1f) < head(%.1f) does not hold",
+        rung, a.feet.y, a.center.y, a.head.y)
+
+      -- 2. The hand is at the END OF AN ARM, which is the claim the name makes.
+      --    Both the height and the reach have to be right: a point at arm
+      --    height in the middle of the torso is not a hand, and a point at the
+      --    silhouette's edge at hip height is not one either.
+      exige(a.hand.y >= Y_BRACO_BAIXO - 1.5 and a.hand.y <= Y_BRACO_ALTO + 1.5,
+        "rung %d: hand anchor at y=%.1f, the arms are at y %d..%d",
+        rung, a.hand.y, Y_BRACO_BAIXO, Y_BRACO_ALTO)
+      exige(a.hand.x <= X_MAO_ESQ + 1.5 or a.hand.x >= X_MAO_DIR - 1.5,
+        "rung %d: hand anchor at x=%.1f, the hands are at x=%d and x=%d",
+        rung, a.hand.x, X_MAO_ESQ, X_MAO_DIR)
+
+      -- 3. Head and feet must be addressable SEPARATELY, or an anchor cannot
+      --    arrive late and none of this buys anything over a bounding box.
+      exige(a.head.band ~= a.feet.band,
+        "rung %d: head and feet are in the same band (%d), so nothing can lag",
+        rung, a.head.band)
+
+      -- 4. They MOVE. An anchor that holds still while the body is alive is
+      --    the still-preview failure in another costume.
+      exige(env.head > 0.05,
+        "rung %d: the head anchor barely moved (%.3f px) with every life "
+        .. "option on", rung, env.head)
+
+      -- 5. And they do not all move the SAME, which is what proves each one is
+      --    riding its own band rather than the body's single transform.
+      exige(math.abs(env.head - env.feet) > 0.02,
+        "rung %d: head and feet anchors travelled the same (%.3f vs %.3f), so "
+        .. "they are not tracking separate parts", rung, env.head, env.feet)
+    end
+  end
+
+  check(#problemas == 0, "T1.2: named anchors track the parts they name, "
+    .. "walking, at four camera rungs ("
+    .. (problemas[1] or "ok") .. ")")
+
+  -- ------------------------------------------------- and it rejects a wrong one
+  --
+  -- A gate that only ever sees correct anchors is not a gate. Three deliberate
+  -- errors, each the kind somebody would actually ship: the head and feet
+  -- swapped, a hand parked in the middle of the body, and every anchor pinned
+  -- to one band so nothing can lag.
+  local torcidas = {
+    ["head and feet swapped"] = function(a)
+      a.head, a.feet = a.feet, a.head; return a
+    end,
+    ["hand in the middle of the body"] = function(a)
+      a.hand = { x = a.center.x, y = a.hand.y, z = a.center.z,
+                 band = a.hand.band, reach = 0 }
+      return a
+    end,
+    ["every anchor in one band"] = function(a)
+      for _, p in pairs(a) do p.band = 1 end
+      return a
+    end,
+  }
+  for nome, torcer in pairs(torcidas) do
+    problemas = {}
+    local a, env = mede(35, torcer)
+    if a then
+      exige(math.abs(a.head.y - Y_CABECA) < 1.5, "head misplaced")
+      exige(math.abs(a.feet.y - Y_PES) < 1.5, "feet misplaced")
+      exige(a.hand.x <= X_MAO_ESQ + 1.5 or a.hand.x >= X_MAO_DIR - 1.5,
+        "hand misplaced")
+      exige(a.head.band ~= a.feet.band, "bands collapsed")
+      exige(math.abs(env.head - env.feet) > 0.02, "anchors move together")
+    end
+    check(#problemas > 0,
+      "T1.2: the gate REJECTS a wrong anchor set (" .. nome .. ")")
+  end
+end
+
 T.finish("voxel_chars_test")

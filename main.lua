@@ -677,6 +677,20 @@ local meshBlink = setmetatable({}, { __mode = "k" })
 -- draws twenty five of them.
 local meshBands = setmetatable({}, { __mode = "k" })
 local REGION_BANDS = 4
+
+-- NAMED ANCHORS (roadmap T1.2), one entry per mesh, weak-keyed like the rest.
+--
+-- Four points on the body, derived from the vertices the builder actually
+-- emitted rather than from a bounding box: head, feet, centre and hand. They
+-- exist so an effect can come out of a HAND instead of out of the middle of a
+-- character, and so anything that wants to attach to a part has a name for it
+-- rather than a guess.
+--
+-- Each anchor also records which BAND it belongs to, because the bands are the
+-- only parts this mesh can address (they are what PART LAG cuts along). That is
+-- what lets an anchor arrive late with the part it names instead of tracking
+-- the body as one rigid piece.
+local meshAnchors = setmetatable({}, { __mode = "k" })
 local blinkVertexWarned = false
 -- v1.4.2, fine-tooth comb: `patch()` builds everything in locals and only
 -- commits these upvalues (SpriteBillboards and the others, installedMesh,
@@ -1934,6 +1948,95 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     meshBlink[mesh] = { baseName = baseName, quads = blinkQuads }
   end
   if mesh then meshBands[mesh] = faixas end
+
+  -- The anchors, from the vertices as emitted (roadmap T1.2).
+  --
+  -- Measured off the real geometry, never guessed from the sheet's dimensions:
+  --
+  --   feet    the lowest point, centred across the width that touches it
+  --   head    the highest point, centred the same way
+  --   centre  the mean of every vertex, so it follows where the body's mass is
+  --           rather than where the middle of the cell is
+  --   hand    the vertex furthest from the centre line in x, which on a body
+  --           with arms is the end of an arm and on a body without them is the
+  --           widest point of the silhouette
+  --
+  -- HAND IS THE ONE WORTH BEING HONEST ABOUT. This mod has no rig and no region
+  -- identity beyond the bands, so it cannot know an anatomical hand. What it
+  -- can say, and what the gate checks, is that the point sits at the extreme of
+  -- the silhouette rather than in the middle of the body. On a sheet whose arms
+  -- are tucked in, that extreme is a shoulder or a hip, and calling it `hand`
+  -- would be overclaiming, so the anchor also reports how far out it actually
+  -- sits and the caller can decide whether that is an arm.
+  if mesh then
+    local n = #verts
+    local cellH = m.cellH or 16
+
+    -- IN CHARACTER SPACE, which means undoing what the builder just baked in.
+    --
+    -- Every vertex above went through `Rx(correction)`, and that rotation mixes
+    -- y and z: on this body the head sits at y=14, z=0 as drawn and arrives in
+    -- the vertex array at y=11.06, z=10.57. Reading the anchors straight off
+    -- the vertices produced a "head" two thirds of the way down the body and a
+    -- "hand" at the wrong height, and the caller then applied the same rotation
+    -- a second time.
+    --
+    -- The inverse of Rx(c) is Rx(-c), so: y = y_m*c + z_m*s, z = -y_m*s + z_m*c.
+    -- The anchors come out in the space a caller thinks in, the same space the
+    -- builder started from, and composing them with a draw matrix is then the
+    -- same operation the vertices themselves go through.
+    local function paraPersonagem(v)
+      return v[1], v[2] * c + v[3] * s, -v[2] * s + v[3] * c
+    end
+
+    local minY, maxY, somaX, somaY, somaZ = math.huge, -math.huge, 0, 0, 0
+    for i = 1, n do
+      local vx, vy, vz = paraPersonagem(verts[i])
+      if vy < minY then minY = vy end
+      if vy > maxY then maxY = vy end
+      somaX, somaY, somaZ = somaX + vx, somaY + vy, somaZ + vz
+    end
+    local cx = somaX / n
+    local function bandaDe(y)
+      local b = math.floor(y / cellH * REGION_BANDS) + 1
+      if b < 1 then b = 1 elseif b > REGION_BANDS then b = REGION_BANDS end
+      -- faixas is indexed head-first, the same flip the band table applies.
+      return REGION_BANDS - b + 1
+    end
+    local function pontoNoExtremo(alvoY)
+      local sx, sz, quantos = 0, 0, 0
+      for i = 1, n do
+        local vx, vy, vz = paraPersonagem(verts[i])
+        if math.abs(vy - alvoY) < 0.5 then
+          sx, sz, quantos = sx + vx, sz + vz, quantos + 1
+        end
+      end
+      if quantos == 0 then return cx, somaZ / n end
+      return sx / quantos, sz / quantos
+    end
+    local pesX, pesZ = pontoNoExtremo(minY)
+    local cabX, cabZ = pontoNoExtremo(maxY)
+    -- THE HAND IS THE FURTHEST REACH, and it is looked for on the FRONT plane
+    -- only. A side face at the same x belongs to the same arm but sits a depth
+    -- away in z, and taking it would put the anchor inside the character's own
+    -- thickness instead of on the surface an effect should leave from.
+    local maoX, maoY, maoZ, maoDist = cx, somaY / n, 0, -1
+    for i = 1, n do
+      local vx, vy, vz = paraPersonagem(verts[i])
+      local d = math.abs(vx - cx)
+      if d > maoDist + 1e-9 or (math.abs(d - maoDist) < 1e-9 and vz > maoZ) then
+        maoDist, maoX, maoY, maoZ = d, vx, vy, vz
+      end
+    end
+    meshAnchors[mesh] = {
+      feet   = { x = pesX, y = minY, z = pesZ, band = bandaDe(minY) },
+      head   = { x = cabX, y = maxY, z = cabZ, band = bandaDe(maxY) },
+      center = { x = cx, y = somaY / n, z = somaZ / n,
+                 band = bandaDe(somaY / n) },
+      hand   = { x = maoX, y = maoY, z = maoZ, band = bandaDe(maoY),
+                 reach = maoDist },
+    }
+  end
   return mesh
 end
 
@@ -3722,4 +3825,21 @@ local ok, err = pcall(patch, host)
 if not ok then
   mod.log:warn("could not patch %s character billboards: %s", host.name, tostring(err))
   registerOptionsRows()
+end
+
+-- NAMED ANCHORS, the read side (roadmap T1.2).
+--
+-- Deliberately the smallest surface that answers the question an effect asks:
+-- "where is this character's hand right now". Given one of our meshes it
+-- returns the four anchors in CHARACTER space, each with the band it belongs
+-- to; the caller composes them with whatever transform the frame is using, the
+-- same one the draw wrap applies to that band.
+--
+-- Not a public API yet. The roadmap is explicit that a presentation API waits
+-- for two real consumers, and today there are none: this exists so the gate can
+-- measure the anchors and so T2.3's effects have something to attach to. Kept
+-- as one function on the mod table rather than a namespace for exactly that
+-- reason, and because main.lua's chunk-local budget is a real constraint.
+function mod._anchors(mesh)
+  return meshAnchors[mesh]
 end

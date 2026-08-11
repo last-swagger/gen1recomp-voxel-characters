@@ -57,6 +57,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | item 16 follow-up: life ceiling | this session | `tests/voxel_chars_test.lua` | **landed** | 621/621; ceiling now sweeps 6 life options and reacts to ATTENTION at 3.5 where it did not before |
 | T1.1 lab motion, gate + bridge | this session | `tools/render/host_matrix.lua`, `tests/voxel_chars_test.lua`, `tools/render/main.lua` | **landed** | 625/625; identity host rejected at 74% error; REGUA OK and renders byte-identical with the channel on and off |
 | T1.1 slice 2, preview wired | this session | `tools/render/{main,lab,host_matrix}.lua` | **landed** | `LABPROBE motion=off options=9 moved=false` against `motion=on options=16 moved=true`; REGUA OK |
+| T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
 
 ## Blocked on Kim
 
@@ -610,20 +611,22 @@ not hidden, no gate moved onto the backend. T0.4 is `blocked-on-Kim` (K1). So
 the critical path now runs through Tier 1, and the next items there split
 cleanly:
 
-| Tier 1 item | Blocked by | Can start now |
-|---|---|---|
-| T1.1 lab motion preview | its gate compares against an in-game probe, needs a display | implementation yes, verification no |
-| T1.2 anchors and events | same, plus it touches `main.lua` | implementation yes, verification no |
-| T1.3 audio gate | nothing | **landed** |
-| T1.4 critic context | needs renders | no |
-| T1.5 en-US remainder | only display-validated tool output, the battery banner, and filenames remain | partly |
-| T1.6 release positioning | Kim's eye (K2) | no |
+| Tier 1 item | State |
+|---|---|
+| T1.1 lab motion preview | **landed**, both slices, verified on the MBP |
+| T1.2 anchors and events | **in progress**, the next item |
+| T1.3 audio gate | **landed** |
+| T1.4 critic context | needs renders, and the judge's own data |
+| T1.5 en-US remainder | the battery banner and filenames, both gated on a full battery |
+| T1.6 release positioning | Kim's eye (K2) |
 
-**The honest read after T1.5 slice 3:** remaining Tier 1 work now needs either
-a display or Kim. Writing T1.1 or T1.2 blind is possible and it would mean
-landing visual maths nobody can check, which is the failure this project has
-the most scar tissue about. The remaining en-US work is intentionally tied to
-the full battery or to gates that need LOVE.
+The "needs a display, so verification is impossible" framing that used to sit
+here is gone: the MBP is authorised and has served as the verification host for
+two full batteries, a ruler run and the T1.1 probes.
+
+**Superseded.** That read was written before the MBP was authorised as a
+verification host. Visual maths no longer has to be landed blind: T1.1 was
+implemented and verified there, and T1.2 is being done the same way.
 
 1. **T0.2 measurement: done.** `native-offscreen` renders byte-identically to
    `native` (floor established by running native twice), and it does **not**
@@ -756,6 +759,79 @@ not evidence anyone can re-run.
    reaching for is the offline one above, which does hold. Worth writing down:
    the answer looked like a failure and the setup was the failure.
 
+## T1.2: anchors, measured against a body whose anatomy is ground truth
+
+**The gate came first and failed for the right reason** (`mod._anchors is not
+exposed`), then the anchors were built until it passed.
+
+**Why a synthetic body.** On a real sheet nobody can say where the hand "should"
+be, so a test written against `red.png` would assert whatever the code happened
+to produce. The gate builds a 16x16 character whose anatomy is decided in the
+test: head rows 1-4, torso 5-10, ARMS rows 6-7 sticking out to x=2 and x=13,
+legs 11-15. Every assertion is against that construction rather than against the
+output.
+
+**Four anchors, derived from the vertices the builder actually emitted:** feet
+and head at the extremes with the width that touches them, centre at the mean of
+every vertex so it follows the body's mass rather than the middle of the cell,
+and hand at the furthest reach from the centre line, taken on the front plane so
+it sits on the surface an effect leaves from rather than inside the character's
+own thickness. Each records its BAND, which is the only part identity this mesh
+has, and is what lets an anchor arrive late with the part it names.
+
+**What the gate asserts**, at all four camera rungs, with `MOTION LAG`, `SWAY`,
+`BREATH`, `FOOTFALL`, `ATTENTION` and `PART LAG` all on, an eye standing close
+and the character walking:
+
+1. head and feet land on the body's real extremes, and feet < centre < head;
+2. the hand is at ARM HEIGHT and at the silhouette's edge, both, since a point
+   at arm height in the middle of the torso is not a hand and neither is a point
+   at the edge at hip height;
+3. head and feet are in DIFFERENT bands, or nothing can lag;
+4. the anchors move at all while the body is alive;
+5. head and feet do not move by the SAME amount, which is what proves each is
+   riding its own band's matrix rather than one transform for the whole body.
+
+**Proved the gate has teeth**, four mutations of the real derivation, each
+caught with a message naming the defect:
+
+| Mutation | What the gate said |
+|---|---|
+| head taken from the low end | `head anchor at y=0.0, the body's head is at 14` |
+| hand parked on the centre line | `hand anchor at x=8.0, the hands are at x=2 and x=13` |
+| every anchor forced into one band | `head and feet are in the same band (1), so nothing can lag` |
+| anchors read without undoing the baked rotation | `head anchor at y=6.8, the body's head is at 14` |
+
+**The last one is the bug I actually wrote.** The builder bakes `Rx(correction)`
+into every vertex, which mixes y and z: the head sits at y=14, z=0 as drawn and
+arrives in the vertex array at y=11.06, z=10.57. Reading anchors straight off
+the vertices produced a "head" two thirds down the body and a "hand" at the
+wrong height, and the caller then applied the same rotation a second time. The
+anchors are computed in character space now, by undoing the bake.
+
+**And the three built-in rejection checks are not vacuous**: making the
+"head and feet swapped" fixture a no-op makes its rejection check fail, so it is
+asserting something rather than passing by construction.
+
+**Verified on the MBP**: the full battery, including the ruler and all five
+in-game gates, green with the builder change present. The builder is where this
+landed, so a green offline suite alone would not have been enough.
+
+**Named limits, so nobody assumes more than was built.** Anchors exist for SLAB
+only, which is the default and the mode this game wants; CARVED has its own
+builder and no anchors. `hand` is the furthest reach, not an anatomical hand:
+this mod has no rig, so on a sheet whose arms are tucked in that point is a
+shoulder or a hip. The anchor reports its `reach` so a caller can decide whether
+that is an arm. And `mod._anchors` is not a public API: the roadmap holds a
+presentation API until two real consumers exist, and today there are none.
+
+**Events are NOT in this slice.** The roadmap's list includes "projectile
+fired", which is speculative while no projectile exists, and the useful ones
+(footfall impact, blink closed, attention noticed) are per-INSTANCE rather than
+per-mesh, so they need the draw wrap's instance state and a gate of their own.
+Shipping an event system with no consumer and no measurement is the thing the
+manager's own constraint rules out.
+
 ## The next implementable item
 
 **T1.2, named anchors and animation events.** T1.1 is done, and it leaves T1.2
@@ -773,13 +849,13 @@ tolerance of the part it names, at all four camera rungs.
 the runner's window, which needs a separate macOS user session, a Space or a
 second display.
 
-Why T1.2 before T1.1: anchors are read-only geometry derived from a mesh that
-already exists, so the gate is a driver recording positions through a walk cycle
-with `MOTION LAG`, `ATTENTION` and `PART LAG` on, and checking each anchor stays
-within tolerance of the part it names. T1.1's synthetic host matrix has to
-reproduce what the host builds before it can be trusted at all, which is a
-larger claim to establish. T1.2 also feeds T2.3, since an effect has to
-originate from a hand rather than a bounding-box centre.
+An earlier version of this section argued for doing T1.2 BEFORE T1.1, on the
+grounds that anchors are read-only geometry while the synthetic matrix is a
+larger claim. Kim overruled it and the order he chose turned out to be the right
+one: T1.1's matrix is what lets an anchor be checked while the body is actually
+moving, and without it the anchor gate could only ever have measured a still
+pose. Kept because a reversed call is worth more written down than quietly
+deleted.
 
 The shape of the work, in the order this project does things: build the
 measuring driver first, prove it reports a wrong anchor as wrong, and only then
