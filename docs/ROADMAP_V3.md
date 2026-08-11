@@ -315,8 +315,9 @@ unglamorous on purpose.
 
 ### T0.1 Document what already shipped into the branch
 
-**State:** open. The cheapest item here and the only one that is release
-blocking.
+**State:** LANDED. `tools/options_documented.lua` derives the check from the
+option schema rather than a list, and runs in the fast battery: 18 options, 21
+rows documented. It was the cheapest item here and the only release blocker.
 
 **What changes:** `ATTENTION`, `PART LAG` and `FIRST PERSON` get README rows
 with their levels and defaults; the README's row count and its advertised check
@@ -341,7 +342,11 @@ level. Prove the gate by adding a fake option and confirming it fails.
 
 ### T0.2 Controlled visual runner
 
-**State:** open. First in dependency order, because every visual and audio
+**State:** LANDED for the runner and its measurement; the WINDOW is machine
+configuration and stays open. `native-offscreen` measured a ZERO output delta
+against native, sha256 identical, but macOS clamps the window back on screen, so
+hiding it needs a separate user session, a Space or a second display. First in
+dependency order, because every visual and audio
 prototype below depends on running LOVE repeatedly, and today that means
 flashing windows on the machine somebody is using.
 
@@ -382,8 +387,10 @@ else, and it never blesses a final screenshot or a trailer shot.
 
 ### T0.3 Execution contract and durable state
 
-**State:** open, and the contract itself is [section 9](#9-autonomous-execution-contract)
-of this file. What is open is the state discipline around it.
+**State:** LANDED. `tools/execution_state_gate.lua` reads the required sections
+out of section 9.7 of this file rather than from a list inside itself, and fails
+on a state file that has gone stale. The contract itself is
+[section 9](#9-autonomous-execution-contract).
 
 **What changes:** a loop or overnight run stays recoverable across context
 compaction, a failed command, a remote machine and a handoff, because status,
@@ -451,7 +458,9 @@ which is why they come first.
 
 ### T1.1 The laboratory becomes the decision surface, and it cannot judge motion yet
 
-**State:** open, and this is the correction the earlier plan needs. The lab
+**State:** LANDED, both slices. The lab previews motion through the mod's real
+`Voxel3D.draw` wrap and `HostMatrix.forRung`, and `LABPROBE` reports it without
+anyone watching. This was the correction the earlier plan needed. The lab
 already shows one character, every option that changes the mesh, all 67 sheets,
 a region overlay along the rows where a cut is safe, and it records A/B picks.
 **It is blind to every option that lives in the model matrix**, and it is blind
@@ -525,7 +534,9 @@ Then prove the gate: move an anchor to the wrong band and confirm it fails.
 
 ### T1.3 The audio gate, before any sound exists
 
-**State:** open. There is no audio anywhere in this mod today: a sweep for
+**State:** LANDED, and audio has since arrived on top of it (`T2.3`).
+`tools/audio_gate.sh` was built while there was no audio at all, which was the
+point: the instrument before the thing it judges. When written, a sweep for
 `love.audio`, `newSource` and any sound API across `main.lua` and every tool
 returns nothing. SFX is a new subsystem, not an extension of one.
 
@@ -919,7 +930,9 @@ side by side.
 
 ### T2.3 Character FX and SFX prototype
 
-**State:** open, and it is explicitly a capability demo rather than a combat
+**State:** LANDED, all four slices: visual demo, procedural SFX, the audio
+capture path, and playback from committed WAVs that the gate re-derives byte for
+byte. Explicitly a capability demo rather than a combat
 system. The reference is *The Binding of Isaac*: Ash fires small readable
 effects, a fireball and a lightning bolt.
 
