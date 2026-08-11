@@ -5,3 +5,12 @@
 # carries MBP ssh detail. Neither belongs in a public branch, and both are worth
 # keeping on disk.
 docs/local/
+
+# Python bytecode. tools/render/check.sh imports measure_regions.py to compare
+# two renders, and the import writes a __pycache__ next to it. The parent repo
+# ignores these and this nested one did not, so one .pyc reached a public commit
+# (9fcfc4b) before anybody noticed. It stays in that history on purpose: a
+# force-push to a branch other people may have fetched costs more than a stray
+# compiled file does.
+__pycache__/
+*.pyc
