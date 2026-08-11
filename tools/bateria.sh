@@ -55,6 +55,9 @@
 #      by hand go stale silently: the sprite is the source of truth and a
 #      number in a data file is only a copy of it. Decodes the PNG itself, so
 #      it needs no display;
+#   7i. the character preset format. Every preset in the space round-trips, and
+#      no colour outside the art's measured three-tone ramp is expressible: the
+#      creator cannot manufacture a tone the game has never shown;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -153,6 +156,10 @@ verdict "authored layer" "${PIPESTATUS[0]}"
 passo "7h. authored regions still match the real sprite"
 python3 "$MOD/tools/measure_regions.py" --check red 2>&1 | tail -5
 verdict "authored regions" "${PIPESTATUS[0]}"
+
+passo "7i. a character preset round-trips and stays inside the art's ramp"
+"$LUAJIT" "$MOD/tools/preset_gate.lua" 2>&1 | tail -4
+verdict "preset format" "${PIPESTATUS[0]}"
 
 passo "7e. the battery's verdicts still reach their readers"
 bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9

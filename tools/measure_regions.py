@@ -218,9 +218,50 @@ def declared(sheet):
 CAMPOS = ["top", "bottom", "left", "right", "lightFreeBottom", "footSplit", "bob"]
 
 
+def palette(w, h, px):
+    """Every distinct opaque colour on a sheet, darkest to lightest, with counts.
+
+    The point is not curiosity. T2.2 wants a character creator, and the critic's
+    standing objection is that this art has a coherent two-level tone system
+    which an arbitrary hue picker manufactures tones outside of. Before any
+    preset can be constrained to "something the tone system can absorb", the
+    tone system has to be a measured fact rather than an assumption.
+    """
+    tones = {}
+    for gy in range(h):
+        for x in range(w):
+            o = (gy * w + x) * 4
+            if px[o + 3]:
+                t = (px[o], px[o + 1], px[o + 2])
+                tones[t] = tones.get(t, 0) + 1
+    return sorted(tones.items(), key=lambda kv: sum(kv[0][:3]))
+
+
 def main():
     args = sys.argv[1:]
     modo_check = "--check" in args
+    if "--palette" in args:
+        alvos = [a for a in args if not a.startswith("-")]
+        if not alvos:
+            alvos = sorted(n[:-4] for n in os.listdir(SPRITES)
+                           if n.endswith(".png"))
+        rampas = {}
+        for sheet in alvos:
+            caminho = os.path.join(SPRITES, sheet + ".png")
+            if not os.path.exists(caminho):
+                continue
+            w, h, px = load_png(caminho)
+            tons = palette(w, h, px)
+            chave = tuple(c for c, _ in tons)
+            rampas.setdefault(chave, []).append(sheet)
+        print("distinct tone ramps across %d sheet(s):" % len(alvos))
+        for chave, folhas in sorted(rampas.items(), key=lambda kv: -len(kv[1])):
+            print("  %d sheet(s)  %s" % (len(folhas),
+                  " ".join("#%02x%02x%02x" % c for c in chave)))
+            if len(folhas) <= 6:
+                print("        %s" % " ".join(sorted(folhas)))
+        return 0
+
     alvos = [a for a in args if not a.startswith("-")] or ["red"]
     problemas = 0
 

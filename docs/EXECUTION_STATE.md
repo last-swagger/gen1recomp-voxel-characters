@@ -74,6 +74,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
+| T2.2 slice 1, preset format | this session | `authored/preset.lua`, `tools/preset_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | 67 sheets measured to ONE three-tone ramp; all 255 presets round-trip exactly; 14 refusals; 5 of 5 mutations caught |
 | T2.1 slice 3, regions drive PART LAG | this session | `main.lua`, `tests/voxel_chars_test.lua`, `tools/authored_gate.lua`, `tools/ingame/menu.lua`, `README.md`, `CHANGELOG.md` | **landed** | 643/643; AUTHORED REGIONS OFF by default, one entry point; 5 of 5 runtime mutations caught after two gaps were closed; full battery green on the MBP |
 | T2.1 slice 2, regions measured | this session | `tools/measure_regions.py`, `authored/sheets/red.lua`, `authored/schema.lua`, `tools/authored_gate.lua`, `tools/bateria.sh` | **landed** | 6 frames measured off the real sprite; 20 refusals enforced; 5 of 5 stale-region mutations caught; found the walk bob and the absent bag |
 | T2.1 slice 1, authored layer schema | this session | `authored/**`, `tools/authored_gate.lua`, `tools/render/main.lua`, `docs/DISCLOSURE_DRAFT.md`, `tools/bateria.sh` | **landed** | 11 refusals enforced, 6 of 6 mutations caught, 0 authored pixels shipped; provenance splits three ways; full battery green on the MBP |
@@ -1422,6 +1423,68 @@ typing so the headless gate can exercise the write path.
 
 **Round 4 is still not runnable.** No recorded choice carries a reason yet, and
 the critic that would take the test has already seen round 3's key.
+
+## T2.2 slice 1: the preset format, and the measurement that shaped it
+
+**The measurement came first and it decided the design.**
+`tools/measure_regions.py --palette` over every sheet the game has:
+
+```
+distinct tone ramps across 67 sheet(s):
+  67 sheet(s)  #000000 #555555 #aaaaaa
+```
+
+Sixty-seven sheets, one ramp, three values. Not "mostly" and not "a family of
+similar palettes": the same three bytes on every character, which is what a Game
+Boy four-shade palette looks like once the lightest shade is the transparent
+background.
+
+**That settles the critic's objection, against the obvious design.** Reviewing
+this art the critic argued it has a coherent tone system that an arbitrary hue
+picker manufactures tones outside of. A colour wheel in a creator would do
+exactly that: every colour it can produce except three is outside the system
+every character in the game shares.
+
+So **a preset does not choose colours.** It chooses, per region, WHICH of the
+three existing tones that region uses. Ash's cap can become the tone his shirt
+already is; it cannot become a tone this game has never shown, because the
+format has no way to say so.
+
+**The roadmap's gate is answerable more strongly than it was asked.** It wanted
+palette choices "proven by rendering the extremes rather than by argument",
+which assumes a continuous space worth sampling. The constrained format makes it
+finite: every subset of four regions over three tones is **255 presets**, and
+the gate enumerates and round-trips all of them rather than picking extremes.
+
+**Serialisation is one pasteable line**, `preset1 sheet=red head=3 body=1`,
+because it has to survive a Discord message and being typed back by hand. A
+version prefix comes first so a future format change is recognised rather than
+mis-parsed, which is the failure that makes people abandon a text format. The
+region order is fixed rather than `pairs()`, or the same preset could serialise
+two ways and "the same card byte for byte" would be a promise the format cannot
+keep.
+
+**Two surfaces are refused separately**, because they fail differently: a bad
+TABLE is a programming error, and bad TEXT is what arrives when somebody pastes
+a preset out of a chat window. 14 refusals in total, each with a reason, and a
+positive control on both so the validator cannot pass by refusing everything.
+
+**The ramp in the code is re-measured against the art on every run.** `preset.lua`
+carries the three tones as data so the mod never has to read the player's cache
+to know what a preset means, and a copy can drift; the gate re-runs the palette
+measurement and fails if it has. It also fails if the sheets ever stop sharing
+ONE ramp, because then a preset would mean a different colour depending on who
+wore it, and that needs rethinking rather than patching.
+
+**Mutations, 5 of 5 caught:** accepting a tone index above the ramp, the code
+ramp drifting from the art, serialise abandoning its fixed order, unknown
+regions ignored instead of refused, and the version prefix going unchecked.
+
+**Not done, deliberately:** nothing renders a preset yet, nothing in the mod
+reads one, there is no creator UI and no save data. The roadmap's remaining two
+conditions for this item, the composed character passing the same silhouette and
+provenance checks and the three-way comparison card, need a display and come
+next.
 
 ## T2.1 slice 3: the measured regions now cut PART LAG, behind an OFF switch
 
