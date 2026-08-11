@@ -7198,4 +7198,188 @@ do
   end
 end
 
+-- ===================================================================
+-- T1.2 slice 2: ANIMATION EVENTS, only the ones the mod already knows.
+-- ===================================================================
+--
+-- Three edges, each read off state the draw wrap computes anyway:
+--
+--   footfall            `andado` crossing a multiple of LIFE_CELL, which is
+--                       the instant the cosine pulse peaks at +1
+--   blink_closed/open   `blinkClosedForBase` entering and leaving its 0.12 s
+--                       window; per SHEET, not per instance, because the
+--                       timing is a function of the clock and the sheet name
+--   attention_noticed/lost   `inst.notou` flipping, which is a real hysteresis
+--                       with two different thresholds (34 in, 46 out)
+--
+-- "Projectile fired" is deliberately absent: there is no projectile, so an
+-- event for one would be a promise rather than a measurement.
+--
+-- THE SPAM HAZARD IS REAL AND SPECIFIC. The host draws every character TWICE
+-- per frame from the same call site, because the water reflection goes through
+-- the same function, and with PART LAG on the wrap issues one draw per band.
+-- An event implemented as "whenever the condition holds" would fire up to eight
+-- times for one footstep. So the gate counts, and duplicates are a failure.
+do
+  -- A face with EYES, or blink has nothing to animate: without eye quads
+  -- `meshBlink[mesh]` is never populated and `applyBlinkUv` returns on its
+  -- first line. The first version of this fixture was a single opaque pixel
+  -- and the gate correctly reported that blink never fired.
+  local pixels = {}
+  paintBlinkFace(pixels, 16, 16, 0)
+  local RUNG = 35
+  local angulo = math.rad(RUNG)
+
+  -- Walks the character in a straight line and returns every event, tagged
+  -- with the frame it arrived on and how far the body had walked by then.
+  local function caminha(estado, olhoEm, quadros, passoPx, posDe)
+    passoPx = passoPx or 0.5
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      angulo, nil, nil, nil, nil, true)
+    local mod = loadWith(makeMod(handle, estado))
+    local def = { image = "red.png", frames = 1 }
+    local mesh = modules.SpriteBillboards.mesh(def, 0)
+    if type(mod._animEvents) ~= "function" then return nil end
+    if olhoEm then modules.Voxel3D.eye = olhoEm end
+
+    local recolhidos = {}
+    withDrivenClock(function(setClock)
+      for q = 0, quadros do
+        setClock(q / 60)
+        local px = posDe and posDe(q) or (q * passoPx)
+        local m = HostMatrix.forRung(RUNG)
+        m[4], m[12] = px + 8, 8
+        modules.Voxel3D.drawCalls = {}
+        -- ASK FOR THE MESH EVERY FRAME, which is what the host does: it
+        -- requests one per character per frame and draws what comes back.
+        -- Blink lives on that path, not on the draw path (applyBlinkUv runs in
+        -- the mesh provider), so a driver that built the mesh once and then
+        -- only drew would never see the eye change and would report, wrongly,
+        -- that blink does not fire.
+        mesh = modules.SpriteBillboards.mesh(def, 0)
+        -- TWICE, exactly as the host does: the second call is the water
+        -- reflection, and it must not double any event.
+        modules.Voxel3D.draw(mesh, "tex", m, 6, nil)
+        modules.Voxel3D.draw(mesh, "tex", m, 6, nil)
+        for _, e in ipairs(mod._animEvents() or {}) do
+          recolhidos[#recolhidos + 1] = { kind = e, frame = q, andado = px,
+            dist = olhoEm and math.abs((olhoEm[1] or 0) - (px + 8)) or nil }
+        end
+      end
+    end)
+    return recolhidos, mod
+  end
+
+  local VIVO = { breath = 0.035, sway = 0.45, lag = 1.2, footfall = 0.7,
+                 attention = 1.0, part_lag = 0.16, blink = "on" }
+
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+  local function conta(evs, tipo)
+    local n = 0
+    for _, e in ipairs(evs or {}) do if e.kind == tipo then n = n + 1 end end
+    return n
+  end
+
+  local evs = caminha(VIVO, { 10, 0, 0 }, 240)
+  exige(evs ~= nil, "mod._animEvents is not exposed")
+
+  if evs then
+    -- 1. FOOTFALL lands where the stride says it lands. 240 frames at 0.5 px
+    --    is 120 px, which is seven and a half cells of 16, so seven impacts.
+    local passos = {}
+    for _, e in ipairs(evs) do
+      if e.kind == "footfall" then passos[#passos + 1] = e.andado end
+    end
+    exige(#passos >= 6 and #passos <= 8,
+      "footfall fired %d times over 120 px of walking, expected about 7",
+      #passos)
+    for _, d in ipairs(passos) do
+      local resto = d % 16
+      exige(resto < 1.0 or resto > 15.0,
+        "footfall fired at %.1f px walked, which is %.1f into a 16 px stride "
+        .. "rather than on the step", d, resto)
+    end
+
+    -- 2. NO DUPLICATES within one frame, which is what the doubled draw call
+    --    above is there to catch.
+    local porQuadro = {}
+    for _, e in ipairs(evs) do
+      local chave = e.kind .. "@" .. e.frame
+      porQuadro[chave] = (porQuadro[chave] or 0) + 1
+      exige(porQuadro[chave] == 1,
+        "%s fired %d times on frame %d; the reflection draw is doubling it",
+        e.kind, porQuadro[chave], e.frame)
+    end
+
+    -- 3. BLINK gets its own run: STANDING STILL, because blink does not depend
+    --    on movement, and LONG, because the period is 3 to 6 seconds per sheet
+    --    and the closed window is 0.12 s. Fourteen seconds guarantees at least
+    --    two full cycles whatever the sheet's hash produced.
+    local evsBlink = caminha(VIVO, nil, 840, 0)
+    local fecha = conta(evsBlink, "blink_closed")
+    local abre = conta(evsBlink, "blink_open")
+    exige(fecha >= 2, "blink closed %d times in 14 s, expected at least 2",
+      fecha)
+    exige(math.abs(fecha - abre) <= 1,
+      "blink closed %d times and opened %d; those should pair up", fecha, abre)
+  end
+
+  -- 4. ATTENTION is an edge with REAL HYSTERESIS, and measuring that needs the
+  --    character to APPROACH and then RETREAT.
+  --
+  --    The first version walked AWAY only and compared where it noticed
+  --    against where it lost interest. That measures the outer threshold and
+  --    nothing else: collapsing both thresholds to 40 and 40.001, which is no
+  --    hysteresis at all, sailed straight through it. Found by mutating the mod
+  --    on purpose, and it is the only reason this now measures what it claims.
+  --
+  --    Approaching, it must notice near 34. Retreating, it must hold until 46.
+  --    The distance between the two IS the hysteresis, and it is what stops a
+  --    character sitting on the boundary from twitching in and out.
+  local function idaEVolta(q)
+    return q <= 120 and (60 - q * 0.5) or (-60 + q * 0.5)
+  end
+  local evsAtt = caminha(VIVO, { 8, 0, 8 }, 240, nil, idaEVolta)
+  if evsAtt then
+    local dNotou, dPerdeu = nil, nil
+    for _, e in ipairs(evsAtt) do
+      if e.kind == "attention_noticed" and not dNotou then
+        dNotou = e.dist
+      elseif e.kind == "attention_lost" and dNotou and not dPerdeu then
+        dPerdeu = e.dist
+      end
+    end
+    exige(dNotou ~= nil, "attention never noticed an approaching eye")
+    exige(dPerdeu ~= nil, "attention never let go of an eye walking away")
+    if dNotou and dPerdeu then
+      exige(dNotou < 36,
+        "attention noticed at %.1f away; the inner threshold is 34", dNotou)
+      exige(dPerdeu > 44,
+        "attention let go at %.1f away; the outer threshold is 46", dPerdeu)
+      exige(dPerdeu - dNotou > 8,
+        "attention noticed at %.1f and let go at %.1f, a gap of %.1f. The "
+        .. "thresholds are 34 and 46, so the gap is about 12; near zero means "
+        .. "there is no hysteresis at all",
+        dNotou, dPerdeu, dPerdeu - dNotou)
+    end
+  end
+
+  check(#problemas == 0,
+    "T1.2: animation events fire where the state says they do ("
+    .. (problemas[1] or "ok") .. ")")
+
+  -- 5. AND A WRONG EVENT FAILS. With everything that could fire switched off,
+  --    anything arriving is an event invented by the code rather than read
+  --    from the body.
+  local quieto = caminha({ breath = "off", sway = "off", lag = "off",
+    footfall = "off", attention = "off", part_lag = "off", blink = "off" },
+    nil, 120)
+  check(quieto == nil or #quieto == 0,
+    string.format("T1.2: with every source off, no event fires (%d arrived)",
+      quieto and #quieto or 0))
+end
+
 T.finish("voxel_chars_test")

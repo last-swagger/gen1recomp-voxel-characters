@@ -678,6 +678,35 @@ local meshBlink = setmetatable({}, { __mode = "k" })
 local meshBands = setmetatable({}, { __mode = "k" })
 local REGION_BANDS = 4
 
+-- ANIMATION EVENTS (roadmap T1.2 slice 2), a one-frame mailbox.
+--
+-- Three edges, each read off state the draw wrap already computes: `footfall`
+-- when the stride index advances, `blink_closed` / `blink_open` when the
+-- blink's own window opens and shuts, `attention_noticed` / `attention_lost`
+-- when the hysteresis flips. Nothing is invented for the occasion, which is
+-- the whole constraint: an event nobody can measure is a promise.
+--
+-- WHY A MAILBOX AND NOT A CALLBACK. There is no consumer yet. T2.3's effects
+-- will be the first, and the roadmap holds a public API until two exist, so
+-- this is the smallest thing that can be measured and later thrown away: a
+-- list, emptied every time it is read.
+--
+-- The list is cleared by the READER, not by the writer, because the host draws
+-- each character twice per frame (the water reflection) and PART LAG issues one
+-- draw per band. Clearing on write would mean the last band's silence erased
+-- the first band's footstep.
+local eventosPendentes = {}
+local function eventoNovo(nome)
+  eventosPendentes[#eventosPendentes + 1] = nome
+end
+
+-- Blink needs no state of its own here. `applyBlinkUv` already keeps the
+-- previous value in `meta.closed`, because that early return is what stops the
+-- UV swap from being rewritten every frame, so the transition was already
+-- being detected and only needed naming. It is per SHEET rather than per
+-- instance: the timing is a function of the clock and the sheet's name, so
+-- every character on that sheet blinks together.
+
 -- NAMED ANCHORS (roadmap T1.2), one entry per mesh, weak-keyed like the rest.
 --
 -- Four points on the body, derived from the vertices the builder actually
@@ -1333,6 +1362,14 @@ local function applyBlinkUv(mesh)
   local closed = (optionState.blink or readOption(OPTION_BY_KEY.blink)) == "on"
     and blinkClosedForBase(meta.baseName)
   if meta.closed == closed then return end
+  -- The blink edge was already here: this early return is what stops the UV
+  -- swap from being rewritten every frame, so the line below it runs exactly
+  -- when the eye changes state. The event is that transition, named. Guarded
+  -- against the first call, where `meta.closed` is nil and the eye has not
+  -- changed, it has only been observed for the first time.
+  if meta.closed ~= nil then
+    eventoNovo(closed and "blink_closed" or "blink_open")
+  end
   meta.closed = closed
   for _, quad in ipairs(meta.quads) do
     local rows = closed and quad.closedRows or quad.openRows
@@ -3033,6 +3070,23 @@ local function lifeAdvance(inst, px, py, now, rate)
   -- disappear on its own when the character stops, with no need for an
   -- "is walking?" boolean that would snap on and off.
   inst.andado = (inst.andado or 0) + math.sqrt(dx * dx + dz * dz)
+
+  -- FOOTFALL AS AN EDGE (roadmap T1.2 slice 2).
+  --
+  -- The amplitude already uses `cos(andado / LIFE_CELL * 2pi)`, which peaks at
+  -- +1 once per cell walked. The impact is therefore the moment `andado`
+  -- crosses a multiple of the cell, and that is a STRIDE INDEX changing rather
+  -- than a condition being true: a condition would hold for several frames and
+  -- fire several times for one step.
+  --
+  -- Recorded here, before the band loop and before anything draws, so the
+  -- water reflection's second call and PART LAG's one-call-per-band both see a
+  -- stride index that has already advanced and emit nothing.
+  local passada = math.floor(inst.andado / SHARED.LIFE_CELL)
+  if inst.passada and passada > inst.passada then
+    eventoNovo("footfall")
+  end
+  inst.passada = passada
   local vel = math.sqrt(vx * vx + vz * vz) / LAG_REFERENCE_SPEED
   if vel > 1 then vel = 1 end
   -- Smooths so the amplitude does not flicker when a frame moves 0 px due
@@ -3421,6 +3475,19 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
       local notou = inst.notou
       if not notou and dist < PERTO then notou = true
       elseif notou and dist > LONGE then notou = false end
+      -- ATTENTION AS AN EDGE. `notou` is already a hysteresis with two
+      -- thresholds, so the transition is a genuine event rather than a
+      -- threshold being crossed back and forth on noise.
+      --
+      -- NIL COUNTS AS "HAS NOT NOTICED", which is what the line above already
+      -- assumes: `if not notou and dist < PERTO` treats an unset instance as
+      -- oblivious. Guarding against nil instead would swallow the first
+      -- transition, so a character that is already standing next to the player
+      -- when it first draws would never announce that it noticed. Found by the
+      -- gate, which put the eye right on top of the character.
+      if notou ~= (inst.notou or false) then
+        eventoNovo(notou and "attention_noticed" or "attention_lost")
+      end
       inst.notou = notou
       -- Ease toward 0 or 1 at a fixed rate per second, so the speed of
       -- noticing does not depend on frame rate.
@@ -3842,4 +3909,25 @@ end
 -- reason, and because main.lua's chunk-local budget is a real constraint.
 function mod._anchors(mesh)
   return meshAnchors[mesh]
+end
+
+-- ANIMATION EVENTS, the read side (roadmap T1.2 slice 2).
+--
+-- Returns the edges that arrived since the last read, and empties the mailbox.
+-- Reader-clears rather than writer-clears on purpose: the host draws each
+-- character twice per frame and PART LAG issues one draw per band, so clearing
+-- on write would let the last band's silence erase the first band's footstep.
+--
+-- Not a public API, for the same reason `_anchors` is not: there is no consumer
+-- until T2.3 has an effect to fire, and the roadmap holds a presentation API
+-- until two exist.
+-- Named `_animEvents` and not `_events`: the mod handle already carries an
+-- `events` namespace for the host's own event bus, and the offline suite keeps
+-- registered handlers on `mod._events`. Colliding with either would have been
+-- silent in production and loud only in the suite, which is where it surfaced.
+function mod._animEvents()
+  if #eventosPendentes == 0 then return eventosPendentes end
+  local saida = eventosPendentes
+  eventosPendentes = {}
+  return saida
 end

@@ -58,6 +58,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.1 lab motion, gate + bridge | this session | `tools/render/host_matrix.lua`, `tests/voxel_chars_test.lua`, `tools/render/main.lua` | **landed** | 625/625; identity host rejected at 74% error; REGUA OK and renders byte-identical with the channel on and off |
 | T1.1 slice 2, preview wired | this session | `tools/render/{main,lab,host_matrix}.lua` | **landed** | `LABPROBE motion=off options=9 moved=false` against `motion=on options=16 moved=true`; REGUA OK |
 | T1.2 named anchors | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 629/629; 4 mutations of the derivation each caught; full battery green on the MBP including ruler and in-game |
+| T1.2 slice 2, animation events | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 631/631; 4 mutations caught including a no-hysteresis one the first gate missed; full battery green on the MBP |
 
 ## Blocked on Kim
 
@@ -831,6 +832,67 @@ fired", which is speculative while no projectile exists, and the useful ones
 per-mesh, so they need the draw wrap's instance state and a gate of their own.
 Shipping an event system with no consumer and no measurement is the thing the
 manager's own constraint rules out.
+
+## T1.2 slice 2: three events, and only the three that already existed
+
+**`footfall`, `blink_closed` / `blink_open`, `attention_noticed` / `attention_lost`.**
+Each is an edge on state the mod was already computing, named rather than
+invented:
+
+- footfall is the STRIDE INDEX advancing, `floor(andado / LIFE_CELL)`, which is
+  the instant the amplitude's cosine peaks at +1. A condition would hold for
+  several frames and fire several times for one step;
+- blink needed no new state at all. `applyBlinkUv` already had the transition,
+  because its early return is what stops the UV swap being rewritten every
+  frame. The event is that line, named;
+- attention is `inst.notou` flipping, a real hysteresis with two different
+  thresholds, 34 in and 46 out.
+
+**"Projectile fired" is deliberately absent.** There is no projectile, so an
+event for one would be a promise instead of a measurement. It belongs to T2.3.
+
+**The mailbox is emptied by the READER, not the writer**, because the host draws
+each character twice per frame (the water reflection) and PART LAG issues one
+draw per band. Clearing on write would let the last band's silence erase the
+first band's footstep.
+
+**Four mutations, four catches:**
+
+| Mutation | What the gate said |
+|---|---|
+| footfall as a condition, not an edge | `fired 15 times over 120 px, expected about 7` |
+| the mailbox never emptied | `fired 791 times over 120 px` |
+| blink on every mesh request | `with every source off, no event fires (1 arrived)` |
+| both attention thresholds collapsed to one | `noticed at 39.5 away; the inner threshold is 34` |
+
+**That last one only fails because the gate was rewritten after it passed.**
+The first version walked the character AWAY from the eye and compared where it
+noticed against where it let go. That measures the outer threshold and nothing
+else, so a mod with both thresholds set to 40 sailed through. It now approaches
+AND retreats, and the distance between noticing and letting go IS the
+hysteresis. A gate that cannot tell hysteresis from no hysteresis was worse than
+no gate, and only mutating the mod on purpose exposed it.
+
+**Three defects found on the way, all mine:**
+
+1. **`mod._events` collided with the suite's own field.** The mod handle already
+   carries an `events` namespace and the test harness keeps registered handlers
+   on `mod._events`. Renamed to `mod._animEvents`. It would have been silent in
+   production and was loud only in the suite, which is where it surfaced.
+2. **The driver never asked for the mesh again.** `applyBlinkUv` runs in the
+   MESH PROVIDER, not in the draw wrap, and the host requests a mesh per
+   character per frame. A driver that built once and then only drew could never
+   see the eye change, and reported that blink does not fire.
+3. **Attention swallowed its first transition.** The nil guard meant a character
+   already standing next to the player when it first drew never announced that
+   it noticed. The mod's own logic treats an unset instance as oblivious, so nil
+   had to count as "has not noticed".
+
+**Verified on the MBP**: full battery green, ruler and all five in-game gates,
+with the wrap and the mesh-provider path both touched.
+
+**Scope unchanged**: all three candidate events turned out to be measurable, so
+`ROADMAP_V3.md` needed no correction this time.
 
 ## The next implementable item
 
