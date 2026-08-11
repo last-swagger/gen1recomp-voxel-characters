@@ -51,6 +51,10 @@
 #      mod that quietly starts drawing its own pixels while its README says it
 #      derives everything from your ROM has broken something a gate cannot
 #      repair, so the first slice ships none and this holds it to that;
+#   7h. the authored regions, re-measured off the real sprite. Bounds written
+#      by hand go stale silently: the sprite is the source of truth and a
+#      number in a data file is only a copy of it. Decodes the PNG itself, so
+#      it needs no display;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -145,6 +149,10 @@ verdict "output contract" "${PIPESTATUS[0]}"
 passo "7g. the authored layer ships nothing and cannot lie about it"
 "$LUAJIT" "$MOD/tools/authored_gate.lua" 2>&1 | tail -6
 verdict "authored layer" "${PIPESTATUS[0]}"
+
+passo "7h. authored regions still match the real sprite"
+python3 "$MOD/tools/measure_regions.py" --check red 2>&1 | tail -5
+verdict "authored regions" "${PIPESTATUS[0]}"
 
 passo "7e. the battery's verdicts still reach their readers"
 bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9

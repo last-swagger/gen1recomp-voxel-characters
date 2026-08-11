@@ -74,6 +74,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.4 round 4, exemplar+reason | this session | `tools/juiz/dados/NOTAS_DO_CRITICO.md` | **still cannot be run; blocker was step 1, now built** | protocol written; no result asserted. Needs a calibration session where reasons are typed, plus a critic that has not seen round 3's key |
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
+| T2.1 slice 2, regions measured | this session | `tools/measure_regions.py`, `authored/sheets/red.lua`, `authored/schema.lua`, `tools/authored_gate.lua`, `tools/bateria.sh` | **landed** | 6 frames measured off the real sprite; 20 refusals enforced; 5 of 5 stale-region mutations caught; found the walk bob and the absent bag |
 | T2.1 slice 1, authored layer schema | this session | `authored/**`, `tools/authored_gate.lua`, `tools/render/main.lua`, `docs/DISCLOSURE_DRAFT.md`, `tools/bateria.sh` | **landed** | 11 refusals enforced, 6 of 6 mutations caught, 0 authored pixels shipped; provenance splits three ways; full battery green on the MBP |
 | T1.4 reason field | this session | `tools/render/{reason,lab,main}.lua`, `tools/juiz/reason_gate.{lua,sh}`, `tools/render/check.sh`, `tools/bateria.sh` | **landed** | 171 states / 30 pairs / 30 key lines byte-identical with a hostile reason on every one of the 106 recorded choices; 7 encoder mutations caught; `REGUA OK` on the MBP with the quote/pipe/equals round trip |
 | T1.4 critic context, round 3 | this session | `tools/juiz/dados/*_r3.txt`, `NOTAS_DO_CRITICO.md` | **run, inconclusive; critic NOT approved** | 60.0% against a 53.3% baseline, margin +6.7 inside a +/-12.6 standard error |
@@ -1420,6 +1421,76 @@ typing so the headless gate can exercise the write path.
 
 **Round 4 is still not runnable.** No recorded choice carries a reason yet, and
 the critic that would take the test has already seen round 3's key.
+
+## T2.1 slice 2: Ash's regions are measured, and the numbers have a gate
+
+Slice 1 named the regions and refused to say where they were, because pixel
+bounds written before anything can check them are invented numbers.
+`tools/measure_regions.py` is the thing that can check them. It decodes the PNG
+itself with zlib and the standard library, so it runs offline on every commit as
+battery step 7h; the sprite is the source of truth and a number in a data file
+is only ever a copy of it.
+
+**Two findings came out of measuring, and both are worth more than the numbers.**
+
+**The walking frames sit ONE ROW LOWER than the standing frames.** That is the
+sprite's own bob, and it matters here more than anywhere: `PART LAG` cuts the
+body into bands with `math.floor(y / cellH * REGION_BANDS)`, measured from the
+CELL and not from the figure. Every band boundary therefore lands one row too
+high on every walking frame. This slice does not fix that. It puts a number on
+the exact reason the roadmap wants authored regions at all.
+
+**Ash has no bag, and its absence is a finding rather than an omission.** The
+roadmap's motivating example for this whole item is letting `PART LAG` "cut
+along a bag strap instead" of in equal bands. On this sheet there is no strap to
+cut along: the front and side views show none, and the back views have a
+mid-tone block across the shoulders that could be a pack or could be the back of
+his shirt, with nothing at sixteen pixels square deciding between them. So `bag`
+is not declared. Guessing bounds would put an invented number in the one file
+whose whole purpose is that its numbers are measured, and the narrower claim
+reverses easily: if Kim says the block is a pack, it becomes a region with his
+word recorded as the source.
+
+**What is measured, and the list is short on purpose.** Only facts that follow
+from the pixels without interpreting a shape: the opaque bounding box, the run
+of rows from the top with no light tone in them, the lowest row whose silhouette
+is two separated runs, and the bob. `footSplit` is `nil` on two frames and that
+is a measurement rather than a gap: the side standing pose has both feet
+together and the back walking pose shows one foot.
+
+**One field was renamed for honesty mid-slice.** It began as `capBottom`. From
+the front the light tone is Ash's face, so the rows above it really are the cap
+crown; from behind there is no face, so the same measurement runs down to his
+hands, and frames 1 and 4 report 5 and 6, neither of which is a cap. The field
+is now `lightFreeBottom`, named for what it measures rather than what it means,
+and a separate `hairFrames` list says where it may be read as hair.
+
+**That list had a hole, and the mutation found it.** Claiming the back frame as
+cap passed, because the schema only checked that the frame had been measured at
+all. The discriminator turned out to be measurable rather than a judgement: from
+the front the first light pixels are a FACE and sit in the central half of the
+cell, and from behind they are HANDS at the edges. `capReadable` asks exactly
+that, and claiming frame 1 now fails with the reason.
+
+**The measurement then corrected my own eyeball call.** `hairFrames` was written
+as the two front frames from reading the sprite by hand. The measurement says
+the two SIDE frames resolve too, because the face in profile still lands inside
+the middle. Widened to follow the evidence rather than my first reading.
+
+**Mutations, 5 of 5 caught:** the walk bob hand-edited away, one cap bound nudged
+by a single row, a foot split invented where the feet are together, the whole
+measured block removed, and the back frame claimed as cap. The schema's refusal
+list grew from 11 to 20, every new one a shape a hand edit makes.
+
+**modkit caught something worth keeping.** `red.lua` ships, and it named the
+player's imported sprite cache in a comment; MK301 refuses any shipped Lua that
+points at that tree, and it is right to. The comment now names the tool, which
+is where the path belongs, because the tool does not ship and the data does.
+
+**Nothing changed in the render path.** No runtime integration, no overlay
+pixels, no lab preset, no save data, no gameplay. The authored pixel count is
+still zero and `main.lua` still does not open the directory, so the
+byte-identical guarantee is unchanged and still asserted the same way.
 
 ## T2.1 slice 1: the authored layer exists as a schema and ships no pixels
 

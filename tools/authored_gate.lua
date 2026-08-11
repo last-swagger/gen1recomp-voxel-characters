@@ -67,6 +67,10 @@ for _, caminho in ipairs(nomes) do
 end
 
 exige(folhas.red ~= nil, "no living fixture: authored/sheets/red.lua is missing")
+exige(folhas.red and folhas.red.measured ~= nil,
+  "the living fixture declares no measured block. Slice 2's whole claim is that "
+  .. "these bounds are read off the sprite rather than estimated, and a sheet "
+  .. "with regions and no measurements is the state that claim replaced")
 exige(folhas.poke_ball ~= nil,
   "no object fixture: authored/sheets/poke_ball.lua is missing, and it is the "
   .. "one that stops a rule making an item ball breathe")
@@ -94,6 +98,28 @@ local RECUSAS = {
   { "responsiveness that is not a number",
     { kind = "living", responsiveness = "high" } },
   { "a sheet that is not a table at all", "living" },
+  -- Slice 2: the measured block. Every one of these is a shape a hand edit
+  -- makes, which is the point, because the numbers are supposed to come out of
+  -- tools/measure_regions.py and not out of anybody's head.
+  { "a measurement with a misspelled bound",
+    { kind = "living", measured = { [0] = { tops = 1 } } } },
+  { "a bound that is not a whole row",
+    { kind = "living", measured = { [0] = { top = 1.5 } } } },
+  { "a box whose top is below its bottom",
+    { kind = "living", measured = { [0] = { top = 9, bottom = 2 } } } },
+  { "a box whose left is right of its right",
+    { kind = "living", measured = { [0] = { left = 9, right = 2 } } } },
+  { "a foot split below the figure's last row",
+    { kind = "living", measured = { [0] = { bottom = 15, footSplit = 20 } } } },
+  { "a measured block that is present and empty",
+    { kind = "living", measured = {} } },
+  { "measured keyed by something that is not a frame",
+    { kind = "living", measured = { front = { top = 0 } } } },
+  { "hairFrames without a declared hair region",
+    { kind = "living", measured = { [0] = { top = 0 } }, hairFrames = { 0 } } },
+  { "hairFrames naming a frame that was never measured",
+    { kind = "living", regions = { hair = true },
+      measured = { [0] = { top = 0 } }, hairFrames = { 4 } } },
 }
 for _, caso in ipairs(RECUSAS) do
   local rotulo, folha = caso[1], caso[2]
@@ -109,6 +135,11 @@ for _, caso in ipairs({
   { "a minimal object sheet", { kind = "object" } },
   { "a living sheet with real regions",
     { kind = "living", regions = { head = true, bag = true } } },
+  { "a sheet measured the way the tool writes it",
+    { kind = "living", regions = { hair = true },
+      measured = { [0] = { top = 0, bottom = 15, left = 1, right = 14,
+                           lightFreeBottom = 3, footSplit = 15, bob = 0 } },
+      hairFrames = { 0 } } },
 }) do
   local valido, erros = Schema.validate("control", caso[2])
   exige(valido, "the schema REFUSED %s: %s", caso[1],

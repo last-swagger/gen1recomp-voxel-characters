@@ -42,7 +42,22 @@ M.CAMPOS = {
   responsiveness = { obrigatorio = false, apenas = "living" },
   deformation = { obrigatorio = false, apenas = "living" },
   overlays = { obrigatorio = false },
+  -- Bounds read off the real sprite by tools/measure_regions.py. Not written by
+  -- hand: the gate re-measures and fails on any disagreement, which is what
+  -- makes this file's numbers worth reading.
+  measured = { obrigatorio = false },
+  -- Which frames a light-tone measurement may be read as the cap. Needed
+  -- because the same measurement means the cap from the front and reaches the
+  -- hands from behind, so the frame list is part of the claim.
+  hairFrames = { obrigatorio = false, exige = "hair" },
   note = { obrigatorio = false },
+}
+
+-- Fields a measured frame may carry. An allowlist again, for the same reason:
+-- a misspelled bound that is silently ignored is a bound nobody is checking.
+M.MEDIDAS = {
+  top = true, bottom = true, left = true, right = true,
+  lightFreeBottom = true, footSplit = true, bob = true,
 }
 
 -- Region names, fixed rather than free text. `PART LAG` currently cuts the
@@ -105,6 +120,11 @@ function M.validate(nome, folha)
   -- precedent: poke_ball and boulder are pinned to zero life by hand in
   -- main.lua because a general rule made them pulse.
   for chave, regra in pairs(M.CAMPOS) do
+    if regra.exige and folha[chave] ~= nil
+       and not (folha.regions and folha.regions[regra.exige]) then
+      erro("%s: %s is about the %s region, which this sheet does not declare",
+        nome, chave, regra.exige)
+    end
     if regra.apenas and folha[chave] ~= nil and kind ~= regra.apenas then
       erro("%s: %s is only for a %s sheet, and this one is %s. An object that "
         .. "carries living metadata is one rule away from being animated",
@@ -135,6 +155,69 @@ function M.validate(nome, folha)
           erro("%s: overlay %q is not one of the guiding types. Authored "
             .. "material guides the artist's pixels; it does not replace them",
             nome, tostring(tipo))
+        end
+      end
+    end
+  end
+
+  if folha.measured ~= nil then
+    if type(folha.measured) ~= "table" then
+      erro("%s: measured is not a table", nome)
+    else
+      local n = 0
+      for quadro, m in pairs(folha.measured) do
+        n = n + 1
+        if type(quadro) ~= "number" or quadro < 0 or quadro % 1 ~= 0 then
+          erro("%s: measured is keyed by frame number, got %s",
+            nome, tostring(quadro))
+        elseif type(m) ~= "table" then
+          erro("%s: measured frame %s is not a table", nome, tostring(quadro))
+        else
+          for campo, v in pairs(m) do
+            if not M.MEDIDAS[campo] then
+              erro("%s: frame %s carries unknown measurement %q",
+                nome, tostring(quadro), tostring(campo))
+            elseif type(v) ~= "number" or v % 1 ~= 0 then
+              erro("%s: frame %s %s is %s, and every bound is a whole row or "
+                .. "column", nome, tostring(quadro), campo, tostring(v))
+            end
+          end
+          -- A box has to be a box. This is cheap and it catches the shape of
+          -- error a hand edit makes: a swapped pair, or a bound left behind
+          -- when the other moved.
+          if m.top and m.bottom and m.top > m.bottom then
+            erro("%s: frame %s has top %d below bottom %d",
+              nome, tostring(quadro), m.top, m.bottom)
+          end
+          if m.left and m.right and m.left > m.right then
+            erro("%s: frame %s has left %d right of right %d",
+              nome, tostring(quadro), m.left, m.right)
+          end
+          if m.footSplit and m.bottom and m.footSplit > m.bottom then
+            erro("%s: frame %s splits at row %d, below the figure's last row %d",
+              nome, tostring(quadro), m.footSplit, m.bottom)
+          end
+        end
+      end
+      if n == 0 then
+        erro("%s: measured is present and empty. An empty measurement claims "
+          .. "the sheet was measured and says nothing, which is worse than "
+          .. "leaving it out", nome)
+      end
+    end
+  end
+
+  if folha.hairFrames ~= nil then
+    if not ehLista(folha.hairFrames) then
+      erro("%s: hairFrames is not a list of frame numbers", nome)
+    else
+      for _, q in ipairs(folha.hairFrames) do
+        if type(q) ~= "number" then
+          erro("%s: hairFrames holds %s, which is not a frame number",
+            nome, tostring(q))
+        elseif folha.measured and folha.measured[q] == nil then
+          erro("%s: hairFrames names frame %s, which has no measurement to "
+            .. "read as the cap", nome, tostring(q))
         end
       end
     end

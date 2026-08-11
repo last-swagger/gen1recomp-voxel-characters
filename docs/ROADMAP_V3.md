@@ -783,8 +783,8 @@ Breaking a promise still needs a gate. Every item in this tier answers all five:
 
 ### T2.1 The authored character layer
 
-**State:** slice 1 LANDED, as data and gates only. The architectural door the
-creator and richer FX both walk through, so it comes before either.
+**State:** slices 1 and 2 LANDED, as data and gates only. The architectural door
+the creator and richer FX both walk through, so it comes before either.
 
 **Slice 1, landed:** `authored/schema.lua` with three provenance classes, fixed
 region names, three guiding overlay types and a hard refusal of living metadata
@@ -799,10 +799,25 @@ which is the byte-identical guarantee in its strongest available form. Ash's
 regions are named and deliberately not measured: pixel bounds written before
 anything can check them would be invented numbers.
 
-Four of the five gate conditions below are met by slice 1. The two that are not
-are the two that need Kim: pairwise picks on authored against pure, which cannot
-exist until there is something authored to pick, and A/B clips from the same
-scene, which need the same.
+**Slice 2, landed:** Ash's regions measured off the real sprite by
+`tools/measure_regions.py`, which decodes the PNG with the standard library and
+runs offline as battery step 7h. The declared bounds are its output, and a bound
+that stops matching the sprite fails on the next commit.
+
+Two findings are worth more than the numbers. **The walking frames sit one row
+lower than the standing frames**, and `PART LAG` cuts bands from the CELL rather
+than the figure, so every band boundary lands one row too high on every walking
+frame. That is the exact reason this item exists, now with a number on it. And
+**Ash has no bag**: this item's motivating example was cutting along a bag strap,
+and at sixteen pixels square there is no strap to cut along on the front or side,
+with the back showing a block that could equally be his shirt. `bag` is
+therefore not declared, because a guessed bound in the one file whose purpose is
+measured numbers is worse than an absent region.
+
+Four of the five gate conditions below are met. The two that are not are the two
+that need Kim: pairwise picks on authored against pure, which cannot exist until
+there is something authored to pick, and A/B clips from the same scene, which
+need the same.
 
 **What changes:** the mod gains a second presentation path. Pure runtime
 derivation stays as the default and as the control; an authored path may add
