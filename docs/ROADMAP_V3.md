@@ -981,8 +981,16 @@ capability nobody can see is not a demonstration.
 
 ### T2.4 What comes after `PART LAG` and `ATTENTION`
 
-**State:** open as questions, not as implementation. Both features are built and
-neither should be rebuilt.
+**State:** question 1 is BUILT AND MEASURED, and waiting on Kim's eye by design;
+question 2 is untouched. Both features are built and neither should be rebuilt.
+
+Question 1, "should PART LAG stay a vertical-band effect, or do authored region
+masks buy enough to justify their cost", now has everything except the judgement.
+The masks exist (`T2.1` slice 3), the defect they address was measured, and the
+clip pair is filmed: `psnr within one side 35.27, between the sides 29.65`, so
+the difference is real in motion. The gate for this item says it "may only be
+answered by a clip pair plus a judge pair", and that is exactly what is left:
+Kim looking.
 
 **What changes:** the questions get answered with evidence instead of by
 extension for its own sake.
@@ -1060,6 +1068,17 @@ and FX direction and should not steal time from either.
 
 Do not roadmap these. Each already cost the time to answer once.
 
+**Reviewed after the authored layer landed, and nothing here was overturned.**
+Two came close enough to be worth saying so explicitly. "Trusting an
+uncalibrated visual critic" still stands: round 3 scored 60.0% against a 53.3%
+baseline, inside the noise, and the critic remains out of every loop. And
+"procedural material roughness on the front face" survives the arrival of an
+authored layer, because the objection was never that authored pixels are
+forbidden -- it is that manufacturing tones outside this art's system is
+different art. `T2.2` went the other way and made a preset unable to express a
+colour the game has never shown, which is the same argument applied rather than
+relaxed.
+
 - Voxel grid seams on characters.
 - Weather or wind read from host state, and calling day/night shadow shear
   "wind".
@@ -1086,8 +1105,18 @@ Do not roadmap these. Each already cost the time to answer once.
 These are open axes now, not non-goals. Each needs an explicit argument and the
 five-question gate from tier 2, not permission.
 
-- Shipped character art, especially small authored overlays or masks.
-- Authored region masks.
+- Shipped character art, especially small authored overlays or masks. **Still
+  open.** The authored layer exists and ships **zero pixels**; the first authored
+  texel is a decision nobody has made, and `tools/authored_gate.lua` fails the
+  battery if the count stops being zero, so it cannot happen by accident.
+- Authored region masks. **DONE**, and this is the first of these promises to be
+  spent. `AUTHORED REGIONS` (T2.1 slice 3) lets `PART LAG` cut along measured
+  body regions instead of four equal slices of the cell. It arrived with the
+  argument the five-question gate asks for: the defect was measured
+  (`tools/measure_regions.py` found the walking frames sit a row lower in the
+  cell, so every band boundary lands a row up the body mid-stride), the option is
+  OFF by default with pure runtime as the control, and it ships no artwork. What
+  it has NOT got is Kim's eye on whether it reads better, which is `T2.4`.
 - Procedural or AI-assisted character detail, calibrated against Kim's picks
   rather than against numeric gates. The precedent is not optional reading: an
   AI redraw here satisfied every numeric constraint the project owns and

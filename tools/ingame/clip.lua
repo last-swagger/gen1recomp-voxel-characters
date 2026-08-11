@@ -198,6 +198,39 @@ return function(game)
   -- only the light ones, room to actually finish before anything gets
   -- captured or measured.
   local ESPERA_OPCAO = 75
+
+  -- OPTIONS HELD IDENTICAL ON BOTH SIDES, from VC_CLIP_FIXO.
+  --
+  -- Some options do nothing on their own, which makes a two-sided clip of them
+  -- dishonest by construction. `PART LAG` delays whatever MOTION LAG, SWAY or
+  -- ATTENTION are doing, so with all three off it delays a constant and both
+  -- sides come out the same: the mod's own help text says so. `AUTHORED
+  -- REGIONS` is worse -- it only changes WHERE `PART LAG` cuts, so with PART
+  -- LAG off it is provably a no-op.
+  --
+  -- Without this, filming either one produces two identical halves, and the
+  -- PSNR guard downstream would correctly refuse to publish it. The refusal
+  -- would be right and the reason would be invisible: it looks like the option
+  -- does nothing, when in fact nothing was there for it to act on.
+  --
+  -- These are applied BEFORE the varying option and never changed again, so
+  -- both halves see exactly the same scene apart from the one thing under test.
+  --
+  --   VC_CLIP_FIXO="part_lag=0.16,lag=1.2"
+  local FIXO = os.getenv("VC_CLIP_FIXO") or ""
+  if FIXO ~= "" then
+    for par in FIXO:gmatch("[^,]+") do
+      local k, v = par:match("^%s*([%w_]+)%s*=%s*(.-)%s*$")
+      if not k then
+        log("VC_CLIP_FIXO ilegivel: %s", par)
+        return
+      end
+      opcao(k, tonumber(v) or v)
+      log("fixo nos dois lados: %s=%s", k, tostring(v))
+    end
+    U.wait(ESPERA_OPCAO)
+  end
+
   -- The left side can be a LEVEL, not just the off state.
   if VAL_ESQ ~= "off" then opcao(CHAVE, VAL_ESQ); U.wait(ESPERA_OPCAO) end
 

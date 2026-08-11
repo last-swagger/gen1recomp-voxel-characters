@@ -75,6 +75,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.5 slice 4, banner and verdict contract | this session | `tools/bateria.sh`, `tools/verdict_gate.sh`, `tools/release.sh`, `tools/ingame/monta.sh`, `tools/hooks/pre-commit`, `tools/en_us_scope.txt`, docs | **landed** | full battery green on the MBP, 20/16/16/8/6 in-game; 6 of 6 mutations caught; found release.sh printing 5 of 11 gates |
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
 | T2.1 defect: the ruler could not see the authored layer | this session | `main.lua`, `tools/render/{main,check}.sh`, `tools/render/main.lua` | **fixed** | `authprobe` reported `fs=MISSING`; now `io=FOUND mod=6 frames`, checked by the ruler on every run |
+| T2.4 clip pair, cell against measured bands | this session | `tools/ingame/clip.{lua,sh}` | **built; the ANSWER is Kim's** | `psnr within one side 35.27, between the sides 29.65`, so the difference is real in motion; `VC_CLIP_FIXO` added because PART LAG and AUTHORED REGIONS are unfilmable alone |
 | T2.5 lab randomiser | this session | `tools/randomiza.lua`, `tools/randomiza_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | deterministic from a seed; 4 of 4 real mutations caught, 1 equivalent mutant identified as uncatchable |
 | T2.2 slice 3, the three-panel card | this session | `tools/render/preset_card.sh` | **landed** | original / authored / randomised, all three byte-different; reproducible from a seed |
 | T2.2 slice 2, a preset renders | this session | `tools/render/{main,check}.lua/sh`, `tools/measure_regions.py` | **landed** | `alpha_diff=0 colour_diff=3530`: silhouette identical, colour changed; round-tripped preset renders byte-identical; `head` refused for want of a measured boundary |
@@ -1477,6 +1478,39 @@ half-finished couplings, three of them mine.
 harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
+
+## T2.4: the clip pair exists, and the question is now one Kim can answer
+
+T2.4 asks whether authored region masks buy enough to justify their cost, and
+its gate says plainly that it "may only be answered by a clip pair plus a judge
+pair, never by a numeric gate alone, because both are asking whether something
+reads better rather than whether it changed". So the deliverable here is the
+pair, not the answer.
+
+**The pair is filmed and it passes the publishing guard:**
+
+```
+psnr within one side 35.273274, between the sides 29.650948
+```
+
+The two sides differ from each other MORE than either differs from itself, which
+is what stops a clip of two identical halves being published as a comparison.
+`AUTHORED REGIONS` off against on, same spot, same camera, same frame count,
+with `PART LAG` and `MOTION LAG` held identical on both sides.
+
+**Holding options identical on both sides is new, and some options were
+unfilmable without it.** `PART LAG` delays whatever `MOTION LAG`, `SWAY` or
+`ATTENTION` are doing, so with all three off it delays a constant and both halves
+come out the same — the mod's own help text says as much. `AUTHORED REGIONS` is
+worse: it only changes WHERE `PART LAG` cuts, so with `PART LAG` off it is
+provably a no-op. Filmed alone, either produces two identical halves, and the
+PSNR guard would refuse to publish — correctly, and for a reason invisible from
+the output. It would read as "the option does nothing" when the truth is that
+nothing was there for it to act on. `VC_CLIP_FIXO` fixes that for both.
+
+**What is left on this item is Kim's eye**, and the roadmap wrote it that way on
+purpose. The clip is at `/tmp/vc_t24/authored_regions-off-on-ab.mp4` on the MBP,
+with a GIF beside it.
 
 ## T2.5 the lab randomiser, and T2.2 slice 3: the three-panel card
 

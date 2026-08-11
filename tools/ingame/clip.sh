@@ -16,6 +16,15 @@
 #   VC_MAP=VIRIDIAN_CITY tools/ingame/clip.sh /tmp/clip lag=0.70
 #   VC_CLIP_DEGRAU=primeira tools/ingame/clip.sh /tmp/clip first_person=solid
 #
+# VC_CLIP_FIXO holds other options identical on BOTH sides, which some options
+# need in order to be filmable at all. PART LAG delays what MOTION LAG, SWAY or
+# ATTENTION are doing and delays a constant without them; AUTHORED REGIONS only
+# changes where PART LAG cuts. Filmed alone, either one produces two identical
+# halves and the PSNR guard refuses to publish -- correctly, and for a reason
+# nobody could see from the output.
+#
+#   VC_CLIP_FIXO="part_lag=0.16,lag=1.2" tools/ingame/clip.sh /tmp/c authored_regions=off:on
+#
 # VC_CLIP_DEGRAU picks the host's camera step:
 #   off baixo medio alto empe primeira terceira, or the level number.
 # Without it, clip.lua now pins "alto" rather than leaving it at whatever
