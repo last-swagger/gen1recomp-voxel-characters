@@ -3351,6 +3351,53 @@ local function registerOptionsRows()
     local opt = OPTION_BY_KEY[payload.key]
     if opt then setOption(opt, payload.value) end
   end)
+
+  -- ------------------------------------------------------- the shortcut
+  -- BACKSLASH OPENS THE SUBMENU FROM THE OVERWORLD, so that testing an option
+  -- costs one key instead of START, several DOWNs, A, several more DOWNs, A.
+  -- That is the whole reason it exists: the submenu made the options tidier to
+  -- read and slightly slower to reach, and this pays that back.
+  --
+  -- WHY BACKSLASH. Backtick is the engine's dev console (Game.lua:573). The
+  -- function keys are worse than they look: f1, f2, f5 and f10 are taken, and
+  -- macOS eats most of the rest as media keys before LOVE ever sees them.
+  -- Backslash is bound by nothing here and intercepted by nothing above.
+  --
+  -- WRAPPING `love.keypressed` IS THIS CODEBASE'S OWN PATTERN, not something
+  -- invented here: its test drivers chain the handler the same way
+  -- (tests/drivers/touch_layout_bug633_test.lua:87). There is no input hook to
+  -- use instead -- the engine exposes exactly one hook, `ui.options.rows`.
+  if temTela and type(love) == "table" and not love.__voxelCharactersKeys then
+    local anterior = love.keypressed
+    love.__voxelCharactersKeys = true
+    love.keypressed = function(key, ...)
+      -- ONLY FROM THE OVERWORLD, and this is the guard that matters. Pushing a
+      -- menu on top of a battle, a dialog or another menu is how a debug
+      -- shortcut turns into a corrupted save. If anything at all is already on
+      -- the stack above the overworld, the key is not ours.
+      if key == "\\" then
+        -- THE RETURN VALUE OF THE pcall IS THE POINT, not just whether it
+        -- threw. The first version tested only `ok`, which is true whenever the
+        -- body ran WITHOUT opening anything -- so every backslash anywhere,
+        -- naming a save file included, got swallowed and never reached the
+        -- engine. A shortcut that eats a key it declined to handle is worse
+        -- than no shortcut.
+        local ok, abriu = pcall(function()
+          -- `src.core.Game` is the engine's singleton, the same table main.lua
+          -- holds as a file-local (main.lua:226), so this is the live game and
+          -- not a second copy.
+          local g = require("src.core.Game")
+          if g and g.stack and g.overworld and g.stack:top() == g.overworld then
+            require("src.ui.Screens").push(g, "VoxelCharsMenu")
+            return true
+          end
+          return false
+        end)
+        if ok and abriu then return end
+      end
+      if anterior then return anterior(key, ...) end
+    end
+  end
 end
 
 -- ========================================================================

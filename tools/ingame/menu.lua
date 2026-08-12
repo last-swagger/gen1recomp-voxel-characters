@@ -416,6 +416,49 @@ return function(game)
   veredito("M8", m8ok, detalheM8 ..
     " (mudar a opcao SO PELO MENU tem que mudar a tela)")
 
+  -- ---------------------------------------------------------------- M9
+  -- THE BACKSLASH SHORTCUT, pressed the way a keyboard presses it. U.tap goes
+  -- through `game.input.pressQueue`, the engine's BUTTON abstraction, and the
+  -- shortcut does not live there -- it wraps `love.keypressed`. Tapping would
+  -- have tested nothing and passed.
+  --
+  -- Three claims, and the last two are the ones with teeth:
+  --   1. from the overworld it opens our screen;
+  --   2. from anywhere else it does NOT, because pushing a menu over a battle
+  --      or a dialog is how a debug key corrupts a save;
+  --   3. when it declines, the key still reaches the engine. An early version
+  --      swallowed every backslash in the game, including one typed into a
+  --      name entry field, and nothing above would have noticed.
+  do
+    while topo() ~= game.overworld do U.tap(game, "b"); U.wait(8) end
+    U.wait(12)
+    local antes = topo()
+    love.keypressed("\\")
+    U.wait(12)
+    local abriu = topo() ~= antes and #rows() > 0
+    local dentro = abriu and #rows() or 0
+
+    -- from inside our own screen the shortcut must decline
+    local naPilha = topo()
+    love.keypressed("\\")
+    U.wait(12)
+    local naoEmpilhou = topo() == naPilha
+
+    -- and a declined key still travels: chain a spy onto the handler and check
+    -- that the engine's own would have run.
+    local chegou = false
+    local salvo = love.keypressed
+    love.keypressed = function(k, ...) chegou = true return salvo(k, ...) end
+    love.keypressed("\\")
+    U.wait(4)
+    love.keypressed = salvo
+
+    veredito("M9", abriu and naoEmpilhou and chegou, string.format(
+      "backslash no mundo abriu o submenu (%d rows)=%s | dentro dele nao empilha=%s"
+      .. " | a tecla recusada segue viagem=%s",
+      dentro, tostring(abriu), tostring(naoEmpilhou), tostring(chegou)))
+  end
+
   nota("")
   local todos = true
   for _, v in ipairs(vereditos) do

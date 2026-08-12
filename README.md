@@ -82,6 +82,11 @@ The mod adds ONE entry to the game's own `OPTIONS`, called `CHARACTERS`, and
 everything below lives behind it. On a host too old to register a screen they
 appear on the main list instead, which is where they were before 1.7.0.
 
+From the overworld, **backslash** opens `CHARACTERS` directly, so trying an
+option out costs one key instead of six. It does nothing anywhere else: a
+menu pushed on top of a battle or a dialog is how a shortcut like this one
+corrupts a save.
+
 There are 20 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
 two are read only, and the third is a button rather than a setting.
 
