@@ -148,8 +148,6 @@ return function(game)
     { "top_dome", "TOP DOME" }, { "step_weight", "STEP WEIGHT" },
     { "breath", "BREATH" }, { "sway", "SWAY" }, { "lag", "MOTION LAG" },
     { "footfall", "FOOTFALL" }, { "attention", "ATTENTION" },
-    { "part_lag", "PART LAG" },
-    { "authored_regions", "AUTHORED REGIONS" },
     { "first_person", "FIRST PERSON" },
     { "demo_fx", "DEMO FX" },
   }

@@ -5407,8 +5407,12 @@ do
      "default de FIRST PERSON: CARD, ninguem viu o solido nessa camera ainda")
   -- These stay off: they change the READING of the shape or of the
   -- movement in a way nobody has judged yet.
+  -- PART LAG is NOT in this list any more, and its absence is the point: it is
+  -- held out of the menu entirely, so it has no row and therefore no default to
+  -- read. The absence is asserted directly further down rather than left to a
+  -- nil slipping through here.
   for _, chave in ipairs({ "FRONT SHAPE", "TOP DOME", "STEP WEIGHT", "SWAY",
-                           "MOTION LAG", "FOOTFALL", "ATTENTION", "PART LAG" }) do
+                           "MOTION LAG", "FOOTFALL", "ATTENTION" }) do
     eq(valor[chave], "OFF", "default de " .. chave .. ": OFF")
   end
 end
@@ -5423,8 +5427,9 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 21,
-     "com canal, vinte e uma rows: STATUS, LIFE, CAMERA FIT e as dezoito opcoes")
+  eq(#rows, 19,
+     "com canal, dezenove rows: STATUS, LIFE, CAMERA FIT e as dezesseis opcoes "
+     .. "que shipam")
   eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
   eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
@@ -5435,14 +5440,18 @@ do
   -- behavior, not a row. And that is how the in-game gate's inventory
   -- went stale without anyone noticing.
   eq(rows[17].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
-  eq(rows[18].label, "PART LAG", "PART LAG aparece depois de ATTENTION")
-  -- AUTHORED REGIONS sits next to PART LAG on purpose: it changes nothing on
-  -- its own, it only alters where PART LAG cuts, and an option that refines
-  -- another one belongs beside it in the menu rather than at the end.
-  eq(rows[19].label, "AUTHORED REGIONS",
-     "AUTHORED REGIONS aparece depois de PART LAG, que ela refina")
-  eq(rows[20].label, "FIRST PERSON",
-     "FIRST PERSON aparece depois de AUTHORED REGIONS")
+  -- PART LAG AND AUTHORED REGIONS ARE HELD, so FIRST PERSON follows ATTENTION
+  -- directly. This is the check that OWNS Kim's decision of 2026-08-12: HIGH
+  -- looked wrong to him and LOW was measured as indistinguishable from the
+  -- animation, so neither level ships. Deleting the assertion would have hidden
+  -- the removal; asserting the absence makes it deliberate and reversible.
+  eq(rows[18].label, "FIRST PERSON",
+     "FIRST PERSON vem direto depois de ATTENTION: PART LAG esta held")
+  local presentes = {}
+  for _, r in ipairs(rows) do presentes[r.label] = true end
+  eq(presentes["PART LAG"], nil, "PART LAG nao aparece no menu: esta held")
+  eq(presentes["AUTHORED REGIONS"], nil,
+     "AUTHORED REGIONS nao aparece no menu: ela so refina o PART LAG")
 end
 
 do

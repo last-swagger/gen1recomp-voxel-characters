@@ -34,7 +34,7 @@ passer-by contradicted that.
 
 **Everything else is off until you turn it on**, per the house rule that a visual
 change the community has not seen yet ships off: `SWAY`, `MOTION LAG`,
-`FOOTFALL`, `ATTENTION`, `PART LAG`, `AUTHORED REGIONS` and `DEMO FX` start at
+`FOOTFALL`, `ATTENTION` and `DEMO FX` start at
 `OFF`, and `FIRST PERSON` starts at `CARD`.
 
 `AUTHORED REGIONS` is the first option whose behaviour depends on material that
@@ -191,13 +191,21 @@ behaviour that the tooling found.
   a sixtieth of a second. A positive control runs first, so "zero calls" cannot
   be a broken recorder reporting zero.
 
-- **`AUTHORED REGIONS: OFF / ON` lets `PART LAG` cut along your character's
-  actual body instead of four equal slices of its cell.** It ships no artwork,
-  and the difference it makes was measured rather than guessed: a walking frame
-  of a sprite sits one row lower in its cell than a standing one, so the old
-  rule moved every band boundary a row up the body mid-stride, including the
-  neck line. `ON`, the feet band begins where the legs actually part. `OFF` is
-  the default and is byte-for-byte what 1.6.0 did.
+- **`PART LAG` and `AUTHORED REGIONS` are built and do NOT ship.** They are in
+  the code, they are not in the menu, and the reason is worth stating because it
+  is the only feature this release measured and then withheld.
+
+  `PART LAG` delays the upper body behind the lower one. At `HIGH` it reads as
+  the body coming apart rather than as the head arriving late. At `LOW` it does
+  not clear the clip tool's own guard at all: the two sides of the comparison
+  differ from each other less than one side differs from itself, so the effect
+  is smaller than the animation's own variation. Neither level was worth
+  offering.
+
+  `AUTHORED REGIONS` was the fix for the underlying cause -- the four bands are
+  cut from the cell rather than from the figure, and a walking frame sits a row
+  lower in its cell than a standing one -- and it is held with it, because it
+  exists only to refine where `PART LAG` cuts.
 
 - **A character preset format, for the laboratory.** A look is one line of text
   you can paste into a message and load back: `preset1 sheet=red head=3 body=1`.

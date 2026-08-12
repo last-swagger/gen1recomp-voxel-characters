@@ -382,6 +382,7 @@ local OPTIONS = {
   },
   {
     key = "part_lag",
+    held = true,  -- see registerOptionsRows: does not ship in 1.7.0
     label = "PART LAG",
     -- DECISION: the levels are DELAY, in seconds, between what the feet do and
     -- what the head does. Not amplitude: the shear is already x' = x + k*y, so
@@ -405,6 +406,7 @@ local OPTIONS = {
   },
   {
     key = "authored_regions",
+    held = true,  -- see registerOptionsRows: does not ship in 1.7.0
     label = "AUTHORED REGIONS",
     -- WHAT THIS CHANGES, and it changes nothing on its own: it only alters
     -- WHERE PART LAG cuts. With it off, the body is divided into four equal
@@ -700,6 +702,12 @@ do
       choices = opt.levels,
       default = opt.levels[opt.defaultIndex][2],
       help = opt.help,
+      -- Carried into the schema so the documentation gate can see it. A held
+      -- option is still DEFINED -- the host stores it, the code reads it, the
+      -- tests exercise it -- and only the menu row is withheld. Without this
+      -- field the gate would keep demanding a README row for something a player
+      -- cannot reach.
+      held = opt.held,
     }
   end
   mod.options:define(schema)
@@ -3076,7 +3084,20 @@ local function registerOptionsRows()
         -- menu that offers BREATH on a host without a replaceable
         -- Voxel3D.draw promises what it cannot deliver, and that is
         -- exactly the experience the STATUS row was created to end.
-        if not (LIFE_OPTION_KEYS[opt.key] and not drawPatched) then
+        -- `held` KEEPS AN OPTION OUT OF THE MENU WITHOUT DELETING IT.
+        --
+        -- Kim looked at PART LAG on 2026-08-12 and said HIGH looks bad; LOW was
+        -- then measured and does not clear the clip guard at all -- the sides
+        -- differ from each other LESS than one side differs from itself, so the
+        -- effect is smaller than the animation's own variation. An option whose
+        -- only two levels are "looks wrong" and "invisible" is not a choice, it
+        -- is a trap, so it does not ship.
+        --
+        -- Held rather than deleted, and that is deliberate. The code, the gates
+        -- and the measurements around it are intact and cost a player nothing;
+        -- deleting them would throw away a measured negative, which is a result.
+        -- One word here brings it back.
+        if not opt.held and not (LIFE_OPTION_KEYS[opt.key] and not drawPatched) then
           out[#out + 1] = makeOptionRow(opt)
         end
       end

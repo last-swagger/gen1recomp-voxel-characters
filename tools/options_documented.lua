@@ -231,6 +231,31 @@ end
 for _, row in ipairs(schema) do
   local label, levels, def = row.label, levelLabels(row), defaultLabel(row)
 
+  -- A HELD OPTION MUST NOT BE ADVERTISED. `held` keeps an option out of the
+  -- menu without deleting it, so a player cannot reach it -- and a README row
+  -- for something unreachable is worse than no row: it sends somebody looking
+  -- through the menu for a setting that is not there.
+  --
+  -- Checked in the negative rather than skipped, because "skipped" is how a
+  -- row survives the removal of the thing it documents.
+  if row.held then
+    local anunciado = nil
+    -- readmeRows returns BLOCKS of lines, one per fenced section, so this walks
+    -- two levels. Passing a block to hasWord was the first attempt and it threw
+    -- on a table where a string belonged.
+    for _, bloco in ipairs(readmeRows()) do
+      for _, line in ipairs(bloco) do
+        if hasWord(line, label) then anunciado = line end
+      end
+    end
+    if anunciado then
+      fail("%-13s is HELD out of the menu and README.md still lists it. A row "
+        .. "for a setting a player cannot reach sends them hunting for it",
+        label)
+    end
+    goto continuar
+  end
+
   -- 1. README: the option has a row, listing every level and its default.
   local rowLine
   for _, line in ipairs(block) do
@@ -311,6 +336,8 @@ for _, row in ipairs(schema) do
     fail("CHANGELOG.md has no entry naming %-13s with one of its levels "
       .. "(%s)", label, table.concat(levels, " / "))
   end
+
+  ::continuar::
 end
 
 -- 3. The row count the README states in prose, against the rows it lists.

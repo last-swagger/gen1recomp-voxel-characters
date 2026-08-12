@@ -78,7 +78,7 @@ that fork.
 
 ## What you can turn on
 
-There are 21 rows under `OPTIONS`. The first two are read only, and the third
+There are 19 rows under `OPTIONS`. The first two are read only, and the third
 is a button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
@@ -108,8 +108,6 @@ SWAY           OFF / SUBTLE / NORMAL             default OFF    idle weight shif
 MOTION LAG     OFF / SUBTLE / NORMAL             default OFF    the body arrives after the step
 FOOTFALL       OFF / SUBTLE / NORMAL             default OFF    it compresses on each step
 ATTENTION      OFF / SUBTLE / CLEAR              default OFF    they lean toward you, never turn
-PART LAG       OFF / LOW / HIGH                  default OFF    the head arrives after the body
-AUTHORED REGIONS OFF / ON                       default OFF    PART LAG cuts along measured body parts
 
 FIRST PERSON   CARD / SOLID                      default CARD   solid through the first person blend
 
@@ -141,19 +139,25 @@ world pixel and `CLEAR` is one. `SWAY: NORMAL` is 0.45 for comparison, so
 reads as twitching instead of attention, so there is hysteresis on the way in
 and on the way out.
 
-### PART LAG needs something to delay
+### PART LAG is held back, and the measurements say why
 
-The head and hair arrive late instead of the whole body moving as one rigid
-piece. The levels are the delay in seconds, 0.08 and 0.16: under about 0.05
-nothing is readable at 60 fps, and past about 0.2 the head stops looking
-attached.
+It does not ship in 1.7.0. It is in the code and it is not in the menu, because
+neither of its two levels turned out to be worth offering.
 
-**It does nothing on its own, and the tooling is what caught that.** `PART LAG`
-delays the movement the other options produce, so with `MOTION LAG`, `SWAY` and
-`ATTENTION` all off there is nothing moving to arrive late, and a delayed
-standing pose is the same standing pose. The clip tool refused to publish a
-side-by-side of it for exactly that reason, which is how it was found rather
-than shipped. **Turn on `MOTION LAG`, `SWAY` or `ATTENTION` first.**
+`HIGH` (0.16 s of delay) is visible and looks wrong: the body reads as coming
+apart rather than as the head arriving late. `LOW` (0.08 s) was then measured
+against the clip tool's own guard and does not clear it -- the two sides of the
+comparison differ from each other LESS than one side differs from itself, which
+means the effect is smaller than the animation's own frame-to-frame variation.
+An option whose only choices are "looks wrong" and "cannot be seen" is not a
+choice.
+
+Kept rather than deleted, because a measured negative is a result: the four
+bands are cut from the CELL and not from the figure, and
+`tools/measure_regions.py` found that a walking frame sits one row lower in its
+cell than a standing one. `AUTHORED REGIONS` was built to cut along the figure
+instead, and is held with it, since it exists only to refine where `PART LAG`
+cuts.
 
 ### FIRST PERSON: SOLID is worth its transition, and nothing after it
 
