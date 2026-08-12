@@ -763,7 +763,7 @@ do
   mod.options:define(schema)
 end
 
-local SpriteBillboards, Voxel3D, ImageCache
+local SpriteBillboards, Voxel3D, ImageCache, TerrainAtlas
 local VoxelState, FirstPerson, VoxelScene
 local originalMesh
 local meshes, masks = {}, {}
@@ -1204,23 +1204,70 @@ local function hdDataFor(base)
 end
 
 local hdTexCache = {}
-local function hdTextureFor(base)
+-- The coloured HD texture the forSprite wrap built most recently for a sheet,
+-- by base name. The draw-time swap reads this and never builds: at draw time
+-- the palette the character stands under is not in reach, and guessing one
+-- would put a character in the wrong world's colours.
+local hdPronta = {}
+-- THE PALETTE HAS TO BE BAKED IN, and finding that out cost a day.
+--
+-- In voxel mode a character is NOT coloured by the screen-space shader the flat
+-- game uses -- the 3D canvas never runs through it. The host says so itself
+-- (VoxelScene.lua:347): "the model's texture gets the palette baked in instead
+-- (TerrainAtlas.forSprite)". So the texture the host hands to the draw is
+-- already coloured, pixel by pixel, out of the world palette the character
+-- stands under.
+--
+-- The first version of this loaded `hd/<base>.png` and handed it over RAW. The
+-- sheet is three greys, like every sheet in the game, and the colour lives
+-- nowhere in the file -- so the character rendered in GREY while every NPC
+-- beside it stayed in colour. It read like the extra resolution had broken
+-- something deep, and it had not: the swap was throwing the palette away.
+--
+-- `colors` is nil under RED++/trueColor, where a different bake supplies the
+-- colour and there is nothing here to reproduce; the caller keeps the host's
+-- own texture in that case rather than showing a grey one.
+local function hdTextureFor(base, colors, chave)
   if not base then return nil end
-  local hit = hdTexCache[base]
+  local k = base .. "#" .. tostring(chave or "cru")
+  local hit = hdTexCache[k]
   if hit ~= nil then return hit or nil end
   local tex = nil
   local dados = hdDataFor(base)
   if dados and love.graphics then
-    local ok, t = pcall(love.graphics.newImage, dados)
-    if ok then
+    local ok, t = pcall(function()
+      local fonte = dados
+      if colors then
+        -- Same function the host calls, so our sheet lands on exactly the
+        -- colours the ROM sheet beside it does. Copying the thresholds by hand
+        -- would drift the day the engine changes them.
+        local TR = require("src.render.TileRenderer")
+        local w, h = dados:getDimensions()
+        local saida = love.image.newImageData(w, h)
+        for y = 0, h - 1 do
+          for x = 0, w - 1 do
+            local r, g, b, a = dados:getPixel(x, y)
+            r, g, b, a = TR.recolorSample(r, g, b, a, colors)
+            saida:setPixel(x, y, r, g, b, a)
+          end
+        end
+        fonte = saida
+      end
+      return love.graphics.newImage(fonte)
+    end)
+    if ok and t then
       -- NEAREST, always. The whole point is hard pixels; linear filtering would
       -- blur the tones back into the gradient the sheet was quantised out of.
       pcall(t.setFilter, t, "nearest", "nearest")
       tex = t
     end
   end
-  hdTexCache[base] = tex or false
+  hdTexCache[k] = tex or false
   return tex
+end
+
+local function hdTexturePronta(base)
+  return base and hdPronta[base] or nil
 end
 
 local function maskFor(def)
@@ -3855,9 +3902,15 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   -- this mesh draws it with the sheet it was built from. Putting it after them
   -- would leave the still, the reflection and the fallback paths sampling the
   -- other sheet.
+  -- ONLY WHEN A COLOURED ONE IS ALREADY BUILT. The forSprite wrap below builds
+  -- and caches it against the palette the character stands under; this swap
+  -- cannot know that palette, so it never bakes one itself. If the wrap never
+  -- ran -- an old host, or a colour mode that skips it -- the host's own
+  -- texture stays, and HD simply does not apply. A grey character would be a
+  -- worse answer than no change at all.
   if optionState.hd_sprite == "on" then
     local info = ourMeshes[mesh]
-    local tex = info and info.base and hdTextureFor(info.base)
+    local tex = info and info.base and hdTexturePronta(info.base)
     if tex then texture = tex end
   end
 
@@ -4387,6 +4440,59 @@ local function patch(host)
   patched = true
   registerOptionsRows()
   mod.log:info("patched %s character billboards", host.name)
+
+  -- ----------------------------------------------- the palette for HD SPRITE
+  -- OPTIONAL, like the animation patch below, and for the same reason: it is
+  -- one more piece of host surface, and losing it costs one option rather than
+  -- the mod.
+  --
+  -- This is where the host bakes a character's world palette into its texture
+  -- (VoxelScene.lua:358 and :404), because the 3D canvas never runs through the
+  -- screen-space shader the flat game colours sprites with. Wrapping it HERE,
+  -- rather than swapping the texture at draw time, is what lets an HD sheet be
+  -- coloured at all: this is the one place that knows which palette applies.
+  --
+  -- It also fixes the ghost and the shadow for free -- both call the same
+  -- function -- which a draw-time swap would have had to chase one by one.
+  pcall(function()
+    local okAtlas, atlas = pcall(V.require, "TerrainAtlas")
+    if not (okAtlas and type(atlas) == "table" and atlas.forSprite) then return end
+    if atlas.__voxelCharactersForSprite then return end
+    local anterior = atlas.forSprite
+    atlas.__voxelCharactersForSprite = anterior
+    local ok = pcall(function()
+      atlas.forSprite = function(caminho, colors)
+        if optionState.hd_sprite == "on" then
+          local base = spriteBaseName(caminho)
+          if base and hdDataFor(base) then
+            -- Key by the palette, not just the sheet: one character walks
+            -- through several world palettes in a session and each needs its
+            -- own bake, exactly as the host's own cache does it.
+            local chave = ""
+            if colors then
+              for i = 1, 4 do
+                local c = colors[i]
+                chave = chave .. (c and (c[1] .. "," .. c[2] .. "," .. c[3]) or "-") .. ";"
+              end
+            end
+            local tex = hdTextureFor(base, colors, chave)
+            if tex then
+              hdPronta[base] = tex
+              return tex
+            end
+          end
+        end
+        return anterior(caminho, colors)
+      end
+    end)
+    if not ok then
+      pcall(function() atlas.__voxelCharactersForSprite = nil end)
+      return
+    end
+    TerrainAtlas = atlas
+    mod.log:info("patched %s sprite palette, so HD SPRITE keeps its colours",
+      host.name)
+  end)
 
   -- SECOND PATCH POINT, and it is OPTIONAL on purpose.
   --
