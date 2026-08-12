@@ -123,9 +123,20 @@ return function(game)
   -- (DramaticShapeVoxelMod/main.lua:958), so never cache the array: always
   -- reread it from the state object.
   local function rows() return topo().rows or {} end
+  -- MATCHES A PREFIXED ID *OR* A BARE ONE, and the second half was missing.
+  --
+  -- Rows the mod registers through its own option system arrive namespaced,
+  -- `voxel_characters:status`, so the suffix match found them. The submenu row
+  -- is built by hand inside the hook and carries a bare `voxel_chars_menu`, so
+  -- the old pattern -- which REQUIRED a colon -- missed it, and the gate
+  -- reported the row as absent while it sat in the list at position 35.
+  --
+  -- Diagnosed by dumping the real ids from the running game rather than by
+  -- reading either file, because both looked right.
   local function rowPorId(sufixo)
     for i, r in ipairs(rows()) do
-      if tostring(r.id):match(":" .. sufixo .. "$") then return i, r end
+      local id = tostring(r.id)
+      if id:match(":" .. sufixo .. "$") or id == sufixo then return i, r end
     end
   end
   -- Defensive on purpose: rowPorId returns nil when the menu is closed, and
@@ -139,18 +150,16 @@ return function(game)
   end
 
   -- ---------------------------------------------------------------- M2
+  -- ONE ROW NOW, not nineteen. The mod gathered its options behind a submenu
+  -- on 2026-08-12, so what the shared list must contain is a single entry that
+  -- OPENS ours -- and what it must NOT contain is the nineteen that used to be
+  -- there. Checking the absence matters as much as the presence: rows leaking
+  -- back out is exactly the regression this gate should catch.
+  --
+  -- The rows behind the submenu are covered offline, where they can be counted
+  -- without pushing a screen.
   local ESPERADAS = {
-    { "status", "STATUS" }, { "life", "LIFE" },
-    { "camera_preset", "CAMERA FIT" }, { "depth", "VOXEL CHARS" },
-    { "side_color", "SIDE COLOR" }, { "shape", "SHAPE" },
-    { "ground_shade", "GROUND SHADE" }, { "blink", "BLINK" },
-    { "top_edge", "TOP EDGE" }, { "front_shape", "FRONT SHAPE" },
-    { "top_dome", "TOP DOME" }, { "step_weight", "STEP WEIGHT" },
-    { "breath", "BREATH" }, { "sway", "SWAY" }, { "lag", "MOTION LAG" },
-    { "footfall", "FOOTFALL" }, { "attention", "ATTENTION" },
-    { "hd_sprite", "HD SPRITE" },
-    { "first_person", "FIRST PERSON" },
-    { "demo_fx", "DEMO FX" },
+    { "voxel_chars_menu", "CHARACTERS" },
   }
   local faltando, foraDeOrdem, anterior = {}, {}, 0
   for _, esperada in ipairs(ESPERADAS) do
@@ -181,6 +190,56 @@ return function(game)
     string.format("faltando: [%s] | fora de ordem: [%s] | nao esperadas: [%s]",
       table.concat(faltando, ", "), table.concat(foraDeOrdem, ", "),
       table.concat(extras, ", ")))
+
+  -- ---------------------------------------------------------------- M7
+  -- COEXISTENCE, and it is measured on the SHARED list, before entering our own
+  -- screen. Other mods append rows through the same hook; ours must not have
+  -- eaten or reordered theirs. Since the submenu landed we contribute exactly
+  -- ONE row out there, so this check got sharper rather than weaker: if the
+  -- submenu ever regressed to spilling its rows into the shared list, `nossas`
+  -- would jump and this fails.
+  local outras, nossas = 0, 0
+  for _, r in ipairs(rows()) do
+    local id = tostring(r.id)
+    if id:match("^voxel_characters:") or id == "voxel_chars_menu" then
+      nossas = nossas + 1
+    else
+      outras = outras + 1
+    end
+  end
+  nota("rows: %d nossas, %d de outros (motor e outros mods)", nossas, outras)
+  veredito("M7", nossas == #ESPERADAS and outras > 0, string.format(
+    "esperado %d nossas e pelo menos uma de fora, achei %d e %d",
+    #ESPERADAS, nossas, outras))
+
+  -- ------------------------------------------------------- into the submenu
+  -- EVERYTHING BELOW MEASURES OUR OWN SCREEN, and until the submenu shipped it
+  -- measured the shared one. The move is what makes this necessary: our options
+  -- are no longer reachable from the options list, they are one A press deeper.
+  --
+  -- Written as a function because M8 leaves the menu to take a screenshot and
+  -- has to come back the same way.
+  local function entrarNoSubmenu()
+    local i = rowPorId("voxel_chars_menu")
+    if not i then return nil, "a linha CHARACTERS nao esta na tela de opcoes" end
+    local fora = topo()
+    for _ = 1, #rows() + 2 do
+      if fora.index == i then break end
+      U.tap(game, fora.index < i and "down" or "up"); U.wait(3)
+    end
+    if fora.index ~= i then return nil, "o cursor nao chegou em CHARACTERS" end
+    U.tap(game, "a"); U.wait(15)
+    if topo() == fora then return nil, "A em CHARACTERS nao abriu nada" end
+    if #rows() == 0 then return nil, "o submenu abriu vazio" end
+    return topo()
+  end
+
+  local submenu, porqueNaoSub = entrarNoSubmenu()
+  if not submenu then
+    veredito("M3", false, tostring(porqueNaoSub))
+    return
+  end
+  nota("submenu aberto: %d rows dentro", #rows())
 
   -- ---------------------------------------------------------------- M3
   -- Reachable using only the keyboard. The window shows four rows at a time
@@ -215,7 +274,7 @@ return function(game)
       U.tap(game, "a"); U.wait(8)
       if getmetatable(topo()) ~= OptionsMenu then
         ruins[#ruins + 1] = id .. " fechou o menu"
-        abrirOpcoes()  -- reopens so the following checks stay valid
+        abrirOpcoes(); entrarNoSubmenu()  -- back to OUR screen, not just the outer one
       end
     else
       ruins[#ruins + 1] = id .. " nao alcancavel"
@@ -262,18 +321,6 @@ return function(game)
     "%d rows ciclaram nos dois sentidos e persistiram; problemas: [%s]",
     ciclos, table.concat(quebrados, ", ")))
   veredito("M6", #quebrados == 0, "o ciclo fecha nos dois sentidos")
-
-  -- ---------------------------------------------------------------- M7
-  -- Coexistence. Other mods append rows through the same hook; ours must not
-  -- have eaten or reordered theirs.
-  local outras, nossas = 0, 0
-  for _, r in ipairs(rows()) do
-    if tostring(r.id):match("^voxel_characters:") then nossas = nossas + 1
-    else outras = outras + 1 end
-  end
-  nota("rows: %d nossas, %d de outros (motor e outros mods)", nossas, outras)
-  veredito("M7", nossas == #ESPERADAS and outras > 0, string.format(
-    "esperado %d nossas e pelo menos uma de fora", #ESPERADAS))
 
   -- ---------------------------------------------------------------- M8
   -- Exit the menu the way the player does and check that the change reached the
@@ -353,7 +400,7 @@ return function(game)
   local m8ok, detalheM8 = false, "nao consegui montar a comparacao"
   if porBreath("OFF") == "OFF" then
     local base = medeNoMundo()
-    if abrirOpcoes() and porBreath("STRONG") == "STRONG" then
+    if abrirOpcoes() and entrarNoSubmenu() and porBreath("STRONG") == "STRONG" then
       local ligado = medeNoMundo()
       nota("maior mudanca num periodo inteiro: %d com BREATH OFF, %d com STRONG",
         base, ligado)

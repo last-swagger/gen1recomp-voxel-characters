@@ -3,6 +3,24 @@ love = require("tests.love_stub")
 
 local T = require("tests.harness")
 local check, eq = T.check, T.eq
+
+-- LOOKS THROUGH EVERY WARNING, and the older version of these checks read only
+-- the LAST one. That held while the mod logged at most one warning per load, and
+-- broke the day the submenu added a second (the host with no screen registry).
+-- Two checks went red describing a patch failure that had in fact been logged
+-- correctly, just no longer last -- the assertion was about ORDER without meaning
+-- to be. What these tests actually claim is "the mod said this", so ask that.
+local function avisou(mod, ...)
+  local termos = { ... }
+  for _, linha in ipairs(mod._logs.warn or {}) do
+    local todos = true
+    for _, t in ipairs(termos) do
+      if not linha:find(t, 1, true) then todos = false break end
+    end
+    if todos then return true end
+  end
+  return false
+end
 local Json = require("src.link.Json")
 local MAIN_PATH = os.getenv("VOXEL_CHARS_MAIN")
   or "mods/voxel_characters/main.lua"
@@ -1052,9 +1070,7 @@ do
   end
   local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
   local mod = loadWith(makeMod(handle))
-  check(mod._logs.warn[#mod._logs.warn]
-        and mod._logs.warn[#mod._logs.warn]:find("could not patch", 1, true)
-        and mod._logs.warn[#mod._logs.warn]:find("frozen table", 1, true),
+  check(avisou(mod, "could not patch", "frozen table"),
         "tabela protegida contra escrita: patch() falha e loga a causa")
   eq(statusRowValue(mod), "NO HOST",
      "host com tabela protegida contra escrita produz STATUS: NO HOST")
@@ -1092,9 +1108,7 @@ do
   end
   local handle = { id = "DRAMATIC_SHAPE", version = "1.6.0", exports = { lib = V } }
   local mod = loadWith(makeMod(handle))
-  check(mod._logs.warn[#mod._logs.warn]
-        and mod._logs.warn[#mod._logs.warn]:find("could not patch", 1, true)
-        and mod._logs.warn[#mod._logs.warn]:find("frozen table", 1, true),
+  check(avisou(mod, "could not patch", "frozen table"),
         "escrita parcial: patch() falha e loga a causa")
   eq(statusRowValue(mod), "NO HOST",
      "host com escrita parcial produz STATUS: NO HOST")
@@ -4245,8 +4259,7 @@ do
   modules.SpriteBillboards.mesh = function(def, frame) return { original = true } end
   eq(statusRowValue(mod), "REPLACED",
      "quando outro mod substitui SpriteBillboards.mesh depois de nos, STATUS vira REPLACED")
-  check(mod._logs.warn[#mod._logs.warn]
-        and mod._logs.warn[#mod._logs.warn]:find("replaced", 1, true),
+  check(avisou(mod, "replaced"),
         "REPLACED loga uma vez")
   local warnCount = #mod._logs.warn
   statusRowValue(mod)
@@ -4327,8 +4340,7 @@ do
   end
   eq(statusRowValue(mod), "MASK ERROR",
      "mascara que falha repetidamente vira STATUS de erro")
-  check(mod._logs.warn[#mod._logs.warn]
-        and mod._logs.warn[#mod._logs.warn]:find("mask_failed", 1, true),
+  check(avisou(mod, "mask_failed"),
         "mask_failed loga a mensagem")
   local warnCount = #mod._logs.warn
   modules.SpriteBillboards.mesh(def, 0)
@@ -8257,6 +8269,88 @@ do
 
   check(#problemas == 0,
     "lab: um numero escolhe motivo pronto, e so enquanto o campo esta vazio"
+    .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
+end
+
+-- THE SUBMENU: one row in the shared list, everything else behind it.
+--
+-- Kim asked for this because twenty rows in a menu shared with the game and
+-- every other mod is rude. It has a second failure mode worth gating: the
+-- screen registry is not guaranteed to exist -- the test stub has none, and
+-- neither would an older host -- and reaching for it directly took the WHOLE
+-- MOD down at load time, every option gone, not just the submenu.
+--
+-- So both paths are checked here. With a registry: one row, and the rest behind
+-- it. Without: the rows stay where they always were. A mod that dies because a
+-- nice-to-have menu could not register would punish the player for the engine's
+-- age.
+do
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+
+  local function rowsCom(registry)
+    local pixels = {}
+    pixels[0] = 1
+    local handle = makeVoxelHandle("1.6.0", pixels, 16, 16,
+      nil, nil, nil, nil, nil, true)
+    local m = makeMod(handle)
+    local registrada = nil
+    if registry then
+      m.content = { screens = { register = function(_, id, rec)
+        registrada = { id = id, rec = rec }
+      end } }
+    end
+    local mod = loadWith(m)
+    local rows = {}
+    mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
+    return rows, registrada
+  end
+
+  -- COM registro: uma linha so, e a tela registrada com o id certo.
+  local comRegistro, registrada = rowsCom(true)
+  exige(#comRegistro == 1,
+    "com registro de telas a lista compartilhada deveria ter UMA linha, tem %d",
+    #comRegistro)
+  if comRegistro[1] then
+    exige(comRegistro[1].label == "CHARACTERS",
+      "a linha unica deveria ser CHARACTERS, e %s",
+      tostring(comRegistro[1].label))
+    exige(type(comRegistro[1].activate) == "function",
+      "a linha VOXEL CHARS nao abre nada: sem activate ela e so um rotulo")
+  end
+  exige(registrada and registrada.id == "VoxelCharsMenu",
+    "a tela nao foi registrada, ou foi com outro id: %s",
+    tostring(registrada and registrada.id))
+  if registrada and registrada.rec then
+    exige(type(registrada.rec.new) == "function",
+      "a tela registrada nao tem `new`, entao o motor nao consegue abrir ela")
+  end
+
+  -- SEM registro: cai para a lista antiga, e o mod continua vivo.
+  local semRegistro = rowsCom(false)
+  exige(#semRegistro > 1,
+    "sem registro de telas as opcoes deveriam voltar para a lista, veio %d",
+    #semRegistro)
+  local achou = {}
+  for _, r in ipairs(semRegistro) do achou[r.label] = true end
+  exige(achou["STATUS"], "sem registro, a linha de STATUS sumiu")
+  exige(not achou["CHARACTERS"],
+    "sem registro, a linha que abre a tela nao deveria existir: ela abriria "
+    .. "uma tela que nao foi registrada")
+  -- E o rotulo do submenu nao pode colidir com opcao nenhuma. Colidiu com
+  -- VOXEL CHARS, que e o rotulo do DEPTH, e so este check viu.
+  local rotulos = {}
+  for _, r in ipairs(semRegistro) do
+    exige(not rotulos[r.label], "duas linhas chamadas %s", tostring(r.label))
+    rotulos[r.label] = true
+  end
+  exige(rotulos["VOXEL CHARS"] ~= nil,
+    "VOXEL CHARS sumiu da lista: esse e o rotulo do DEPTH, nao do submenu")
+
+  check(#problemas == 0,
+    "menu: uma linha com submenu, e a lista inteira sem ele"
     .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
 end
 

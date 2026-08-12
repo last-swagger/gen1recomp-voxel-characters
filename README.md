@@ -78,8 +78,12 @@ that fork.
 
 ## What you can turn on
 
-There are 20 rows under `OPTIONS`. The first two are read only, and the third
-is a button rather than a setting.
+The mod adds ONE entry to the game's own `OPTIONS`, called `CHARACTERS`, and
+everything below lives behind it. On a host too old to register a screen they
+appear on the main list instead, which is where they were before 1.7.0.
+
+There are 20 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
+two are read only, and the third is a button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
 and `BREATH`, and both earned it: they were shipped off, people used them, and

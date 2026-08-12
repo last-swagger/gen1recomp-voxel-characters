@@ -33,7 +33,33 @@ local Assets = require("src.render.Assets")
 -- below), never by which id it used or what version it reports. List order
 -- only breaks ties when more than one of these hosts is installed at once;
 -- it is not a ranking of the hosts.
+-- THE HOSTS WE CAN ATTACH TO, in the order we prefer them.
+--
+-- King of Spain, who wrote Dramatic Shape, has left, and the moderators put out
+-- a list of forks in his place. Only one voxel mod should be enabled at a time,
+-- so this order almost never decides anything -- but when two are enabled it
+-- does, and it should prefer the ones with a maintainer.
+--
+-- The version range below is checked and then IGNORED if the API is present: a
+-- fork with an untested version number still attaches, with a warning. That
+-- decision predates this list and is what makes adding a fork a one-entry
+-- change instead of a release.
 local HOSTS = {
+  {
+    -- The performance fork, and the only one of these written for low-power
+    -- handhelds. It keeps billboard characters, which is the thing this mod
+    -- hooks, and its lib carries SpriteBillboards, Voxel3D and VoxelState.
+    --
+    -- Its id is lowercase, unlike the other three. That is not a typo here.
+    --
+    -- What it does NOT have, and this matters to one of our options: no first
+    -- person and no third person, deliberately, as too heavy for the devices it
+    -- targets. FIRST PERSON therefore has nothing to attach to on this host,
+    -- which our capability probe already handles -- the row does not appear.
+    id = "potato_voxel",
+    name = "PotatoVoxel",
+    supported = ">=1.4.0 <2.0.0",
+  },
   {
     id = "BATTLE_ART_VOXEL_FORK",
     name = "Battle Art Voxel Fork",
@@ -3204,38 +3230,118 @@ end
 -- Wilds of Kanto, because without a host the row would not even show up).
 -- Without a host, only the STATUS row (saying NO HOST); with a host,
 -- STATUS on top and the usual rows after, in the same order.
+-- THE ROWS THAT LIVE INSIDE OUR OWN SCREEN.
+--
+-- Split out so both callers build the same list: the submenu shows it, and the
+-- in-game menu gate can still count what a player can reach.
+local function ourRows()
+  local out = {}
+  out[#out + 1] = statusRow()
+  if patched then
+    out[#out + 1] = lifeStatusRow()
+    out[#out + 1] = cameraPresetRow()
+    for _, opt in ipairs(OPTIONS) do
+      -- The three life options only show up when the channel exists. A
+      -- menu that offers BREATH on a host without a replaceable
+      -- Voxel3D.draw promises what it cannot deliver, and that is
+      -- exactly the experience the STATUS row was created to end.
+      -- `held` KEEPS AN OPTION OUT OF THE MENU WITHOUT DELETING IT.
+      --
+      -- Kim looked at PART LAG on 2026-08-12 and said HIGH looks bad; LOW was
+      -- then measured and does not clear the clip guard at all -- the sides
+      -- differ from each other LESS than one side differs from itself, so the
+      -- effect is smaller than the animation's own variation. An option whose
+      -- only two levels are "looks wrong" and "invisible" is not a choice, it
+      -- is a trap, so it does not ship.
+      --
+      -- Held rather than deleted, and that is deliberate. The code, the gates
+      -- and the measurements around it are intact and cost a player nothing;
+      -- deleting them would throw away a measured negative, which is a result.
+      -- One word here brings it back.
+      if not opt.held and not (LIFE_OPTION_KEYS[opt.key] and not drawPatched) then
+        out[#out + 1] = makeOptionRow(opt)
+      end
+    end
+  end
+  return out
+end
+
+-- ONE ROW IN THE SHARED MENU, and everything else behind it.
+--
+-- This mod had grown to twenty rows in a list it shares with the game and with
+-- every other mod. Kim asked for them gathered, and he is right for a second
+-- reason he did not have to give: a submenu is where the host status can be
+-- stated in full, which is the first thing anybody debugging this needs and the
+-- last thing that fits on a shared list.
+--
+-- The pattern is PotatoVoxel's, at its main.lua:1047 -- register a screen, add a
+-- row that pushes it. Borrowed rather than invented because it is already proven
+-- against this engine, and the engine protects it: a mod screen that throws
+-- degrades to the builtin instead of dead-ending the player
+-- (src/ui/Screens.lua:46).
+--
+-- The screen reuses the game's own OptionsMenu and then swaps its row list for
+-- ours. No drawing code, no input handling, and it inherits every future fix to
+-- that menu. `self.rows` is a plain field on the instance (OptionsMenu.lua:539),
+-- which is what makes the swap a two-line screen instead of a UI rewrite.
 local function registerOptionsRows()
   if optionsRegistered then return end
   optionsRegistered = true
+  -- GUARDED, because `mod.content` is not guaranteed to be there. The test
+  -- harness's stub mod has no content registry at all, and neither would an
+  -- older host: reaching for it directly threw at load time and took the whole
+  -- mod down with it -- every option gone, not just the submenu.
+  --
+  -- A mod that dies because its NICE-TO-HAVE menu could not register is a mod
+  -- that punishes the player for the engine's age. Without the registry the
+  -- rows simply stay on the shared list, which is where they were until today.
+  local temTela = false
+  -- BOTH failure paths say something. The first version only logged when the
+  -- register CALL threw, so a missing registry fell through silently and the
+  -- rows quietly stayed on the shared list -- which looks exactly like the
+  -- submenu never being written. The in-game gate caught it; the log did not.
+  if not (mod.content and mod.content.screens and mod.content.screens.register) then
+    mod.log:warn("no screen registry on this host (content=%s screens=%s); "
+      .. "the options stay on the main list",
+      tostring(mod.content ~= nil),
+      tostring(mod.content and mod.content.screens ~= nil))
+  end
+  if mod.content and mod.content.screens and mod.content.screens.register then
+    local ok, porque = pcall(function()
+      mod.content.screens:register("VoxelCharsMenu", {
+        new = function(game)
+          local tela = require("src.ui.OptionsMenu").new(game)
+          tela.rows = ourRows()
+          tela.index = 1
+          return tela
+        end,
+      })
+    end)
+    temTela = ok
+    if not ok then
+      mod.log:warn("could not register the CHARACTERS screen: %s; "
+        .. "the options stay on the main list", tostring(porque))
+    end
+  end
   mod.hooks:wrap("ui.options.rows", function(next, game, rows)
     local out = next(game, rows)
     if type(out) ~= "table" then return out end
-    out[#out + 1] = statusRow()
-    if patched then
-      out[#out + 1] = lifeStatusRow()
-      out[#out + 1] = cameraPresetRow()
-      for _, opt in ipairs(OPTIONS) do
-        -- The three life options only show up when the channel exists. A
-        -- menu that offers BREATH on a host without a replaceable
-        -- Voxel3D.draw promises what it cannot deliver, and that is
-        -- exactly the experience the STATUS row was created to end.
-        -- `held` KEEPS AN OPTION OUT OF THE MENU WITHOUT DELETING IT.
-        --
-        -- Kim looked at PART LAG on 2026-08-12 and said HIGH looks bad; LOW was
-        -- then measured and does not clear the clip guard at all -- the sides
-        -- differ from each other LESS than one side differs from itself, so the
-        -- effect is smaller than the animation's own variation. An option whose
-        -- only two levels are "looks wrong" and "invisible" is not a choice, it
-        -- is a trap, so it does not ship.
-        --
-        -- Held rather than deleted, and that is deliberate. The code, the gates
-        -- and the measurements around it are intact and cost a player nothing;
-        -- deleting them would throw away a measured negative, which is a result.
-        -- One word here brings it back.
-        if not opt.held and not (LIFE_OPTION_KEYS[opt.key] and not drawPatched) then
-          out[#out + 1] = makeOptionRow(opt)
-        end
-      end
+    if temTela then
+      out[#out + 1] = {
+        id = "voxel_chars_menu",
+        -- NOT "VOXEL CHARS": that is already the DEPTH option's label, and two
+        -- rows with the same name in one menu is a puzzle for the player. The
+        -- gate caught the collision, which is the only reason it is not shipping.
+        label = "CHARACTERS",
+        value = function() return statusValue() end,
+        activate = function(g)
+          require("src.ui.Screens").push(g, "VoxelCharsMenu")
+        end,
+      }
+    else
+      -- No screen to open, so the rows go where they always went. One row that
+      -- opens nothing would be worse than twenty that work.
+      for _, r in ipairs(ourRows()) do out[#out + 1] = r end
     end
     return out
   end)
