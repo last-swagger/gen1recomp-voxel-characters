@@ -1481,6 +1481,73 @@ harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
 
+## Kim's report, 2026-08-12: the clip was a bad instrument, and that is worse
+## than the bug it hid
+
+He watched the montage, liked most of it, and said that in the PART LAG part a
+piece of the character seemed to disappear.
+
+**What was ruled out, by measurement.** PART LAG draws the body one band at a
+time through `mesh:setDrawRange`, so a missing piece has one obvious mechanical
+cause: ranges that do not cover every quad. A new check marks every vertex each
+range claims and looks for a hole, an overlap, and a populated band that never
+gets drawn. The bands cover the whole body. Not that.
+
+**What could not be answered at all, and this is the finding.** Every clip
+`clip.sh` produces is encoded `yuv420p` at a scale of **1.14x** — a 560 pixel
+crop into a 640 pixel frame. Chroma is thrown away in 2x2 blocks, and at that
+scale a 2x2 block IS an art pixel. Measured on the frame Kim looked at: **831
+distinct colours** in the character band, in art that has **four**. Refilming at
+CRF 0 still gave 483, which is how it was established that the loss is the
+subsampling and not the bitrate. The palette GIF beside it gave 98.
+
+So the montage was destroying exactly the single-pixel detail these options
+change, in the one artifact used to judge them. **Kim's verdict on all seven
+options rested on an instrument I built and did not check.** His eye was not
+wrong; my ruler was.
+
+**The fix is not the chroma format alone, it is the SCALE.** `flags=neighbor` was
+already there and could do nothing at 1.14x, because every art pixel landed
+across a fractional boundary before the chroma was even touched. Now an integer
+**3x** with `yuv444p`: each art pixel is a 3x3 block and a chroma pair cannot
+straddle two of them. The GIF stays as the fallback for any player that will not
+open 4:4:4.
+
+**Whether the tear is real is still open**, and the honest position is that
+nobody knows yet. The refilm answers it.
+
+## The reason field cost a sentence, so it went unused
+
+Kim ran the calibration session: **21 new choices, and zero reasons.** He said
+why, and it is the right answer: stopping to type a sentence breaks the rhythm
+that makes a session productive at all.
+
+A field that costs a sentence gets used zero times. One that costs a keystroke
+gets used. So `w` now offers five ready-made reasons picked with a digit:
+
+```
+1  reads clearer
+2  more volume, more solid
+3  closer to the original art
+4  the other one looks broken
+5  barely any difference
+```
+
+Those five are the axes this project's own notes keep returning to rather than
+invented categories, and the fifth carries as much as the others: "I could
+barely tell" is a finding, and it is the one no numeric gate can produce.
+
+Typing still works for the pair where none of the five fits. **The digit only
+picks while the field is empty**, and the list is only drawn while it is empty,
+so what is on screen and what the keys do stay the same thing — somebody writing
+"top 2 tones" does not lose their text on the 2. Both halves are gated and
+mutation-tested.
+
+**His 21 choices are worth keeping regardless.** The file is at 127 now and is
+saved to `~/Desktop/voxel_k2/escolhas_127_suas.txt`. The tracked training data
+still holds 106 and was deliberately not overwritten: changing the judge's
+training set is a decision, not a side effect of a session.
+
 ## Four more decisions from Kim, 2026-08-11, and K3 closes
 
 **K3 is resolved: Kim keeps `FRONT SHAPE` and `TOP DOME` as they are.**

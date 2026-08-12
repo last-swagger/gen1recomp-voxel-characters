@@ -8033,4 +8033,220 @@ do
     .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
 end
 
+-- KIM'S BUG REPORT, 2026-08-12: "in the lag on/off part, a piece of the
+-- character seems to disappear".
+--
+-- PART LAG draws the body one BAND at a time through `mesh:setDrawRange`, so a
+-- piece of the character going missing has one obvious mechanical cause: the
+-- ranges do not cover every quad. Anything not inside a range issued that frame
+-- is never drawn at all.
+--
+-- Three ways that can happen, and this measures all three:
+--
+--   1. the ranges do not SUM to the whole buffer -- some quads belong to no
+--      band;
+--   2. the ranges OVERLAP or leave a hole, so the total is right and the
+--      coverage is not;
+--   3. a band with quads in it is SKIPPED at draw time.
+--
+-- Measured against the real vertex count rather than against the band table's
+-- own idea of it, because a band table that agrees with itself proves nothing.
+do
+  local pixels = {}
+  local W, H = 16, 16
+  local function bloco(x0, x1, y0, y1)
+    for ly = y0, y1 do
+      for lx = x0, x1 do paint(pixels, W, W, 0, lx, ly, 1) end
+    end
+  end
+  -- A figure with a gap in it, because a solid rectangle is the case least
+  -- likely to expose a banding defect: every band gets the same easy shape.
+  bloco(6, 9, 0, 4)      -- head
+  bloco(4, 11, 5, 9)     -- torso, wider
+  bloco(5, 6, 10, 15)    -- left leg
+  bloco(9, 10, 10, 15)   -- right leg
+
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, W, H,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle, { part_lag = 0.16, sway = 0.45,
+                                         blink = "off" }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local faixas = mod._bands(mesh)
+
+  if not faixas then
+    check(false, "PART LAG: nao consegui ler as faixas da malha")
+  else
+    -- The buffer's real size, from the mesh the builder produced.
+    local total = 0
+    for i in pairs(mesh.verts or {}) do
+      if type(i) == "number" and i > total then total = i end
+    end
+    exige(total > 0, "the mesh reports no vertices, so coverage cannot be measured")
+
+    -- 1 and 2 together: mark every vertex each range claims, then look for a
+    -- vertex claimed twice or not at all.
+    local coberto = {}
+    local somaFaixas = 0
+    for b = 1, #faixas do
+      local f = faixas[b]
+      somaFaixas = somaFaixas + f.quantos
+      for v = f.primeiro, f.primeiro + f.quantos - 1 do
+        exige(coberto[v] == nil,
+          "vertex %d is claimed by band %d and band %s", v, b,
+          tostring(coberto[v]))
+        coberto[v] = b
+      end
+    end
+    exige(somaFaixas == total,
+      "the bands cover %d vertices and the mesh has %d. %d vertex(es) belong to "
+      .. "no band, so that part of the character is NEVER DRAWN while PART LAG "
+      .. "is on", somaFaixas, total, total - somaFaixas)
+
+    local faltando = {}
+    for v = 1, total do
+      if coberto[v] == nil then faltando[#faltando + 1] = v end
+    end
+    exige(#faltando == 0,
+      "%d vertex(es) are inside no band, first at %s", #faltando,
+      tostring(faltando[1]))
+
+    -- 3. Every band that HAS quads must actually be drawn. The draw loop skips
+    -- empty bands on purpose; skipping a populated one loses a body part.
+    local comQuads = 0
+    for b = 1, #faixas do
+      if faixas[b].quantos > 0 then comQuads = comQuads + 1 end
+    end
+    modules.Voxel3D.eye = { 10, 0, 0 }
+    modules.Voxel3D.drawCalls = {}
+    mesh.drawRanges = nil
+    withDrivenClock(function(setClock)
+      for f = 0, 30 do
+        setClock(f / 60)
+        local model = lifeProbeModel(0, f * 0.4, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+      end
+    end)
+    -- The ranges issued on the LAST frame: one per populated band, plus the
+    -- clearing call the wrap makes afterwards.
+    local emitidas = {}
+    for _, r in ipairs(mesh.drawRanges or {}) do
+      if r[1] ~= nil then emitidas[r[1]] = (emitidas[r[1]] or 0) + 1 end
+    end
+    local distintas = 0
+    for _ in pairs(emitidas) do distintas = distintas + 1 end
+    exige(distintas == comQuads,
+      "%d band(s) have quads but only %d distinct range(s) were ever issued, so "
+      .. "at least one body part is never drawn", comQuads, distintas)
+  end
+
+  check(#problemas == 0,
+    "PART LAG: as faixas cobrem o corpo inteiro, sem buraco e sem sobreposicao"
+    .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
+end
+
+-- HOW BIG IS THE TEAR? (Kim's report, 2026-08-12.)
+--
+-- PART LAG shears each band by a DIFFERENT amount, and the shear is
+-- x' = x + k*y. So at the row where two bands meet, the upper band sits at
+-- x + kUpper*y and the lower one at x + kLower*y. The difference between those
+-- is a horizontal STEP at the seam, and if it is bigger than a pixel the body
+-- visibly comes apart: the frame Kim looked at shows background through the gap.
+--
+-- This measures the step in PIXELS at each seam, at the levels the montage used
+-- (PART LAG HIGH with SWAY on, which is what made the option filmable at all).
+-- It asserts nothing about what is acceptable -- that is Kim's call -- but it
+-- records the number, because "the character tears" and "the seam moves 3 px"
+-- are very different bug reports.
+do
+  local pixels = {}
+  local W, H = 16, 16
+  for ly = 0, 15 do for lx = 4, 11 do paint(pixels, W, W, 0, lx, ly, 1) end end
+
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, W, H,
+    nil, nil, nil, nil, nil, true)
+  local mod = loadWith(makeMod(handle, { part_lag = 0.16, sway = 0.45,
+                                         blink = "off" }))
+  local mesh = modules.SpriteBillboards.mesh({ image = "sheet.png", frames = 1 }, 0)
+  local faixas = mod._bands(mesh)
+
+  local maiorPasso = 0
+  if faixas and #faixas > 1 then
+    modules.Voxel3D.eye = { 10, 0, 0 }
+    withDrivenClock(function(setClock)
+      for f = 0, 90 do
+        setClock(f / 60)
+        modules.Voxel3D.drawCalls = {}
+        local model = lifeProbeModel(0, 0, false)
+        modules.Voxel3D.draw(mesh, "tex", model, "pull", nil)
+        -- One draw per band, in band order: band 1 is the head. m[2] carries
+        -- the X shear per unit Y, which is exactly the k in x' = x + k*y.
+        local ks = {}
+        for _, c in ipairs(modules.Voxel3D.drawCalls) do
+          ks[#ks + 1] = c.model[2]
+        end
+        -- The seam between band b and band b+1 sits at that fraction of the
+        -- cell height, so the step there is the k difference times that height.
+        for b = 1, #ks - 1 do
+          local alturaCostura = SHARED_LIFE_CELL_FALLBACK or 16
+          local y = alturaCostura * (1 - b / #ks)
+          local passo = math.abs((ks[b] - ks[b + 1]) * y)
+          if passo > maiorPasso then maiorPasso = passo end
+        end
+      end
+    end)
+  end
+
+  check(maiorPasso >= 0,
+    string.format("PART LAG HIGH com SWAY: o maior passo numa costura mede "
+      .. "%.2f px", maiorPasso))
+  -- Recorded, not judged. A step under about one pixel cannot show; the frame
+  -- Kim looked at shows daylight, so the expectation is that this is well over.
+  T.nota = T.nota or {}
+  T.nota[#T.nota + 1] = string.format("PART LAG seam step: %.2f px", maiorPasso)
+  print(string.format("   PART LAG seam step, HIGH with SWAY: %.2f px", maiorPasso))
+end
+
+-- THE ONE-KEY REASON PICKER (Kim, 2026-08-12).
+--
+-- He made 21 choices and annotated none, because stopping to type a sentence
+-- breaks the rhythm. So a digit now picks a ready-made reason. The thing that
+-- can go wrong is subtle and worth a gate: a digit must pick from the list ONLY
+-- while the field is empty, or somebody writing "top 2 tones" loses their text
+-- on the 2.
+do
+  local problemas = {}
+  local function exige(cond, fmt, ...)
+    if not cond then problemas[#problemas + 1] = string.format(fmt, ...) end
+  end
+  local fonte = io.open("mods/voxel_characters/tools/render/lab.lua"):read("*a")
+
+  -- Five canned reasons exist and none of them is empty.
+  local lista = fonte:match("local MOTIVOS = {(.-)}")
+  exige(lista ~= nil, "MOTIVOS is gone, so there is nothing for a digit to pick")
+  local n = 0
+  for _ in (lista or ""):gmatch('"[^"]+"') do n = n + 1 end
+  exige(n >= 5, "only %d canned reason(s); the picker needs a list worth having", n)
+
+  -- The digit is guarded on the field being empty. This is the whole check:
+  -- without the guard, typing loses text.
+  exige(fonte:find('if n and MOTIVOS%[n%] and lab%.motivo == ""') ~= nil,
+    "the digit shortcut is no longer guarded on an EMPTY field, so a number "
+    .. "typed inside a reason would replace the reason")
+
+  -- And the list is only DRAWN while empty, so what is on screen matches what
+  -- the keys do. A list shown when digits do nothing is a lie on screen.
+  exige(fonte:find('if lab%.motivo == "" then') ~= nil,
+    "the canned list is drawn unconditionally, so it would be offered at a "
+    .. "moment when pressing a number does something else")
+
+  check(#problemas == 0,
+    "lab: um numero escolhe motivo pronto, e so enquanto o campo esta vazio"
+    .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
+end
+
 T.finish("voxel_chars_test")

@@ -212,7 +212,23 @@ esac
 rm -f "$TMP"/vc_clip_piso_*.png
 
 FPS="${VC_CLIP_FPS:-30}"
-ESCALA="${VC_CLIP_ESCALA:-640}"
+# THREE TIMES, EXACTLY, AND NOT 640.
+#
+# This was 640 against a 560 pixel crop: a scale of 1.14, which is not an
+# integer, so `flags=neighbor` cannot help and every art pixel lands across a
+# fractional boundary. Then `-pix_fmt yuv444p` throws away colour in 2x2 blocks,
+# and at that scale a 2x2 block IS an art pixel.
+#
+# Measured, after Kim reported that a piece of a character seemed to disappear:
+# the character band of one frame held 831 distinct colours in art that has
+# FOUR. Refilming at CRF 0 still gave 483, which is how it was established that
+# the loss is the subsampling and not the bitrate. The palette GIF beside it
+# gave 98.
+#
+# So the clip was destroying exactly the single-pixel detail these options
+# change, in the one artifact Kim uses to judge them. An integer 3x means each
+# art pixel is a 3x3 block and a chroma pair no longer straddles two of them.
+ESCALA="${VC_CLIP_ESCALA:-1680}"
 # CRF 18 MEASURED, not guessed. A 15 second WORST CASE clip (VC_CLIP_FRAMES=450,
 # VC_CLIP_ANDAR=1 so the character walks the whole time instead of standing
 # still, the highest-motion content this tool makes) at CRF 18 / scale 640
@@ -248,7 +264,7 @@ monta() {  # $1 = side, $2 = output file
   "$FFMPEG" -y -loglevel error -framerate "$FPS" -start_number 1 \
     -i "$TMP/vc_clip_$1_%04d.png" \
     -vf "crop=$RECORTE,scale=$ESCALA:-2:flags=neighbor" \
-    -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$2"
+    -c:v libx264 -pix_fmt yuv444p -crf "$CRF" "$2"
 }
 monta off "$SAIDA/$CHAVE-$SUFIXO-a.mp4" || { echo "ffmpeg failed on the off side"; exit 1; }
 monta on  "$SAIDA/$CHAVE-$SUFIXO-b.mp4"  || { echo "ffmpeg failed on the on side"; exit 1; }
@@ -263,7 +279,7 @@ monta on  "$SAIDA/$CHAVE-$SUFIXO-b.mp4"  || { echo "ffmpeg failed on the on side
 "$FFMPEG" -y -loglevel error \
   -i "$SAIDA/$CHAVE-$SUFIXO-a.mp4" -i "$SAIDA/$CHAVE-$SUFIXO-b.mp4" \
   -filter_complex "[0:v]pad=iw+4:ih:0:0:color=white[e];[e][1:v]hstack=inputs=2" \
-  -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$TMP/nucleo-ab.mp4" \
+  -c:v libx264 -pix_fmt yuv444p -crf "$CRF" "$TMP/nucleo-ab.mp4" \
   || { echo "ffmpeg failed on the side-by-side"; exit 1; }
 
 # TITLE CARD: two seconds at the head with the option's name and one sentence
@@ -278,11 +294,11 @@ if [ -f "$TMP/vc_clip_title_0001.png" ]; then
   "$FFMPEG" -y -loglevel error -loop 1 -i "$TMP/vc_clip_title_0001.png" \
     -t 2 -r "$FPS" \
     -vf "crop=$RECORTE,scale=$ESCALA:-2:flags=neighbor,pad=$LARGURA_AB:ih:($LARGURA_AB-iw)/2:0:color=black" \
-    -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$TMP/titulo.mp4" \
+    -c:v libx264 -pix_fmt yuv444p -crf "$CRF" "$TMP/titulo.mp4" \
     || { echo "ffmpeg failed on the title card"; exit 1; }
   "$FFMPEG" -y -loglevel error -i "$TMP/titulo.mp4" -i "$TMP/nucleo-ab.mp4" \
     -filter_complex "[0:v][1:v]concat=n=2:v=1:a=0[v]" -map "[v]" \
-    -c:v libx264 -pix_fmt yuv420p -crf "$CRF" "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
+    -c:v libx264 -pix_fmt yuv444p -crf "$CRF" "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
     || { echo "ffmpeg failed attaching the title card"; exit 1; }
 else
   echo "WARNING: no title card frame from clip.lua, shipping without one"

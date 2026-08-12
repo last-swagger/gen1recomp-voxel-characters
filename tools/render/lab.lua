@@ -12,6 +12,29 @@ local ctx
 
 local Reason = require("reason")
 
+-- READY-MADE REASONS, PICKED WITH ONE KEY (Kim, 2026-08-12).
+--
+-- The first version asked him to type. He made 21 choices and annotated none of
+-- them, and the reason he gave was the honest one: stopping to write a sentence
+-- breaks the rhythm that makes a session productive at all. A field that costs a
+-- sentence gets used zero times; one that costs a keystroke gets used.
+--
+-- These five are the axes this project's own notes keep returning to, not
+-- invented categories: legibility, volume, faithfulness to the source art, one
+-- side being visibly broken, and the difference being too small to matter. That
+-- last one is worth as much as the others -- "I could barely tell" is a finding,
+-- and it is the one a numeric gate can never produce.
+--
+-- Typing still works, for the pair where none of the five fits. The list is the
+-- fast path and not a replacement.
+local MOTIVOS = {
+  "reads clearer",
+  "more volume, more solid",
+  "closer to the original art",
+  "the other one looks broken",
+  "barely any difference",
+}
+
 function Lab.init(c) ctx = c end
 
 --------------------------------------------------------------------------
@@ -650,6 +673,15 @@ function love.labkeys(key)
   -- letter would also fire the command it is bound to and the pair would
   -- rebuild underneath the sentence being written about it.
   if lab.digitando then
+    -- A digit picks from the list and closes, but ONLY while the field is
+    -- empty. Once there is typed text a digit is part of it: somebody writing
+    -- "top 2 tones" should not have the field replaced on the 2.
+    local n = tonumber(key)
+    if n and MOTIVOS[n] and lab.motivo == "" then
+      lab.motivo = MOTIVOS[n]
+      lab.digitando = false
+      return
+    end
     if key == "return" or key == "kpenter" then lab.digitando = false
     elseif key == "escape" then lab.digitando = false; lab.motivo = ""
     elseif key == "backspace" then
@@ -860,9 +892,22 @@ local function labDrawAB()
   if lab.digitando then
     labTexto(AX, GY + S + 46, "motivo: " .. lab.motivo .. "_",
       { 1, 0.9, 0.55, 1 })
-    labTexto(AX, GY + S + 68,
-      "enter guarda, escape descarta; o motivo vai na proxima escolha",
-      { 0.45, 0.48, 0.53, 1 })
+    if lab.motivo == "" then
+      -- The list only shows while the field is empty, which is also the only
+      -- time a digit picks from it. What is on screen and what the keys do stay
+      -- the same thing.
+      for i, m in ipairs(MOTIVOS) do
+        labTexto(AX, GY + S + 68 + (i - 1) * 20,
+          string.format("  %d  %s", i, m), { 0.8, 0.85, 0.7, 1 })
+      end
+      labTexto(AX, GY + S + 68 + #MOTIVOS * 20,
+        "aperte o numero, ou escreva o seu; enter guarda, escape descarta",
+        { 0.45, 0.48, 0.53, 1 })
+    else
+      labTexto(AX, GY + S + 68,
+        "enter guarda, escape descarta; o motivo vai na proxima escolha",
+        { 0.45, 0.48, 0.53, 1 })
+    end
   elseif lab.motivo ~= "" then
     labTexto(AX, GY + S + 46, "motivo guardado: " .. lab.motivo,
       { 0.6, 0.85, 0.6, 1 })
@@ -871,8 +916,8 @@ local function labDrawAB()
       { 0.45, 0.48, 0.53, 1 })
   else
     labTexto(AX, GY + S + 46,
-      "f vira o personagem, 1-4 troca a camera, q/e gira, w escreve o motivo, "
-      .. "t volta ao editor", { 0.45, 0.48, 0.53, 1 })
+      "w  MOTIVO (um numero escolhe)    f vira    1-4 camera    q/e gira    "
+      .. "t editor", { 0.6, 0.85, 0.6, 1 })
   end
 end
 
