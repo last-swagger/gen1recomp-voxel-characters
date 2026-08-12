@@ -1078,9 +1078,52 @@ missing side view is the one view a battle never shows.
 player sees. It stays off the critical path; it is independent of the authored
 and FX direction and should not steal time from either.
 
-### T3.2 Ideas that are refused until a measurement overturns them
+### T3.0 What this project is, in Kim's words
 
-Do not roadmap these. Each already cost the time to answer once.
+Recorded on 2026-08-12, because it changes how every item below is judged and it
+had been getting judged the other way for days.
+
+> *"I see this mod as a prototype and a scientific project, so I do not care
+> about the rules."*
+
+The ecosystem is an **underground RPG Maker**. The tools to hack all of it are
+here. Voxel characters were chosen because they looked like the easiest small
+piece to experiment on, not because characters are the goal — one thing leads to
+the next: characters, then the floor tiles, then onward. Battle, world, other
+Pokémon, other mods are all territory. **The point is that no idea is off the
+table.**
+
+**What that changes.** The promises this document treats as load-bearing —
+"derives everything from your ROM", "a visual change ships off", the refused list
+below — are PRODUCT promises, written for an audience of players. The audience is
+Kim and the purpose is learning. So identity arguments stop being objections:
+"this would stop being your Game Boy in 3D" is a description, not a veto.
+
+Back on the table, explicitly: AI upscaling, hand-drawn higher-resolution art,
+hand-modelled 3D characters, swapping the renderer, supersampling. Each is an
+experiment with a cost, not a line not to cross.
+
+**What does NOT change, and it is in the experiment's favour.** Measurement. The
+AI redraw did not break a rule, it came out WORSE, once, with a number. That
+result stands until somebody measures again — which is the opposite of
+bureaucracy: it is what lets the next attempt be different rather than a repeat.
+
+**And the scarce resource is not ideas, it is Kim's eye.** Only he can say whether
+something looks good. So a gate is not a rule, it is what throws away everything
+that should never reach him, so that what does reach him is worth the look. That
+is the argument for a gate in this project. "The house rule says so" is not.
+
+**Outward-facing actions still need his word:** push, tag, publish, credentials.
+That protects him, not the project's purity.
+
+### T3.2 Ideas already measured once, and what came out
+
+**Reframed on 2026-08-12 from a refusal list into a RESULTS LOG.** See `T3.0`:
+this is a prototype, and a list of forbidden ideas is the wrong instrument for
+one. Nothing here is off the table. What each line buys is that the next attempt
+can be different from the last, instead of rediscovering the same answer.
+
+Do not repeat these blind. Each already cost the time to answer once.
 
 **Reviewed after the authored layer landed, and nothing here was overturned.**
 Two came close enough to be worth saying so explicitly. "Trusting an
