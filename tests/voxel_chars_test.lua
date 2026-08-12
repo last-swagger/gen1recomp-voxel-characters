@@ -5427,8 +5427,8 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 19,
-     "com canal, dezenove rows: STATUS, LIFE, CAMERA FIT e as dezesseis opcoes "
+  eq(#rows, 20,
+     "com canal, vinte rows: STATUS, LIFE, CAMERA FIT e as dezessete opcoes "
      .. "que shipam")
   eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
   eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
@@ -5445,8 +5445,10 @@ do
   -- looked wrong to him and LOW was measured as indistinguishable from the
   -- animation, so neither level ships. Deleting the assertion would have hidden
   -- the removal; asserting the absence makes it deliberate and reversible.
-  eq(rows[18].label, "FIRST PERSON",
-     "FIRST PERSON vem direto depois de ATTENTION: PART LAG esta held")
+  -- HD SPRITE fica onde o PART LAG estava, entre ATTENTION e FIRST PERSON.
+  eq(rows[18].label, "HD SPRITE",
+     "HD SPRITE vem depois de ATTENTION")
+  eq(rows[19].label, "FIRST PERSON", "FIRST PERSON vem depois de HD SPRITE")
   local presentes = {}
   for _, r in ipairs(rows) do presentes[r.label] = true end
   eq(presentes["PART LAG"], nil, "PART LAG nao aparece no menu: esta held")

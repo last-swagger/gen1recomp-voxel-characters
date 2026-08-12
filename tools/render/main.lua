@@ -161,6 +161,12 @@ local opts = {
   -- promise: every pixel is still the player's own ROM art, just recombined, so
   -- provenance stays artist-only and nothing ships.
   parts = "",
+  -- `spriteframes=N` says how many frames a sheet has instead of deriving it
+  -- from `height / 16`. Needed to render a sheet whose cells are not 16 px: the
+  -- mod's own `spriteLayout` is already resolution-agnostic and computes the
+  -- cell from the sheet size and the frame count, so the only thing standing in
+  -- the way was this harness assuming the count.
+  spriteframes = "",
   -- `labregions=1` forces the region-boundary overlay (key `b` in the
   -- laboratory) on at startup, so the gate can screenshot it without a
   -- keypress: labshot runs with love.labkeys disabled (roadmap item 11).
@@ -1100,7 +1106,9 @@ function love.load(argv)
     -- and boulder.png (16x16, one frame) into six 2px ones, which is precisely
     -- the three-frame carve path this mod added in v1.2.0.
     local sw, sh = data:getDimensions()
-    local def = { image = path, frames = math.max(1, math.floor(sh / 16)) }
+    local quadros = tonumber(opts.spriteframes)
+      or math.max(1, math.floor(sh / 16))
+    local def = { image = path, frames = quadros }
     local texture = love.graphics.newImage(data)
     texture:setFilter("nearest", "nearest")
     for _, frame in ipairs(frames) do

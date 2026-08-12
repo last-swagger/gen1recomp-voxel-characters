@@ -405,6 +405,30 @@ local OPTIONS = {
     help = "Delays the upper body behind the lower one, so the head and hair arrive late instead of moving as one rigid piece. Needs MOTION LAG, SWAY or ATTENTION on: it delays their movement, and has nothing to delay on its own.",
   },
   {
+    key = "hd_sprite",
+    label = "HD SPRITE",
+    -- THE EXPERIMENT KIM ASKED FOR (roadmap T3.0). An LLM was given the real
+    -- 16x96 sheet and returned a faithful 26x enlargement: silhouette IoU 0.989
+    -- to 1.000 against the original, four of six frames identical, and only 28
+    -- of 1536 pixels differing in tone once reduced back to 16x16.
+    --
+    -- So it invented no SHAPE. What it did invent is detail INSIDE each original
+    -- pixel: 39% of pixel blocks carry more than one tone internally, up to five
+    -- levels. Reduced to 16x16 that detail vanishes, which is why this option
+    -- exists at 64x384 -- four blocks per original pixel is where it survives.
+    --
+    -- ON reads `hd/<sheet>.png` instead of the player's own sprite, so this is
+    -- the first option that draws pixels the ROM does not contain. That is a
+    -- deliberate experiment and not a slip: see T3.0. Only sheets with a file in
+    -- `hd/` change at all; everyone else is untouched.
+    --
+    -- The cost is real and worth knowing before turning it on: 17024 quads per
+    -- character against 1068, and a town holds about twenty five of them.
+    levels = { { "OFF", "off" }, { "ON", "on" } },
+    defaultIndex = 1,
+    help = "Draws characters from a higher-resolution sheet shipped with the mod, where one exists, instead of from your own game's sprite. An experiment: the extra detail was invented by an LLM, not read from your ROM.",
+  },
+  {
     key = "authored_regions",
     held = true,  -- see registerOptionsRows: does not ship in 1.7.0
     label = "AUTHORED REGIONS",
@@ -508,7 +532,7 @@ end
 -- offering the spikes back.
 local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
   footfall = true, attention = true, part_lag = true, first_person = true,
-  authored_regions = true }
+  authored_regions = true, hd_sprite = true }
 
 -- SIDE COLOR sentinel used by bodyTexelInFrame/blinkBodyTexel (further
 -- below) to decide whether the body search comes into play. It stays as
@@ -1116,16 +1140,91 @@ local function luminance(r, g, b)
   return (r or 0) * 0.2126 + (g or 0) * 0.7152 + (b or 0) * 0.0722
 end
 
+-- THE HD SHEET FOR ONE CHARACTER, or nil (roadmap T3.0 experiment).
+--
+-- Read from `hd/<base>.png` inside the mod, which is why this is the first
+-- option that draws pixels the player's ROM does not contain. Only sheets with a
+-- file there change; every other character keeps coming from the ROM.
+--
+-- Cached both ways: a hit and a miss. A miss has to be cached too, or every
+-- mesh build for every sheet without an HD file costs a filesystem probe.
+local hdCache = {}
+local function hdDataFor(base)
+  if not base then return nil end
+  local hit = hdCache[base]
+  if hit ~= nil then return hit or nil end
+  local dados = nil
+  local caminho = (mod.path or ".") .. "/hd/" .. base .. ".png"
+  if love and love.filesystem and love.filesystem.getInfo
+     and love.filesystem.getInfo(caminho) then
+    local ok, d = pcall(love.image.newImageData, caminho)
+    if ok then dados = d end
+  else
+    -- Same fallback as the authored layer, and for the same measured reason:
+    -- the render harness's game directory is tools/render, so a repo-relative
+    -- path does not resolve there even though it does in the game.
+    local f = io.open(caminho, "rb")
+    if f then
+      local bytes = f:read("*a"); f:close()
+      local ok, d = pcall(function()
+        return love.image.newImageData(
+          love.filesystem.newFileData(bytes, base .. ".png"))
+      end)
+      if ok then dados = d end
+    end
+  end
+  hdCache[base] = dados or false
+  return dados
+end
+
+local hdTexCache = {}
+local function hdTextureFor(base)
+  if not base then return nil end
+  local hit = hdTexCache[base]
+  if hit ~= nil then return hit or nil end
+  local tex = nil
+  local dados = hdDataFor(base)
+  if dados and love.graphics then
+    local ok, t = pcall(love.graphics.newImage, dados)
+    if ok then
+      -- NEAREST, always. The whole point is hard pixels; linear filtering would
+      -- blur the tones back into the gradient the sheet was quantised out of.
+      pcall(t.setFilter, t, "nearest", "nearest")
+      tex = t
+    end
+  end
+  hdTexCache[base] = tex or false
+  return tex
+end
+
 local function maskFor(def)
   if not (def and def.image) then return nil end
-  local data = ImageCache.get(def.image)
+  -- THE HD SHEET REPLACES THE ROM'S, when the option is on and a file exists.
+  -- Everything downstream is unchanged: spriteLayout already derives the cell
+  -- from the sheet size and the frame count, with no 16 hardcoded anywhere, so a
+  -- 64 px cell needs no new code path -- only the scale back to one tile.
+  -- The base name is taken apart here rather than through `spriteBaseName`,
+  -- which is defined three hundred lines further down: reading it from up here
+  -- got nil, the call threw, and `maskFor` runs inside a pcall -- so the mesh
+  -- silently fell back and a test failed four hundred lines away with a nil
+  -- vertex list. An upvalue that does not exist yet fails quietly, which is the
+  -- worst way for it to fail.
+  local base = tostring(def.image):match("([^/\\]+)%.%w+$")
+    or tostring(def.image):match("([^/\\]+)$")
+  local hd = (optionState.hd_sprite == "on") and hdDataFor(base) or nil
+  local data = hd or ImageCache.get(def.image)
   if not data then return nil end
   local sheetW, sheetH = data:getDimensions()
   local layout = spriteLayout(def, sheetW, sheetH)
   if not layout then return nil end
   local frames = layout.frames
+  -- THE HD FLAG IS IN THE KEY. Without it, toggling the option would keep
+  -- returning the mask built from the other sheet: same image name, same frame
+  -- count, and the dimensions do change here -- but relying on that would be
+  -- luck, and the mesh cache below needs the flag anyway.
   local key = table.concat({
     def.image, sheetW, sheetH, frames, layout.w, layout.h, layout.columns,
+    hd and "hd" or "rom",
   }, "#")
   if masks[key] ~= nil then return masks[key] or nil end
 
@@ -1161,6 +1260,7 @@ local function maskFor(def)
     mask = mask, minX = minX, maxX = maxX, minY = minY, maxY = maxY,
     sheetW = sheetW, sheetH = sheetH, frames = frames,
     cellW = layout.w, cellH = layout.h, columns = layout.columns,
+    hd = hd and true or false,
     data = data, outlineLuma = outlineLuma,
   }
   masks[key] = out
@@ -1547,6 +1647,35 @@ local function shadeAtHeight(shade, y, groundShade)
   if groundShade ~= "on" or y >= AO_RISE then return shade end
   local t = math.max(0, y) / AO_RISE
   return shade * (1 - AO_GROUND * (1 - t))
+end
+
+-- SCALING AN HD SHEET DOWN TO ONE TILE, and only when asked (roadmap T3.0).
+--
+-- The builders emit vertex coordinates in SHEET PIXELS, and the host's matrix
+-- maps a 16 px cell onto one tile. Feed the same builders a 64 px cell and the
+-- body comes out four tiles tall and fills the screen -- measured that way
+-- first, which is how the factor got found rather than assumed.
+--
+-- IT IS OPT-IN, and the first version was not, which broke two checks. That
+-- version inferred the scale from cell height, on the theory that a cell is
+-- always sixteen units. It is not: the suite legitimately builds 2x4 sheets with
+-- 2 frames to test one top face, and those got multiplied by eight. The lesson
+-- is the same one this project keeps relearning -- a rule inferred from one
+-- case is a rule that breaks the case nobody thought about.
+--
+-- So nothing is scaled unless `hdScale` was set, which only happens when the HD
+-- sprite option is on. With it unset this function is not even called.
+local function escalaParaTile(verts, m)
+  -- Only an HD-sourced mask asks for this, and only when its cell really is
+  -- bigger than a tile. Everything else returns untouched, which is what keeps
+  -- the suite's deliberate 2x4 test sheets from being multiplied by eight.
+  if not (m and m.hd and m.cellH and m.cellH ~= 16) then return verts end
+  local k = 16 / m.cellH
+  for i = 1, #verts do
+    local v = verts[i]
+    v[1], v[2], v[3] = v[1] * k, v[2] * k, v[3] * k
+  end
+  return verts
 end
 
 local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
@@ -2193,7 +2322,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     verts, idx = novos, novoIdx
   end
 
-  local mesh = Voxel3D.newMesh(verts, idx)
+  local mesh = Voxel3D.newMesh(escalaParaTile(verts, m), idx)
   if mesh and #blinkQuads > 0 then
     meshBlink[mesh] = { baseName = baseName, quads = blinkQuads }
   end
@@ -2672,7 +2801,7 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
     end
   end
 
-  return Voxel3D.newMesh(verts, idx)
+  return Voxel3D.newMesh(escalaParaTile(verts, m), idx)
 end
 
 local function buildSelectedMesh(def, frame, depth, correction, m, sideColor, shape,
@@ -2717,6 +2846,11 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
   -- things buildSlabMesh's caller resolves, and threading a thirteenth
   -- parameter through for a boolean is how signatures rot.
   local authoredPart = tostring(optionState.authored_regions or "")
+  -- HD changes every vertex in the mesh, so it belongs in the key for exactly
+  -- the reason TOP DOME and STEP WEIGHT do: without it, toggling the option
+  -- leaves already-built characters as they were until the LRU happens to evict
+  -- them, and the menu appears to do nothing.
+  local hdPart = tostring(optionState.hd_sprite or "")
   return table.concat({
     tostring(def and def.image or ""),
     tostring(def and def.frames or ""),
@@ -2730,6 +2864,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
     topDomePart,
     stepWeightPart,
     authoredPart,
+    hdPart,
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),
     tostring(layout and layout.columns or ""),
@@ -3555,6 +3690,24 @@ local function lifeAlive(info)
 end
 
 local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
+  -- THE TEXTURE HAS TO TRAVEL WITH THE GEOMETRY (roadmap T3.0).
+  --
+  -- UVs are normalised -- `(frameOrigin + lx) / sheetW` -- so an HD-built mesh
+  -- samples the same FRACTIONAL positions either way and would look correct
+  -- against the ROM sheet too, just with the ROM's tones. Swapping the texture
+  -- is what makes the extra tones visible at all, which is the entire point of
+  -- the experiment.
+  --
+  -- Done first, before any of the early returns below, so every path that draws
+  -- this mesh draws it with the sheet it was built from. Putting it after them
+  -- would leave the still, the reflection and the fallback paths sampling the
+  -- other sheet.
+  if optionState.hd_sprite == "on" then
+    local info = ourMeshes[mesh]
+    local tex = info and info.base and hdTextureFor(info.base)
+    if tex then texture = tex end
+  end
+
   -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
   -- here. Amplitudes and rhythms. Seconds and fraction of cell height.
   local BREATH_PERIOD = 3.1      -- calm breathing of a standing adult

@@ -191,6 +191,22 @@ behaviour that the tooling found.
   a sixtieth of a second. A positive control runs first, so "zero calls" cannot
   be a broken recorder reporting zero.
 
+- **`HD SPRITE: OFF / ON` draws characters from a higher-resolution sheet that
+  ships with the mod, where one exists.** This is the first option in the mod's
+  history that draws pixels **your ROM does not contain**, and it says so in its
+  own help text.
+
+  Where the sheet came from: an LLM was given the real 16×96 Red and returned a
+  faithful enlargement. Measured against the original, the silhouette matches at
+  IoU 0.989 to 1.000 and four of the six frames are identical, so it invented no
+  shape. What it did invent is detail *inside* each original pixel — 39% of pixel
+  blocks carry more than one tone internally. At 16×16 that detail does not
+  survive; at 64×64 it does, which is the resolution the sheet ships at.
+
+  `OFF` is the default and changes nothing. Only characters with a file in `hd/`
+  are affected; today that is Red alone. The cost is worth knowing before turning
+  it on: 17024 pieces of geometry per character against 1068.
+
 - **`PART LAG` and `AUTHORED REGIONS` are built and do NOT ship.** They are in
   the code, they are not in the menu, and the reason is worth stating because it
   is the only feature this release measured and then withheld.

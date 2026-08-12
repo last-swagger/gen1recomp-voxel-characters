@@ -78,7 +78,7 @@ that fork.
 
 ## What you can turn on
 
-There are 19 rows under `OPTIONS`. The first two are read only, and the third
+There are 20 rows under `OPTIONS`. The first two are read only, and the third
 is a button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
@@ -108,6 +108,7 @@ SWAY           OFF / SUBTLE / NORMAL             default OFF    idle weight shif
 MOTION LAG     OFF / SUBTLE / NORMAL             default OFF    the body arrives after the step
 FOOTFALL       OFF / SUBTLE / NORMAL             default OFF    it compresses on each step
 ATTENTION      OFF / SUBTLE / CLEAR              default OFF    they lean toward you, never turn
+HD SPRITE      OFF / ON                          default OFF    a higher-resolution sheet, not from your ROM
 
 FIRST PERSON   CARD / SOLID                      default CARD   solid through the first person blend
 
