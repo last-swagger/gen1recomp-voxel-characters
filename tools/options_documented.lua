@@ -121,6 +121,20 @@ local function lines(path)
   return out
 end
 
+-- main.lua as ONE string, for the comment-against-code check further down: a
+-- line list cannot see a comment and the `defaultIndex` below it at the same
+-- time.
+local function slurp(path)
+  local f = io.open(path, "r")
+  if not f then
+    io.stderr:write("cannot read " .. path .. "\n")
+    os.exit(1)
+  end
+  local t = f:read("*a"); f:close(); return t
+end
+
+local MAIN_SRC = slurp("mods/voxel_characters/main.lua")
+
 local function escape(s)
   return (s:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%1"))
 end
@@ -239,6 +253,43 @@ for _, row in ipairs(schema) do
     if def and documentedDefault ~= def then
       fail("README.md row for %-13s says default %s, the code registers %s",
         label, tostring(documentedDefault), def)
+    end
+  end
+
+  -- 1b. THE COMMENT MUST NOT CONTRADICT THE CODE.
+  --
+  -- `BREATH`'s own comment said "Default OFF per the house rule" while its
+  -- `defaultIndex` was 2, so the source lied about itself. The 1.6.0 release note
+  -- then repeated the comment rather than the code, and the error survived a
+  -- release: a reader who trusted either one would have told a player that
+  -- nothing breathes by default.
+  --
+  -- The README was RIGHT the whole time, and the check above proved it, which is
+  -- exactly why this gap was invisible. A gate that compares two documents can
+  -- be green while a third contradicts both.
+  do
+    local bloco = MAIN_SRC:match("key = \"" .. escape(tostring(row.key)) .. "\".-defaultIndex%s*=%s*%d+")
+    if bloco then
+      -- QUOTED TEXT IS NOT A CLAIM. This check's first run flagged BREATH
+      -- again, for the comment that EXPLAINS the old defect by quoting it:
+      -- `"Default OFF per the house rule"` appears there inside quotes,
+      -- describing what the comment used to say. A gate that cannot tell an
+      -- assertion from a citation makes it impossible to document the very
+      -- error it exists to catch, and the fix for that would be to delete the
+      -- explanation, which is exactly backwards.
+      --
+      -- So quoted runs are stripped before the search. Anything a comment
+      -- attributes to somebody else, including its own past, stops counting as
+      -- what it currently claims.
+      local semCitacao = bloco:gsub('"[^"]*"', " "):gsub("`[^`]*`", " "):lower()
+      local mentira = semCitacao:match("default[s]?%s+off")
+        or semCitacao:match("ships%s+off")
+        or semCitacao:match("enters%s+as%s+an%s+option%s+turned%s+off")
+      if mentira and def ~= levels[1] then
+        fail("%-13s comment says it defaults OFF and the code registers %s. A "
+          .. "comment that contradicts the line below it is worse than none",
+          label, tostring(def))
+      end
     end
   end
 

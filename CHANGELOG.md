@@ -12,18 +12,30 @@ Nothing yet.
 
 ## [1.7.0] - 2026-08-11
 
-**Six new options, and all six are off until you turn them on.** Nothing here
-changes what a player sees by default; `ATTENTION`, `PART LAG`, `FOOTFALL`,
-`AUTHORED REGIONS` and `DEMO FX` start at `OFF` and `FIRST PERSON` starts at
-`CARD`, per the house rule that a visual change the community has not seen yet
-ships off.
+**Characters are alive now, and you do not have to turn anything on to see it.**
+Two things ship enabled in this release:
 
-**One thing DOES change without you turning anything on, and it is the only one:**
-three characters the mod already treated as asleep have stopped leaning toward
-you as you walk past. `gambler_asleep`, `sleeping_boy` and Snorlax each have a
-slow rhythm, deep breathing and no sway in the mod's own table, and a sleeping
-character noticing a passer-by contradicted that. Every other character is
-pixel-identical to 1.6.0.
+- **`BLINK: ON`.** Characters blink. The eye is found in the sprite itself and
+  closed for a twelfth of a second, on a rhythm with a per-character phase, so a
+  street full of people does not blink in unison.
+- **`BREATH: SUBTLE`.** Every character breathes: the body scales a fraction of
+  its height, pivoted at the feet, so it rises from the ground rather than
+  floating. At `SUBTLE` the top of a head moves about a fifth of a pixel, which
+  is meant to be felt rather than watched.
+
+Those two are the release. Everything else here is a switch you can throw
+yourself.
+
+**One more thing changes by default, and it is a removal.** Three characters the
+mod already treated as asleep have stopped leaning toward you as you walk past.
+`gambler_asleep`, `sleeping_boy` and Snorlax each have a slow rhythm, deep
+breathing and no sway in the mod's own table, and a sleeping character noticing a
+passer-by contradicted that.
+
+**Everything else is off until you turn it on**, per the house rule that a visual
+change the community has not seen yet ships off: `SWAY`, `MOTION LAG`,
+`FOOTFALL`, `ATTENTION`, `PART LAG`, `AUTHORED REGIONS` and `DEMO FX` start at
+`OFF`, and `FIRST PERSON` starts at `CARD`.
 
 `AUTHORED REGIONS` is the first option whose behaviour depends on material that
 ships WITH the mod rather than being derived from your own ROM, so it deserves a
@@ -384,7 +396,10 @@ behaviour that the tooling found.
   at every strength: this moves vertices that already existed, it never
   adds a face.
 
-- **A life channel: `BREATH`, `SWAY` and `MOTION LAG`, each off by default.**
+- **A life channel: `BREATH`, `SWAY` and `MOTION LAG`.** All three shipped OFF
+  in 1.6.0. `BREATH` was turned on deliberately afterwards and ships at `SUBTLE`
+  from 1.7.0; this line said "each off by default" and stayed that way through a
+  release that changed it, which is corrected here rather than quietly.
   Until now every character was a solid that stood perfectly still, and a room
   of them read as a diorama of statues. These three make the body do something.
 

@@ -261,9 +261,15 @@ local OPTIONS = {
     -- review).
     --
     -- The numbers are a fraction of the height: the sheet is 16 px tall, so
-    -- 0.010 displaces the top of the head by 0.16 world px. Default OFF per
-    -- the house rule: every new visual change enters as an option turned
-    -- off.
+    -- 0.010 displaces the top of the head by 0.16 world px.
+    --
+    -- SHIPS ON, at SUBTLE, and this comment used to say the opposite. It read
+    -- "Default OFF per the house rule" while `defaultIndex` was 2, so the
+    -- source contradicted itself and the 1.6.0 release note repeated the
+    -- comment rather than the code. The house rule is real and this is a
+    -- deliberate exception to it: breathing is what the life channel is FOR,
+    -- and a mod whose headline feature is off by default has no headline.
+    -- Blink ships on for the same reason, decided in the same commit.
     levels = {
       { "OFF", "off" }, { "SUBTLE", 0.010 }, { "NORMAL", 0.020 },
       { "STRONG", 0.035 },
