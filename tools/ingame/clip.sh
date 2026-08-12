@@ -308,11 +308,23 @@ fi
 # GIF in two passes: own palette, otherwise the sky gradient turns into
 # banding. Reads from the FINISHED ab.mp4, so the title card rides along for
 # free: whatever ended up in the mp4 is what becomes the gif, no separate step.
+# NO DITHER, and stats_mode=full rather than diff.
+# 
+# This GIF is the artifact to trust for pixel detail, so it must not invent
+# pixels. `dither=bayer` was scattering them on purpose: measured at 9% of
+# 3x3 blocks perfectly uniform, against 65% for the mp4 beside it, on art
+# where a faithful 3x upscale should be 100%. Dithering exists to fake shades
+# a palette lacks, and this palette lacks nothing -- the art has four tones.
+# 
+# stats_mode=diff builds the palette from what CHANGES between frames, which
+# for a two-panel comparison is the moving character and not the scene. full
+# sees everything, and at four source tones there is no pressure on the 256
+# slots anyway.
 "$FFMPEG" -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" \
-  -vf "fps=$GIF_FPS,scale=$ESCALA:-2:flags=neighbor,palettegen=stats_mode=diff" \
+  -vf "fps=$GIF_FPS,scale=$ESCALA:-2:flags=neighbor,palettegen=stats_mode=full" \
   "$TMP/paleta.png" || { echo "ffmpeg failed on the palette"; exit 1; }
 "$FFMPEG" -y -loglevel error -i "$SAIDA/$CHAVE-$SUFIXO-ab.mp4" -i "$TMP/paleta.png" \
-  -lavfi "fps=$GIF_FPS,scale=$ESCALA:-2:flags=neighbor[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  -lavfi "fps=$GIF_FPS,scale=$ESCALA:-2:flags=neighbor[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" \
   "$SAIDA/$CHAVE-$SUFIXO-ab.gif" || { echo "ffmpeg failed on the gif"; exit 1; }
 
 rm -rf "$TMP"
