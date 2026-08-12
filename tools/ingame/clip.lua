@@ -81,6 +81,32 @@ return function(game)
             break
           end
         end
+        -- AND THEN LOOK INSIDE THE SUBMENU, because since 1.7.0 that is where
+        -- the options actually are. The shared list carries ONE row of ours now,
+        -- `voxel_chars_menu`, so this scan found nothing and every clip died on
+        -- "unknown option" naming a key that exists -- a wrong answer delivered
+        -- with certainty, which is the one thing the check above promises not to
+        -- do.
+        --
+        -- `Screens.get` hands back the factory and builds the state without
+        -- pushing it, so reading the rows costs nothing and leaves the stack
+        -- alone. Pushing and popping would have worked here and would have been
+        -- a trap for whoever ran this from somewhere other than a fresh boot.
+        if not existe then
+          local okTela, tela = pcall(function()
+            local S = require("src.ui.Screens")
+            local f = S.get(game, "VoxelCharsMenu")
+            return f and f.new and f.new(game) or nil
+          end)
+          if okTela and tela and type(tela.rows) == "table" then
+            for _, row in ipairs(tela.rows) do
+              if tostring(row.id) == "voxel_characters:" .. CHAVE then
+                existe = true
+                break
+              end
+            end
+          end
+        end
       end
     end
     if not existe then
