@@ -76,6 +76,7 @@ knowing before anyone commits somebody else's draft to clean a tree.
 | T1.5 slice 5, tools/ingame and tools/render output | this session | `tools/ingame/*`, `tools/render/*`, `tools/output_contract.lua`, `tools/sala_de_teste.sh`, `tools/en_us_scope.txt`, `tools/bateria.sh` | **landed** | sweep 108 deferred lines to 5; full battery green on the MBP with in-game 20/16/16/8/6, the same counts as before the conversion |
 | T2.1 defect: the ruler could not see the authored layer | this session | `main.lua`, `tools/render/{main,check}.sh`, `tools/render/main.lua` | **fixed** | `authprobe` reported `fs=MISSING`; now `io=FOUND mod=6 frames`, checked by the ruler on every run |
 | T2.2 part stack, generated not shipped | this session | `tools/render/{main.lua,check.sh}` | **landed** | `art 100.0% auth 0.0%` on a composed character; 21 rows from two donor sheets; widest seam step reported at 3 px, never judged |
+| Kanto HD-Voxel spec, evaluated | this session | `tools/alpha_gate.py`, `tools/render/zfight_gate.sh`, `tools/render/main.lua`, `tools/bateria.sh` | **two items taken, the rest refused with evidence** | alpha binary across 67 sheets; ZFIGHT OK over 24 yaws on slab and carved; AI upscale declined against T3.2's own measurement |
 | T2.4 question 2, attention temperament | this session | `main.lua`, `tests/voxel_chars_test.lua` | **landed** | 644/644; three sleeping sheets stop noticing the player; 4 of 4 mutations caught; every untabled sheet byte-identical |
 | T2.4 clip pair, cell against measured bands | this session | `tools/ingame/clip.{lua,sh}` | **built; the ANSWER is Kim's** | `psnr within one side 35.27, between the sides 29.65`, so the difference is real in motion; `VC_CLIP_FIXO` added because PART LAG and AUTHORED REGIONS are unfilmable alone |
 | T2.5 lab randomiser | this session | `tools/randomiza.lua`, `tools/randomiza_gate.lua`, `tools/measure_regions.py`, `tools/bateria.sh` | **landed** | deterministic from a seed; 4 of 4 real mutations caught, 1 equivalent mutant identified as uncatchable |
@@ -1480,6 +1481,82 @@ half-finished couplings, three of them mine.
 harness for the same reason. It works in the game, which is where it is gated,
 so nothing is broken today. It is worth knowing before somebody tries to hear an
 effect in the laboratory and concludes the sound is missing.
+
+## An outside specification, read item by item: two things taken, the rest already
+## here or already refused
+
+Kim brought the "Kanto HD-Voxel Engine Pipeline v2.0" and asked for all of it.
+All of it was not possible honestly, so each section was checked against the code
+rather than argued with.
+
+**Already built here, and in two cases better.**
+
+- *2bpp extraction.* `src/import/RomExtractor.lua` does it, and the document's
+  script has a factual error: it reads from a fixed `base_offset = 0x20000` at a
+  64-byte stride, and cites `0x8000–0x97FF` as if it were a ROM address. That
+  range is the Game Boy's **runtime VRAM**, not a file offset. The real extractor
+  resolves through the ROM's own `SpriteSheetPointerTable`, which is what does
+  not break between Red, Blue and Yellow.
+- *Semantic metadata.* That is `authored/schema.lua`, built two days ago, with a
+  gate that refuses an unknown field. The document's `camadas_voxel` is this
+  project's `DEPTH`.
+- *Walker sheets.* Already handled, and better: the frame count comes from sheet
+  height rather than being fixed at 6. Hardcoding 6 was a real defect here — it
+  turned `nurse.png`, which is 16x48, into six 8-pixel frames.
+
+**Assumes something that does not exist.** The section 5.2 hook patches
+`voxelEngine.drawExtrudedVoxel`. That symbol appears nowhere in this repository
+or in the host. The real channel is `Voxel3D.draw(mesh, texture, model, pull,
+sunModel)`, which this mod already wraps.
+
+**Refused, and not on taste.** The Real-ESRGAN 4x upscale is the thing `T3.2`
+already refuses, with a measurement behind it: an AI redraw here satisfied every
+numeric constraint the project owns and produced worse art. It also collides with
+three things decided or measured this week — Kim's own "no authored pixel for
+now" from 2026-08-11, the authored gate that fails the battery if the shipped
+pixel count leaves zero, and the palette measurement that found all 67 sheets
+share exactly three tones, which a 4x upscale would multiply into thousands.
+
+**TWO ITEMS WERE WORTH TAKING, and both are now gates.**
+
+*The alpha observation was the best thing in the document.* "Semitransparent
+edges become ghost blocks on the Z axis" is correct: a voxel builder extrudes
+from the opaque region, so a pixel at alpha 128 is neither in nor out. It becomes
+a face that is drawn and see-through, or one kept on one side and skipped on the
+other, and the artifact appears in geometry far from its cause.
+
+It is **already true and true by accident**: measured across all 67 sheets, alpha
+takes exactly 0 and 255. The extractor produces that because a 2bpp source has no
+partial coverage to represent. So `tools/alpha_gate.py` (battery step 7k) fixes
+nothing and stops something — proved by building a sheet with four anti-aliased
+pixels, which is what an upscaler leaves, and watching it fail.
+
+*The 360-degree turn was a real gap.* The ruler measured four camera rungs and
+never a full turn. The document asked to "rotate the camera 360 degrees to check
+whether the Z axis renders without flicker or geometry interpenetration", which
+needed a way to see a flicker without watching one.
+
+Two coplanar surfaces competing for the depth buffer do not give a clean wrong
+answer, they give an ALTERNATING one: neighbouring pixels resolve to different
+faces across a region that should belong to one. The provenance pass already
+labels every pixel with its face, so the harness now reports **face-boundary
+density** per cell, and `zfight_gate.sh` (step 8b) sweeps 24 yaws:
+
+```
+slab     24 yaws  median 10.80%  worst 14.01% at yaw 255   floor  3.13%
+carved   24 yaws  median 18.09%  worst 23.78% at yaw 30    floor  8.25%
+ZFIGHT OK
+```
+
+The threshold is the sweep's own median rather than a constant, because a
+character seen edge-on is mostly edge and legitimately scores three times what it
+does face-on. A coplanar collision spikes; it does not drift. The second half of
+the gate refuses a sweep that does not vary, because a camera that is not turning
+would let a still image pass forever. Both halves mutation-tested.
+
+The first eight-yaw probe was itself the evidence there is nothing to fix: values
+mirrored across 180 degrees to within a fifth of a percentage point, which a
+depth-buffer fight would have broken.
 
 ## Kim's report, 2026-08-12: the clip was a bad instrument, and that is worse
 ## than the bug it hid

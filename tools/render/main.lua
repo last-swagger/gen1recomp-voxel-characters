@@ -1633,6 +1633,56 @@ local function computeMetrics(screen)
     end
   end
 
+  -- FACE-CLASS BOUNDARY DENSITY, which is what Z-fighting looks like when you
+  -- cannot watch the screen flicker (from the Kanto HD-Voxel spec's item 7).
+  --
+  -- Two coplanar surfaces competing for the depth buffer do not produce a clean
+  -- wrong answer, they produce an ALTERNATING one: neighbouring pixels get
+  -- different faces, sprayed across a region that should belong to one. The
+  -- provenance pass already labels every pixel with the face it came from, so
+  -- the signature is measurable without a human watching a spin: count how
+  -- often two adjacent drawn pixels disagree about their face, as a share of
+  -- drawn pixels.
+  --
+  -- Clean geometry puts those disagreements only along real edges, so the number
+  -- is small and moves smoothly as the camera turns. Z-fighting spikes it at the
+  -- yaw where two faces become coplanar. The gate compares each yaw against the
+  -- MEDIAN OF THE SWEEP rather than a fixed threshold, because the honest value
+  -- depends on the shape, the cell size and how much silhouette is edge.
+  print("")
+  print("face boundary density per cell: adjacent drawn pixels that disagree")
+  print("  about which face they came from, as a share of drawn pixels. A spike")
+  print("  at one yaw is what Z-fighting looks like when it cannot be watched")
+  for r, row in ipairs(state.rows) do
+    local y0 = (r - 1) * (cell + labelH) + labelH
+    for c, yawDeg in ipairs(state.yaws) do
+      local x0 = (c - 1) * cell
+      local desenhados, fronteiras = 0, 0
+      for y = 0, cell - 1 do
+        for x = 0, cell - 1 do
+          local aqui = kindAt(img:getPixel(x0 + x, y0 + y))
+          if aqui then
+            desenhados = desenhados + 1
+            -- Left and up only: every adjacent pair is then counted once.
+            if x > 0 then
+              local esq = kindAt(img:getPixel(x0 + x - 1, y0 + y))
+              if esq and esq ~= aqui then fronteiras = fronteiras + 1 end
+            end
+            if y > 0 then
+              local cima = kindAt(img:getPixel(x0 + x, y0 + y - 1))
+              if cima and cima ~= aqui then fronteiras = fronteiras + 1 end
+            end
+          end
+        end
+      end
+      if desenhados > 0 then
+        print(string.format("  ZFIGHT %-11s %-9s yaw %3d   %6.2f%%   drawn %d",
+          row.shape, row.pitchLabel, yawDeg, fronteiras / desenhados * 100,
+          desenhados))
+      end
+    end
+  end
+
   print("")
   print("provenance at the visible pixel level")
   print("  art%   share of drawn pixels sampling the original sprite art")

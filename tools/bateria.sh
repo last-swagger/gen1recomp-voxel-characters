@@ -61,6 +61,11 @@
 #   7j. the lab randomiser, which proposes preset candidates for the judge.
 #      Reproducible from a seed, never from the clock, because a set that
 #      cannot be regenerated cannot be re-examined after it fails;
+#   7k. the alpha channel, which must be fully in or fully out. A voxel builder
+#      extrudes from the opaque region, so a half-transparent pixel becomes a
+#      face that is drawn and see-through, or one kept on one side and skipped
+#      on the other, and the artifact shows up in geometry far from its cause.
+#      Already true today, and true by accident rather than by contract;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -168,6 +173,10 @@ passo "7j. the randomiser proposes real, reproducible candidates"
 "$LUAJIT" "$MOD/tools/randomiza_gate.lua" 2>&1 | tail -4
 verdict "randomiser" "${PIPESTATUS[0]}"
 
+passo "7k. every sprite's alpha is 0 or 255, with nothing in between"
+python3 "$MOD/tools/alpha_gate.py" 2>&1 | tail -4
+verdict "alpha gate" "${PIPESTATUS[0]}"
+
 passo "7e. the battery's verdicts still reach their readers"
 bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9
 verdict "verdict contract" "${PIPESTATUS[0]}"
@@ -182,6 +191,13 @@ else
   passo "8. THE RULER, before trusting any measurement"
   bash "$MOD/tools/render/check.sh" 2>&1 | tail -2
   verdict "check.sh" "${PIPESTATUS[0]}"
+
+  # A FULL TURN, which the four camera rungs never covered. Separate from the
+  # ruler because it drives twenty four renders of its own and a reader should
+  # be able to see which of the two went red.
+  passo "8b. a full 360 turn, looking for Z-fighting"
+  bash "$MOD/tools/render/zfight_gate.sh" 2>&1 | tail -4
+  verdict "zfight" "${PIPESTATUS[0]}"
 fi
 
 if [ "$MODO" = "tudo" ]; then
