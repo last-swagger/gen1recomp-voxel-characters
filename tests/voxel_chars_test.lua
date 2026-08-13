@@ -1264,7 +1264,7 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 15, "hook anexa as rows, mais STATUS, LIFE e CAMERA FIT")
+  eq(#rows, 16, "hook anexa as rows, mais STATUS, LIFE e CAMERA FIT")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
   eq(rows[3].label, "LIFE", "hook anexa a row de LIFE logo depois do STATUS")
   eq(rows[4].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE, antes das opcoes")
@@ -1274,10 +1274,11 @@ do
   eq(rows[8].label, "SHAPE", "hook anexa a row de shape")
   eq(rows[9].label, "GROUND SHADE", "hook anexa a row de ground shade")
   eq(rows[10].label, "BLINK", "hook anexa a row de blink")
-  eq(rows[11].label, "TOP EDGE", "hook anexa a row de top edge")
-  eq(rows[12].label, "FRONT SHAPE", "hook anexa a row de front shape")
-  eq(rows[13].label, "TOP DOME", "hook anexa a row de top dome")
-  eq(rows[14].label, "STEP WEIGHT", "hook anexa a row de step weight")
+  eq(rows[11].label, "BLINK DETECT", "hook anexa a row de blink detect")
+  eq(rows[12].label, "TOP EDGE", "hook anexa a row de top edge")
+  eq(rows[13].label, "FRONT SHAPE", "hook anexa a row de front shape")
+  eq(rows[14].label, "TOP DOME", "hook anexa a row de top dome")
+  eq(rows[15].label, "STEP WEIGHT", "hook anexa a row de step weight")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -1313,8 +1314,8 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[10]
-  eq(option.label, "TOP EDGE", "row de TOP EDGE fica depois de BLINK")
+  local option = rows[11]
+  eq(option.label, "TOP EDGE", "row de TOP EDGE fica depois de BLINK DETECT")
   eq(option.value(), "ON", "TOP EDGE default e ON")
   check(option.step(game, 1), "step de TOP EDGE informa mudanca")
   eq(option.value(), "OFF", "TOP EDGE alterna para OFF")
@@ -1348,7 +1349,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[11]
+  local option = rows[12]
   eq(option.label, "FRONT SHAPE", "row de FRONT SHAPE fica depois de TOP EDGE")
   eq(option.value(), "OFF", "FRONT SHAPE default e OFF")
   check(option.step(game, 1), "step de FRONT SHAPE informa mudanca")
@@ -1390,7 +1391,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[12]
+  local option = rows[13]
   eq(option.label, "TOP DOME", "row de TOP DOME fica depois de FRONT SHAPE")
   eq(option.value(), "OFF", "TOP DOME default e OFF")
   check(option.step(game, 1), "step de TOP DOME informa mudanca")
@@ -1431,7 +1432,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[13]
+  local option = rows[14]
   eq(option.label, "STEP WEIGHT", "row de STEP WEIGHT fica depois de TOP DOME")
   eq(option.value(), "OFF", "STEP WEIGHT default e OFF")
   check(option.step(game, 1), "step de STEP WEIGHT informa mudanca")
@@ -4310,7 +4311,7 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 14, "com host, catorze rows: STATUS, LIFE, CAMERA FIT, SETTINGS e as dez de sempre")
+  eq(#rows, 15, "com host, quinze rows: STATUS, LIFE, CAMERA FIT, SETTINGS e as onze de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
   eq(rows[2].label, "LIFE", "LIFE vem logo depois do STATUS")
   eq(rows[3].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE")
@@ -4319,10 +4320,11 @@ do
   eq(rows[7].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
   eq(rows[8].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
   eq(rows[9].label, "BLINK", "BLINK continua na mesma posicao relativa")
-  eq(rows[10].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
-  eq(rows[11].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
-  eq(rows[12].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
-  eq(rows[13].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
+  eq(rows[10].label, "BLINK DETECT", "BLINK DETECT entra logo depois de BLINK")
+  eq(rows[11].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
+  eq(rows[12].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
+  eq(rows[13].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
+  eq(rows[14].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
 
   -- PRESSING A ON A READ-ONLY ROW CANNOT CLOSE THE MENU.
   --
@@ -5475,32 +5477,33 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 22,
+  eq(#rows, 23,
      "com canal, vinte e duas rows: STATUS, LIFE, CAMERA FIT, SETTINGS e as dezoito "
      .. "opcoes que shipam")
   -- V-GRID CHARS sits right after BLINK and only exists WITH the channel, so
   -- it shifts everything below it here and nothing at all in the no-channel
   -- test above. That asymmetry is the point of having both.
-  eq(rows[10].label, "V-GRID CHARS", "V-GRID CHARS entra depois de BLINK")
-  eq(rows[14].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
-  eq(rows[15].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
-  eq(rows[16].label, "SWAY", "SWAY aparece depois de BREATH")
-  eq(rows[17].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
-  eq(rows[18].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
+  eq(rows[10].label, "BLINK DETECT", "BLINK DETECT entra logo depois de BLINK")
+  eq(rows[11].label, "V-GRID CHARS", "V-GRID CHARS entra depois de BLINK DETECT")
+  eq(rows[15].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
+  eq(rows[16].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
+  eq(rows[17].label, "SWAY", "SWAY aparece depois de BREATH")
+  eq(rows[18].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
+  eq(rows[19].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
   -- The FIRST PERSON row only got a test after an audit pointed out it
   -- was the only option in the mod with no MENU coverage: it had
   -- behavior, not a row. And that is how the in-game gate's inventory
   -- went stale without anyone noticing.
-  eq(rows[19].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
+  eq(rows[20].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
   -- PART LAG AND AUTHORED REGIONS ARE HELD, so FIRST PERSON follows ATTENTION
   -- directly. This is the check that OWNS Kim's decision of 2026-08-12: HIGH
   -- looked wrong to him and LOW was measured as indistinguishable from the
   -- animation, so neither level ships. Deleting the assertion would have hidden
   -- the removal; asserting the absence makes it deliberate and reversible.
   -- HD SPRITE fica onde o PART LAG estava, entre ATTENTION e FIRST PERSON.
-  eq(rows[20].label, "HD SPRITE",
+  eq(rows[21].label, "HD SPRITE",
      "HD SPRITE vem depois de ATTENTION")
-  eq(rows[21].label, "FIRST PERSON", "FIRST PERSON vem depois de HD SPRITE")
+  eq(rows[22].label, "FIRST PERSON", "FIRST PERSON vem depois de HD SPRITE")
   local presentes = {}
   for _, r in ipairs(rows) do presentes[r.label] = true end
   eq(presentes["PART LAG"], nil, "PART LAG nao aparece no menu: esta held")
@@ -8406,6 +8409,192 @@ do
   check(#problemas == 0,
     "menu: uma linha com submenu, e a lista inteira sem ele"
     .. (#problemas > 0 and ("  [" .. table.concat(problemas, " | ") .. "]") or ""))
+end
+
+-- ---------------------------------------------------------------------------
+-- BLINK DETECT (v1.7.0). Kim reported that this mod works with Wilds of Kanto
+-- but the blinking does not: EYE_MARKS is keyed by sheet base name and that mod
+-- ships 1298 sheets it has never heard of. `detectEyeMarks` finds the eyes in
+-- the pixels instead. These checks pin the four things that make it safe: it
+-- only runs when the option is on, it never overrides the hand table, it
+-- refuses when the frame is ambiguous, and it refuses when the dark texel is
+-- part of the silhouette rather than an island on skin.
+--
+-- The sheet name is deliberately `001-normal.png`, the real shape of a Wilds of
+-- Kanto file name, so the test would fail the day somebody adds it to EYE_MARKS
+-- and the detector stops being the thing under test.
+do
+  local SKIN = rgba(0.80, 0.55, 0.40, 1)
+  local EYE = rgba(0.05, 0.05, 0.05, 1)
+
+  -- A head: a filled block of skin so the eyes are ISLANDS, which is what
+  -- paintBlinkFace deliberately is not (its eye row has nothing above it).
+  local function paintFace(pixels, sheetW, cellW, frame, eyes, extra)
+    for ly = 4, 11 do
+      for lx = 3, 12 do paint(pixels, sheetW, cellW, frame, lx, ly, SKIN) end
+    end
+    for _, e in ipairs(eyes) do
+      paint(pixels, sheetW, cellW, frame, e[1], e[2], EYE)
+    end
+    for _, e in ipairs(extra or {}) do
+      paint(pixels, sheetW, cellW, frame, e[1], e[2], EYE)
+    end
+  end
+
+  local cellW, cellH = 16, 16
+
+  local function meshFor(pixels, image, stored)
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+    loadWith(makeMod(handle, stored))
+    return modules.SpriteBillboards.mesh({ image = image, frames = 1 }, 0)
+  end
+
+  -- The eye at (6, 7) closes onto the skin one row below, the same convention
+  -- the hand-marked sheets use.
+  local function eyeClosed(mesh, lx, ly)
+    local q = frontQuadIndexAt(mesh, lx, lx + 1, cellH - ly - 1, cellH - ly)
+    if not q then return nil end
+    return allUvAt(mesh, q, (lx + 0.5) / cellW, (ly + 1.5) / cellW)
+  end
+
+  local closedTime = blinkTimes("001-normal")
+
+  -- 1. ON: a sheet with no hand entry blinks, because the eyes were found.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 6, 7 }, { 9, 7 } })
+    withLoveTime(closedTime, function()
+      local got = meshFor(pixels, "001-normal.png",
+        { depth = 2, shape = "slab", blink = "on", blink_detect = "on",
+          front_shape = "off", ground_shade = "off", sway = "off" })
+      local fechou = eyeClosed(got, 6, 7)
+      check(fechou == true,
+            "BLINK DETECT acha o olho num sheet que EYE_MARKS nao conhece")
+    end)
+  end
+
+  -- 2. OFF: the same sheet, the same instant, no blink. This is the check that
+  --    proves the option gates the feature and not something else.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 6, 7 }, { 9, 7 } })
+    withLoveTime(closedTime, function()
+      local got = meshFor(pixels, "001-normal.png",
+        { depth = 2, shape = "slab", blink = "on", blink_detect = "off",
+          front_shape = "off", ground_shade = "off", sway = "off" })
+      check(eyeClosed(got, 6, 7) ~= true,
+            "com BLINK DETECT OFF o mesmo sheet nao pisca")
+    end)
+  end
+
+  -- 3. TWO candidate pairs is a refusal, not a choice. Without this the
+  --    detector would have to guess which pair is the face, and a wrong guess
+  --    closes two pixels of body every few seconds.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 6, 7 }, { 9, 7 } },
+      { { 5, 6 }, { 10, 6 } })
+    withLoveTime(closedTime, function()
+      local got = meshFor(pixels, "001-normal.png",
+        { depth = 2, shape = "slab", blink = "on", blink_detect = "on",
+          front_shape = "off", ground_shade = "off", sway = "off" })
+      check(eyeClosed(got, 6, 7) ~= true and eyeClosed(got, 5, 6) ~= true,
+            "dois pares candidatos: o detector recusa em vez de escolher")
+    end)
+  end
+
+  -- 4. A dark texel on the EDGE of the silhouette is the outline, not an eye.
+  --    Here the eye row is the top row of the head, so there is nothing above
+  --    it and the island test fails.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 6, 4 }, { 9, 4 } })
+    withLoveTime(closedTime, function()
+      local got = meshFor(pixels, "001-normal.png",
+        { depth = 2, shape = "slab", blink = "on", blink_detect = "on",
+          front_shape = "off", ground_shade = "off", sway = "off" })
+      check(eyeClosed(got, 6, 4) ~= true,
+            "texel escuro colado na silhueta e contorno, nao olho")
+    end)
+  end
+
+  -- 8. THE CACHE KEY. Found by the in-game gate and not by anything offline:
+  --    the suite loads a fresh mod per test, so its mesh cache is always cold
+  --    and a missing key part is invisible. In the game the option worked or
+  --    did nothing depending on how many characters were on screen, because
+  --    `clears = "mesh"` empties the cache on the menu edge but the game
+  --    rebuilds a mesh a frame later at whatever key it is asked for. Flipping
+  --    the option WITHOUT clearing is the only way to say that in a test.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 6, 7 }, { 9, 7 } })
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, cellW, cellH)
+    loadWith(makeMod(handle,
+      { depth = 2, shape = "slab", blink = "on", blink_detect = "off",
+        front_shape = "off", ground_shade = "off", sway = "off" }))
+    local def = { image = "001-normal.png", frames = 1 }
+    withLoveTime(closedTime, function()
+      local antes = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+      setOptionStateWithoutClearing(modules, "blink_detect", "on")
+      local depois = uvSignature(modules.SpriteBillboards.mesh(def, 0))
+      check(antes ~= nil and depois ~= nil and antes ~= depois,
+            "BLINK DETECT esta na chave do cache: a malha muda mesmo sem limpar")
+    end)
+  end
+
+  -- 6. THE VERTICAL BAND. The same face, plus a mirrored dark pair down at row
+  --    10 -- a belt buckle, a gap between two feet, a pair of paws. It is below
+  --    the band, so it is not a candidate and the eyes are still found. Without
+  --    the band there would be two candidate pairs and the whole sheet would
+  --    lose its blink to the refusal rule.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 6, 7 }, { 9, 7 } },
+      { { 5, 10 }, { 10, 10 } })
+    withLoveTime(closedTime, function()
+      local got = meshFor(pixels, "001-normal.png",
+        { depth = 2, shape = "slab", blink = "on", blink_detect = "on",
+          front_shape = "off", ground_shade = "off", sway = "off" })
+      check(eyeClosed(got, 6, 7) == true,
+            "par escuro abaixo da faixa nao conta como candidato")
+    end)
+  end
+
+  -- 7. THE MIRROR AXIS IS THE CELL'S OWN CENTRE LINE, because that is the axis
+  --    the host mirrors a sprite about when it faces right. A pair that is
+  --    mirror-shaped but sits off to one side is two marks that happen to
+  --    match, not a face, and it is refused.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 4, 7 }, { 7, 7 } })
+    withLoveTime(closedTime, function()
+      local got = meshFor(pixels, "001-normal.png",
+        { depth = 2, shape = "slab", blink = "on", blink_detect = "on",
+          front_shape = "off", ground_shade = "off", sway = "off" })
+      check(eyeClosed(got, 4, 7) ~= true,
+            "par fora do eixo central da celula nao e um rosto")
+    end)
+  end
+
+  -- 5. THE HAND TABLE IS THE AUTHORITY. `red.png` has EYE_MARKS {{6,7},{9,7}}.
+  --    The sheet also carries a second mirrored pair at row 6, which is exactly
+  --    what makes the detector refuse -- so if detection had priority there
+  --    would be no blink at all here. There is, and it is at the table's marks.
+  do
+    local pixels = {}
+    paintFace(pixels, cellW, cellW, 0, { { 6, 7 }, { 9, 7 } },
+      { { 5, 6 }, { 10, 6 } })
+    local redClosed = blinkTimes("red")
+    withLoveTime(redClosed, function()
+      local got = meshFor(pixels, "red.png",
+        { depth = 2, shape = "slab", blink = "on", blink_detect = "on",
+          front_shape = "off", ground_shade = "off", sway = "off" })
+      check(eyeClosed(got, 6, 7) == true,
+            "com entrada na mao, a tabela manda mesmo com BLINK DETECT ON")
+      check(eyeClosed(got, 5, 6) ~= true,
+            "e o par extra, que so o detector veria, fica de fora")
+    end)
+  end
 end
 
 T.finish("voxel_chars_test")

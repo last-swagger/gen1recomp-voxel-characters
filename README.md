@@ -103,7 +103,7 @@ design, and gains a `WHAT EACH ONE DOES` row that explains every option in
 game. That row is hidden without Modern UI: the explanations are full
 sentences, and the native 160x144 renderer would run them off the edge.
 
-There are 22 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
+There are 23 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
 two are read only, and the next two are buttons rather than settings.
 
 **The defaults are somebody's choice, not a safe minimum.** They were set by
@@ -127,6 +127,7 @@ SIDE COLOR     BODY / OUTLINE                    default OUTLINE what the new fa
 SHAPE          SLAB / CARVED / CARVED+           default SLAB   how the body is built
 GROUND SHADE   OFF / ON                          default ON     contact shadow at the feet
 BLINK          OFF / ON                          default ON     they blink
+BLINK DETECT   OFF / ON                          default OFF    finds the eyes on sheets we never measured
 V-GRID CHARS   OFF / ON                          default ON     joins the world grid on key 5
 
 TOP EDGE       OFF / ON                          default ON     darkens exposed top faces
@@ -147,7 +148,7 @@ FIRST PERSON   CARD / SOLID                      default CARD   solid through th
 DEMO FX        OFF / FIREBALL / BOLT             default OFF    a capability demo, not a Gen 1 feature
 ```
 
-**`SETTINGS` applies a whole set at once**, because a menu with twenty two rows
+**`SETTINGS` applies a whole set at once**, because a menu with twenty three rows
 is a menu nobody configures twice. `DEFAULT` is what ships. `LIVED IN` is read
 off a save after somebody played with the menu until they stopped changing
 things -- four of its choices disagree with the shipped defaults, and that is
