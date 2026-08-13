@@ -1555,6 +1555,26 @@ local function referenceFramesForRole(frame, frames, role)
   return tonumber(frame) or 0, nil
 end
 
+-- HOW MUCH BIGGER THIS SHEET IS THAN A TILE, or nil when it is not bigger.
+--
+-- `escalaParaTile` divides every vertex by this same factor to bring an
+-- enlarged sheet back onto one tile, so every constant expressed in SHEET
+-- PIXELS has to be multiplied by it or it silently does 1/k of its job. Six
+-- places need the answer and each of them used to spell the predicate out
+-- again; the day one of them was written slightly differently, the difference
+-- would have been invisible, because a constant that is a quarter too small
+-- still draws a picture.
+--
+-- The predicate has two halves and both are load-bearing. `m.hd` is what makes
+-- the scaling OPT-IN: the suite legitimately builds 2x4 test sheets, and
+-- inferring the scale from cell height alone multiplied those by eight (see
+-- escalaParaTile). `cellH ~= 16` is what keeps an HD sheet that happens to be
+-- tile sized out of a pointless multiply by one.
+local function hdCellScale(m)
+  if not (m and m.hd and m.cellH and m.cellH ~= 16) then return nil end
+  return m.cellH / 16
+end
+
 local function bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
   -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
   -- here. DECISION: four pixels covers the thick outlines of Gen 1 sprites
@@ -1571,8 +1591,9 @@ local function bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
   -- the walking pose sits one row lower, so some rows do find body and some do
   -- not.
   local BODY_SEARCH_LIMIT = 4
-  if m and m.hd and m.cellH and m.cellH ~= 16 then
-    BODY_SEARCH_LIMIT = math.floor(4 * m.cellH / 16 + 0.5)
+  local hdK = hdCellScale(m)
+  if hdK then
+    BODY_SEARCH_LIMIT = math.floor(4 * hdK + 0.5)
   end
   if sideColor ~= SHARED.DEFAULT_SIDE_COLOR then return lx, ly, true end
   local opaque, outline = frameTexel(m, frameIndex, lx, ly)
@@ -1641,10 +1662,10 @@ local function poseOffsetScan(m, fromFrame, toFrame)
   -- this is 425 candidates over 4096 pixels rather than 35 over 256. It is
   -- memoised per canonical frame pair per sheet (see poseOffset), so it happens
   -- once, not once per face.
-  if m.hd and cellH ~= 16 then
-    local k = cellH / 16
-    POSE_OFFSET_DX_RANGE = math.floor(POSE_OFFSET_DX_RANGE * k + 0.5)
-    POSE_OFFSET_DY_RANGE = math.floor(POSE_OFFSET_DY_RANGE * k + 0.5)
+  local hdK = hdCellScale(m)
+  if hdK then
+    POSE_OFFSET_DX_RANGE = math.floor(POSE_OFFSET_DX_RANGE * hdK + 0.5)
+    POSE_OFFSET_DY_RANGE = math.floor(POSE_OFFSET_DY_RANGE * hdK + 0.5)
   end
   local fromOpaque = {}
   for ly = 0, cellH - 1 do
@@ -1895,8 +1916,9 @@ local function escalaParaTile(verts, m)
   -- Only an HD-sourced mask asks for this, and only when its cell really is
   -- bigger than a tile. Everything else returns untouched, which is what keeps
   -- the suite's deliberate 2x4 test sheets from being multiplied by eight.
-  if not (m and m.hd and m.cellH and m.cellH ~= 16) then return verts end
-  local k = 16 / m.cellH
+  local hdK = hdCellScale(m)
+  if not hdK then return verts end
+  local k = 1 / hdK
   for i = 1, #verts do
     local v = verts[i]
     v[1], v[2], v[3] = v[1] * k, v[2] * k, v[3] * k
@@ -2111,8 +2133,8 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     --
     -- One original pixel becomes a k by k block, which is exactly what it is
     -- after an enlargement: the mark still covers the same part of the face.
-    if marks and m and m.hd and m.cellH and m.cellH ~= 16 then
-      local k = math.floor(m.cellH / 16 + 0.5)
+    if marks and hdCellScale(m) then
+      local k = math.floor(hdCellScale(m) + 0.5)
       if k > 1 then
         local grandes = {}
         for _, eye in ipairs(marks) do
@@ -2720,9 +2742,10 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   local CARVED_PLUS_RECESS_STEPS = 2
   m = m or maskFor(def)
   if not (m and m.frames >= 3) then return nil end
-  if m.hd and m.cellH and m.cellH ~= 16 then
+  local hdK = hdCellScale(m)
+  if hdK then
     CARVED_PLUS_RECESS_STEPS =
-      math.floor(CARVED_PLUS_RECESS_STEPS * m.cellH / 16 + 0.5)
+      math.floor(CARVED_PLUS_RECESS_STEPS * hdK + 0.5)
   end
   local pose = carvedFrames(frame, m.frames)
   if pose.back >= m.frames or pose.side >= m.frames then return nil end
@@ -4755,8 +4778,9 @@ local function voxelMesh(def, frame)
   -- thickness off the silhouette (`depthPixels`), which is in sheet pixels and
   -- grows with the sheet on its own. `depth` reaches buildCarvedMesh and is
   -- unused. That is exactly why the report named SLAB.
-  if m.hd and m.cellH and m.cellH ~= 16 then
-    depth = depth * (m.cellH / 16)
+  local hdK = hdCellScale(m)
+  if hdK then
+    depth = depth * hdK
   end
   local baseName = spriteBaseName(def and def.image)
   local key = cacheKey(def, frame, depth, correction, m, sideColor, shape,
