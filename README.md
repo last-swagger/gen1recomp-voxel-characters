@@ -92,7 +92,7 @@ option out costs one key instead of six. It does nothing anywhere else: a
 menu pushed on top of a battle or a dialog is how a shortcut like this one
 corrupts a save.
 
-There are 20 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
+There are 21 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
 two are read only, and the third is a button rather than a setting.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
@@ -111,11 +111,13 @@ SIDE COLOR     BODY / OUTLINE                    default BODY   what the new fac
 SHAPE          SLAB / CARVED / CARVED+           default SLAB   how the body is built
 GROUND SHADE   OFF / ON                          default OFF    contact shadow at the feet
 BLINK          OFF / ON                          default ON     they blink
-TOP EDGE       OFF / ON                          default ON     darkens exposed top faces
+V-GRID CHARS   OFF / ON                          default OFF    debug: shows where the geometry is
 
+TOP EDGE       OFF / ON                          default ON     darkens exposed top faces
 FRONT SHAPE    OFF / LOW / MED / HIGH            default OFF    false roundness on the front
 TOP DOME       OFF / LOW / HIGH                  default OFF    a domed head instead of a flat lid
 STEP WEIGHT    OFF / LOW / HIGH                  default OFF    the body follows the step
+                                                 those four need SHAPE: SLAB
 
 BREATH         OFF / SUBTLE / NORMAL / STRONG    default SUBTLE they breathe
 SWAY           OFF / SUBTLE / NORMAL             default OFF    idle weight shift
@@ -128,6 +130,17 @@ FIRST PERSON   CARD / SOLID                      default CARD   solid through th
 
 DEMO FX        OFF / FIREBALL / BOLT             default OFF    a capability demo, not a Gen 1 feature
 ```
+
+**Some options only mean something next to another one.** The four shaping rows
+above need `SHAPE: SLAB`, because CARVED builds from the silhouette and has no
+flat front to shape. When a row cannot do anything, it says what to change
+instead of showing a value, and pressing it does nothing. The menu never offers
+a setting that would silently do nothing.
+
+**`V-GRID CHARS` is a tool, not a look.** The Voxel Mod deliberately keeps the
+wireframe off characters, and it is right: a grid over a 16x16 sprite lands a
+line every couple of pixels. Turn it on to SEE where this mod placed geometry --
+telling a slab from a carved hull takes one glance with it on.
 
 **If you only try one thing, try `BREATH: SUBTLE`.** It is half a pixel of
 movement and it is the difference between a diorama of statues and a town.

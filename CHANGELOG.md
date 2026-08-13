@@ -8,7 +8,40 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **`V-GRID CHARS: OFF / ON`.** Draws the voxel wireframe over characters, which
+  the Voxel Mod deliberately leaves off -- correctly, for how the game should
+  look: a grid over a 16x16 sprite lands a line every couple of display pixels.
+  This is a measuring tool rather than a look. With it on you can see where the
+  mod actually placed geometry, which tells a slab from a carved hull at a
+  glance. Off by default. Uses the host's own `Voxel3D.seams`, so the pass is
+  put back the way it was found.
+
+  Asked for by **Kim**, after the options submenu became the bench this mod is
+  tested on.
+
+- **`WHAT EACH ONE DOES`, in the game.** Every option has carried an
+  explanation since the option system was written and nothing ever showed it.
+  A row at the bottom of `CHARACTERS` opens a screen listing every option and
+  what it changes. It appears only with Modern UI installed: the help is a full
+  sentence, Modern UI wraps it, and the native 160x144 renderer would run it off
+  the edge.
+
+  Asked for by **Kim**.
+
+### Fixed
+
+- **Options that cannot do anything now say so.** The four SLAB shaping rows
+  (`TOP EDGE`, `FRONT SHAPE`, `TOP DOME`, `STEP WEIGHT`) do nothing under
+  CARVED, and used to sit there looking adjustable, changing their value when
+  pressed and having no effect. A row whose requirement is unmet now shows what
+  to change instead of a value, and refuses to step.
+
+  This matters most for whoever is testing: a row that changes and does nothing
+  reads as a broken FEATURE rather than an empty combination.
+
+  Asked for by **Kim**.
 
 ## [1.7.0] - 2026-08-11
 

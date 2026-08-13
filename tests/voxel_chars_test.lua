@@ -5439,28 +5439,32 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 20,
-     "com canal, vinte rows: STATUS, LIFE, CAMERA FIT e as dezessete opcoes "
-     .. "que shipam")
-  eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
-  eq(rows[13].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
-  eq(rows[14].label, "SWAY", "SWAY aparece depois de BREATH")
-  eq(rows[15].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
-  eq(rows[16].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
+  eq(#rows, 21,
+     "com canal, vinte e uma rows: STATUS, LIFE, CAMERA FIT e as dezoito "
+     .. "opcoes que shipam")
+  -- V-GRID CHARS sits right after BLINK and only exists WITH the channel, so
+  -- it shifts everything below it here and nothing at all in the no-channel
+  -- test above. That asymmetry is the point of having both.
+  eq(rows[9].label, "V-GRID CHARS", "V-GRID CHARS entra depois de BLINK")
+  eq(rows[13].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
+  eq(rows[14].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
+  eq(rows[15].label, "SWAY", "SWAY aparece depois de BREATH")
+  eq(rows[16].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
+  eq(rows[17].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
   -- The FIRST PERSON row only got a test after an audit pointed out it
   -- was the only option in the mod with no MENU coverage: it had
   -- behavior, not a row. And that is how the in-game gate's inventory
   -- went stale without anyone noticing.
-  eq(rows[17].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
+  eq(rows[18].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
   -- PART LAG AND AUTHORED REGIONS ARE HELD, so FIRST PERSON follows ATTENTION
   -- directly. This is the check that OWNS Kim's decision of 2026-08-12: HIGH
   -- looked wrong to him and LOW was measured as indistinguishable from the
   -- animation, so neither level ships. Deleting the assertion would have hidden
   -- the removal; asserting the absence makes it deliberate and reversible.
   -- HD SPRITE fica onde o PART LAG estava, entre ATTENTION e FIRST PERSON.
-  eq(rows[18].label, "HD SPRITE",
+  eq(rows[19].label, "HD SPRITE",
      "HD SPRITE vem depois de ATTENTION")
-  eq(rows[19].label, "FIRST PERSON", "FIRST PERSON vem depois de HD SPRITE")
+  eq(rows[20].label, "FIRST PERSON", "FIRST PERSON vem depois de HD SPRITE")
   local presentes = {}
   for _, r in ipairs(rows) do presentes[r.label] = true end
   eq(presentes["PART LAG"], nil, "PART LAG nao aparece no menu: esta held")

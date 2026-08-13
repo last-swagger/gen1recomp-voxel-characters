@@ -176,7 +176,31 @@ local OPTIONS = {
     help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
   },
   {
+    key = "grid_chars",
+    label = "V-GRID CHARS",
+    -- A MEASURING TOOL, not a look. The host deliberately keeps the voxel
+    -- wireframe off characters (VoxelScene.lua:1048): the seams are what make
+    -- the WORLD read as built of voxels, and the people in it should read as
+    -- drawn. That is a good call and this is not arguing with it.
+    --
+    -- It exists because with the grid on you can SEE where this mod actually
+    -- put geometry -- a slab against a carved hull at a glance, or a face that
+    -- should not be there. The submenu has become the bench this mod is tested
+    -- on, and this is a bench instrument.
+    --
+    -- Needs the animation channel for the same reason the life options do: it
+    -- rides the draw wrap, and without the wrap there is nowhere to stand.
+    levels = { { "OFF", "off" }, { "ON", "on" } },
+    defaultIndex = 1,
+    help = "Draws the voxel wireframe over characters, which the host leaves off on purpose. A debugging aid: it shows where the mod actually placed geometry.",
+  },
+  {
     key = "top_edge",
+    -- SLAB ONLY, and the code already said so in prose: CARVED and CARVED+
+    -- build from the visual hull, with no continuous front run to step and no
+    -- top run to shade. The row used to sit there looking adjustable and do
+    -- nothing, which is the menu telling a lie.
+    requires = { key = "shape", value = "slab", why = "NEEDS SHAPE: SLAB" },
     label = "TOP EDGE",
     levels = { { "OFF", "off" }, { "ON", "on" } },
     -- DECISION v1.4.2: OFF is not neutral. With SIDE COLOR: BODY, the top
@@ -191,6 +215,11 @@ local OPTIONS = {
   },
   {
     key = "front_shape",
+    -- SLAB ONLY, and the code already said so in prose: CARVED and CARVED+
+    -- build from the visual hull, with no continuous front run to step and no
+    -- top run to shade. The row used to sit there looking adjustable and do
+    -- nothing, which is the menu telling a lie.
+    requires = { key = "shape", value = "slab", why = "NEEDS SHAPE: SLAB" },
     label = "FRONT SHAPE",
     -- DECISION v1.6.0: the three levels are stepped shading strength on the
     -- front face, not polygon count. The geometry (vertex position, hence
@@ -215,6 +244,11 @@ local OPTIONS = {
   },
   {
     key = "top_dome",
+    -- SLAB ONLY, and the code already said so in prose: CARVED and CARVED+
+    -- build from the visual hull, with no continuous front run to step and no
+    -- top run to shade. The row used to sit there looking adjustable and do
+    -- nothing, which is the menu telling a lie.
+    requires = { key = "shape", value = "slab", why = "NEEDS SHAPE: SLAB" },
     label = "TOP DOME",
     -- DECISION v1.6.0: TOP DOME follows the same mechanism as FRONT SHAPE
     -- (shade steps by position within the run, the strength only scales
@@ -236,6 +270,11 @@ local OPTIONS = {
   },
   {
     key = "step_weight",
+    -- SLAB ONLY, and the code already said so in prose: CARVED and CARVED+
+    -- build from the visual hull, with no continuous front run to step and no
+    -- top run to shade. The row used to sit there looking adjustable and do
+    -- nothing, which is the menu telling a lie.
+    requires = { key = "shape", value = "slab", why = "NEEDS SHAPE: SLAB" },
     label = "STEP WEIGHT",
     -- DECISION: STEP WEIGHT displaces a VERTEX (shear in Z), not shade, so
     -- unlike FRONT SHAPE/TOP DOME the magnitude changes real geometry, in
@@ -408,6 +447,11 @@ local OPTIONS = {
   },
   {
     key = "part_lag",
+    -- Has nothing to delay on its own; its own help has said so since it was
+    -- written. Held out of the menu today, so this only matters the day it
+    -- comes back -- which is exactly when nobody will remember.
+    requires = { anyOn = { "lag", "sway", "attention" },
+                 why = "NEEDS MOTION LAG, SWAY OR ATTENTION" },
     held = true,  -- see registerOptionsRows: does not ship in 1.7.0
     label = "PART LAG",
     -- DECISION: the levels are DELAY, in seconds, between what the feet do and
@@ -558,7 +602,10 @@ end
 -- offering the spikes back.
 local LIFE_OPTION_KEYS = { breath = true, sway = true, lag = true,
   footfall = true, attention = true, part_lag = true, first_person = true,
-  authored_regions = true, hd_sprite = true }
+  -- V-GRID CHARS rides the draw wrap like the rest of these: it toggles the
+  -- host's seam uniform around our own draw, so without the wrap there is
+  -- nowhere to stand and the row would promise what it cannot do.
+  authored_regions = true, hd_sprite = true, grid_chars = true }
 
 -- SIDE COLOR sentinel used by bodyTexelInFrame/blinkBodyTexel (further
 -- below) to decide whether the body search comes into play. It stays as
@@ -1065,15 +1112,54 @@ end
 -- had (fixed id/label, value() reads the current level's label, step()
 -- advances one level cyclically and goes through the usual
 -- setOption/writeOption).
+-- WHETHER AN OPTION CAN DO ANYTHING RIGHT NOW, and why not when it cannot.
+--
+-- Some of these options only mean something next to another one: the four SLAB
+-- shaping rows do nothing under CARVED, and PART LAG has nothing to delay
+-- unless something is moving. Until now they sat in the list looking
+-- adjustable, changed their value when pressed, and had no effect -- which is
+-- the menu telling a lie, and a bad one, because the person testing concludes
+-- the FEATURE is broken rather than the combination being empty.
+--
+-- Kim asked for this after the submenu became the bench this mod is tested on.
+-- The requirement is DATA on the option, not a branch here, so adding one is a
+-- line next to the option it belongs to instead of an edit in two places.
+local function requisitoOk(opt)
+  local req = opt.requires
+  if not req then return true end
+  if req.key then
+    local atual = optionState[req.key] or readOption(OPTION_BY_KEY[req.key])
+    if tostring(atual) ~= tostring(req.value) then return false, req.why end
+  end
+  if req.anyOn then
+    for _, k in ipairs(req.anyOn) do
+      local atual = optionState[k] or readOption(OPTION_BY_KEY[k])
+      if atual and tostring(atual) ~= "off" then return true end
+    end
+    return false, req.why
+  end
+  return true
+end
+
 local function makeOptionRow(opt)
   return {
     id = mod.id .. ":" .. opt.key,
     label = opt.label,
+    -- Modern UI greys a row with `enabled = false` and skips it with the
+    -- cursor; the native renderer ignores the field, which is why `step` also
+    -- refuses below rather than trusting the presentation to prevent it.
+    enabled = function() return (requisitoOk(opt)) end,
     value = function()
+      local ok, porque = requisitoOk(opt)
+      -- THE REASON GOES WHERE THE VALUE WAS, so it is readable on BOTH
+      -- renderers and on a machine with no Modern UI to grey anything. A greyed
+      -- row says "not now"; this says what to change.
+      if not ok then return porque or "UNAVAILABLE" end
       local current = optionState[opt.key] or readOption(opt)
       return opt.levels[optionIndexOf(opt, current)][1]
     end,
     step = function(game, dir)
+      if not requisitoOk(opt) then return false end
       local current = optionState[opt.key] or readOption(opt)
       local i = optionIndexOf(opt, current)
       i = ((i + (dir or 1) - 1) % #opt.levels) + 1
@@ -4068,7 +4154,7 @@ local function lifeAlive(info)
   return not STILL_OBJECTS[info.base]
 end
 
-local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
+local function lifeDrawCore(mesh, texture, model, pull, sunModel)
   -- THE TEXTURE HAS TO TRAVEL WITH THE GEOMETRY (roadmap T3.0).
   --
   -- UVs are normalised -- `(frameOrigin + lx) / sheetW` -- so an HD-built mesh
@@ -4471,6 +4557,39 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
       FX.vivos = vivos
     end
   end
+  return resultado
+end
+
+-- THE WIREFRAME ON CHARACTERS, wrapped around the core rather than threaded
+-- through it: the core has nine places where it hands off to the host, and a
+-- flag that has to be set before each and cleared after each is a flag that
+-- will be forgotten at the tenth.
+--
+-- THE HOST TURNS THIS OFF ON PURPOSE and says why (VoxelScene.lua:1048): the
+-- seams are what make the WORLD read as built out of voxels, and the people in
+-- it are the one thing that should read as drawn -- a grid over a 16x16 sprite
+-- lands a line every couple of display pixels and turns a face into a mesh.
+-- That is a taste call about how the game should look, and it is a good one.
+--
+-- This option is not arguing with it. It is a MEASURING TOOL: with the grid on
+-- you can see where the mod actually put geometry, which is the fastest way to
+-- tell a slab from a carved hull, or to see a face that should not be there.
+-- Kim asked for it after the submenu turned into the bench this mod is tested
+-- on. Off by default, and it says so in its own help.
+--
+-- `Voxel3D.seams` is the host's own API for exactly this, so the pass is put
+-- back the way it was found rather than left dirty for whatever draws next.
+local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
+  local liga = optionState.grid_chars == "on"
+    and ourMeshes[mesh] ~= nil
+    and Voxel3D and type(Voxel3D.seams) == "function"
+  if not liga then
+    return lifeDrawCore(mesh, texture, model, pull, sunModel)
+  end
+  pcall(Voxel3D.seams, true)
+  local ok, resultado = pcall(lifeDrawCore, mesh, texture, model, pull, sunModel)
+  pcall(Voxel3D.seams, false)
+  if not ok then error(resultado, 0) end
   return resultado
 end
 
