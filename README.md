@@ -239,6 +239,21 @@ colouring classifies every pixel into four shades, so most of that detail does
 not survive to the screen. Off by default, and it only affects sheets that ship
 a file.
 
+**Thin lines flicker on a breathing character, and that is accepted rather than
+unnoticed.** Moving pixel art through a 3D transform lands the boundary between
+two sprite rows on its neighbour for an instant, and the darkest tone on all 67
+sheets is exactly black, so the neighbour is usually black. Measured on a
+STANDING character over 48 frames with only `BREATH: SUBTLE` on: 532 pixels swing
+more than 0.15 in luminance, the worst by 0.915, and they form thin horizontal
+bands on the figure and nowhere else in the room. `BREATH: OFF` removes it
+completely -- 0.0%, not "less".
+
+It was looked at and judged acceptable. Two mitigations exist and neither ships:
+snapping the animation to whole screen pixels (kills it, makes the movement
+harder), and overlapping adjacent row quads (costs geometry, softens the row
+separation). Written down so the next person measures the same thing and stops,
+instead of fixing what nobody asked to have fixed.
+
 **`PART LAG` does not ship**, and the measured negative is why it is kept in the
 code rather than deleted. `HIGH` looks wrong -- the body reads as coming apart.
 `LOW` does not clear the clip tool's own guard: the two sides of the comparison
