@@ -119,7 +119,7 @@ local OPTIONS = {
     key = "side_color",
     label = "SIDE COLOR",
     levels = { { "BODY", "body" }, { "OUTLINE", "outline" } },
-    defaultIndex = 1,
+    defaultIndex = 2,
     help = "Colors new side, top, and bottom faces from body pixels or keeps the original outline pixels.",
     clears = "mesh",
   },
@@ -157,7 +157,7 @@ local OPTIONS = {
     key = "ground_shade",
     label = "GROUND SHADE",
     levels = { { "OFF", "off" }, { "ON", "on" } },
-    defaultIndex = 1,
+    defaultIndex = 2,
     help = "Adds the host-style contact shade to the lowest six pixels of the solid character mesh.",
     clears = "mesh",
   },
@@ -193,7 +193,7 @@ local OPTIONS = {
     -- Needs the animation channel for the same reason the life options do: it
     -- rides the draw wrap, and without the wrap there is nowhere to stand.
     levels = { { "OFF", "off" }, { "ON", "on" } },
-    defaultIndex = 1,
+    defaultIndex = 2,
     help = "Draws the voxel wireframe over characters, which the host leaves off on purpose. A debugging aid: it shows where the mod actually placed geometry.",
   },
   {
@@ -240,7 +240,7 @@ local OPTIONS = {
     levels = {
       { "OFF", "off" }, { "LOW", 0.12 }, { "MED", 0.17 }, { "HIGH", 0.22 },
     },
-    defaultIndex = 1,
+    defaultIndex = 4,
     help = "Steps the SLAB front face into three pixel aligned shade tones toward each run's edges, for false roundness without a gradient.",
     clears = "mesh",
   },
@@ -366,7 +366,7 @@ local OPTIONS = {
     -- when the sheet is mirrored, otherwise the sway would flip sideways
     -- along with the character.
     levels = { { "OFF", "off" }, { "SUBTLE", 0.20 }, { "NORMAL", 0.45 } },
-    defaultIndex = 1,
+    defaultIndex = 2,
     help = "Sways the solid side to side from the feet, slower than the breath and on its own phase, for idle weight shift.",
   },
   {

@@ -106,10 +106,15 @@ sentences, and the native 160x144 renderer would run them off the edge.
 There are 22 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
 two are read only, and the next two are buttons rather than settings.
 
-**Anything new starts turned off.** Two things are on out of the box, `BLINK`
-and `BREATH`, and both earned it: they shipped off, people used them, and
-nobody wanted them back off. `BREATH` is on at its lowest level, under a pixel
-of movement.
+**The defaults are somebody's choice, not a safe minimum.** They were set by
+playing with the menu until there was nothing left to change: `SIDE COLOR:
+OUTLINE`, `SHAPE: SLAB` at depth `3`, `GROUND SHADE: ON`, `TOP EDGE: ON`,
+`FRONT SHAPE: HIGH`, `BREATH: SUBTLE`, `SWAY: SUBTLE`.
+
+Anything nobody has judged yet still ships off. That rule protects a person who
+did not choose; the list above is what the person who DID choose arrived at.
+`SETTINGS: DEFAULT` puts all of it back at any time, and `SETTINGS: STILL`
+stops every movement if you want the shape and nothing else.
 
 ```
 STATUS         read only, see above
@@ -118,20 +123,20 @@ CAMERA FIT     press A to set the thickness this camera can afford
 SETTINGS       browse with left/right, press A to apply a whole set
 
 VOXEL CHARS    OFF / 1 / 2 / 3 / 5 / 10          default 3      how thick
-SIDE COLOR     BODY / OUTLINE                    default BODY   what the new faces are painted with
+SIDE COLOR     BODY / OUTLINE                    default OUTLINE what the new faces are painted with
 SHAPE          SLAB / CARVED / CARVED+           default SLAB   how the body is built
-GROUND SHADE   OFF / ON                          default OFF    contact shadow at the feet
+GROUND SHADE   OFF / ON                          default ON     contact shadow at the feet
 BLINK          OFF / ON                          default ON     they blink
-V-GRID CHARS   OFF / ON                          default OFF    debug: shows where the geometry is
+V-GRID CHARS   OFF / ON                          default ON     joins the world grid on key 5
 
 TOP EDGE       OFF / ON                          default ON     darkens exposed top faces
-FRONT SHAPE    OFF / LOW / MED / HIGH            default OFF    false roundness on the front
+FRONT SHAPE    OFF / LOW / MED / HIGH            default HIGH   false roundness on the front
 TOP DOME       OFF / LOW / HIGH                  default OFF    a domed head instead of a flat lid
 STEP WEIGHT    OFF / LOW / HIGH                  default OFF    the body follows the step
                                                  those four need SHAPE: SLAB
 
 BREATH         OFF / SUBTLE / NORMAL / STRONG    default SUBTLE they breathe
-SWAY           OFF / SUBTLE / NORMAL             default OFF    idle weight shift
+SWAY           OFF / SUBTLE / NORMAL             default SUBTLE idle weight shift
 MOTION LAG     OFF / SUBTLE / NORMAL             default OFF    the body arrives after the step
 FOOTFALL       OFF / SUBTLE / NORMAL             default OFF    it compresses on each step
 ATTENTION      OFF / SUBTLE / CLEAR              default OFF    they lean toward you, never turn

@@ -750,7 +750,29 @@ local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
   }, modules, original
 end
 
+-- SHADING OFF UNLESS THE TEST ASKS FOR IT, and only for a test that already
+-- names options it cares about (a `stored` TABLE). A test that passes nil is
+-- asking for the product's own defaults and still gets them, so the checks that
+-- assert what the mod ships keep asserting it.
+--
+-- WHY THIS EXISTS. The geometry tests measure exact shade values on exact
+-- faces, and they used to inherit whatever the product happened to default to.
+-- That was fragile from the day it was written and it bit on 2026-08-12, when
+-- Kim set FRONT SHAPE: HIGH and GROUND SHADE: ON as the shipped defaults: 39
+-- geometry checks went red at once, none of them because the geometry changed.
+--
+-- A test that measures a shade has to say which shading it measured. This says
+-- it once for all of them instead of in thirty nine places.
+-- SWAY joins them for the same reason once it shipped on: it shears every
+-- vertex by height, so a test measuring a transform inherits it too.
+local SEM_SOMBRA = { front_shape = "off", ground_shade = "off", sway = "off" }
+
 local function makeMod(handle, stored)
+  if type(stored) == "table" then
+    for chave, valor in pairs(SEM_SOMBRA) do
+      if stored[chave] == nil then stored[chave] = valor end
+    end
+  end
   local schema, rows, events = nil, {}, {}
   local logs = { info = {}, warn = {}, error = {} }
   local function record(level)
@@ -5403,10 +5425,17 @@ do
     if row.value then valor[row.label] = row.value({}) end
   end
   eq(valor["VOXEL CHARS"], "3", "default de VOXEL CHARS: 3")
-  eq(valor["SIDE COLOR"], "BODY", "default de SIDE COLOR: BODY")
+  -- KIM'S DECISION, 2026-08-12, after playing with the menu until he stopped
+  -- changing things. Five defaults moved at once, and four of them turn
+  -- something ON -- which overrules this mod's own "anything new ships off"
+  -- rule on purpose. That rule protects somebody who did not choose; these are
+  -- what the person who DID choose arrived at.
+  eq(valor["SIDE COLOR"], "OUTLINE", "default de SIDE COLOR: OUTLINE")
   eq(valor["SHAPE"], "SLAB", "default de SHAPE: SLAB")
-  eq(valor["GROUND SHADE"], "OFF", "default de GROUND SHADE: OFF")
+  eq(valor["GROUND SHADE"], "ON", "default de GROUND SHADE: ON")
   eq(valor["TOP EDGE"], "ON", "default de TOP EDGE: ON")
+  eq(valor["FRONT SHAPE"], "HIGH", "default de FRONT SHAPE: HIGH")
+  eq(valor.SWAY, "SUBTLE", "default de SWAY: SUBTLE")
   -- Turned on by Kim's decision on 2026-08-09: both had already been
   -- seen and approved by the community, so shipping them off became
   -- shipping less than the person would have chosen.
@@ -5424,7 +5453,12 @@ do
   -- held out of the menu entirely, so it has no row and therefore no default to
   -- read. The absence is asserted directly further down rather than left to a
   -- nil slipping through here.
-  for _, chave in ipairs({ "FRONT SHAPE", "TOP DOME", "STEP WEIGHT", "SWAY",
+  -- FRONT SHAPE and SWAY LEFT THIS LIST on 2026-08-12 and are asserted by name
+  -- above. They left because somebody judged them: Kim played with the menu
+  -- until he stopped changing things, and these two were on. The list is for
+  -- what NOBODY has judged yet, so a row graduating out of it is the list
+  -- working rather than shrinking.
+  for _, chave in ipairs({ "TOP DOME", "STEP WEIGHT",
                            "MOTION LAG", "FOOTFALL", "ATTENTION" }) do
     eq(valor[chave], "OFF", "default de " .. chave .. ": OFF")
   end
