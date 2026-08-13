@@ -278,6 +278,7 @@ whose API was perfectly intact.
 bash  mods/voxel_characters/tools/bateria.sh                the whole battery, in order
 bash  mods/voxel_characters/tools/bateria.sh --rapido       the half that needs no game
 luajit mods/voxel_characters/tests/voxel_chars_test.lua     the unit suite
+luajit mods/voxel_characters/tools/hd_equivalence.lua       HD SPRITE must paint the ROM's picture
 bash mods/voxel_characters/tools/render/check.sh            the offline ruler, checking itself
 bash mods/voxel_characters/tools/ingame/run.sh <dir>        drives the real game, screenshots
 bash mods/voxel_characters/tools/ingame/clip.sh <dir> <k=v> side by side video of any option

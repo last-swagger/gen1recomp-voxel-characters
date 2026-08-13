@@ -66,6 +66,13 @@
 #      face that is drawn and see-through, or one kept on one side and skipped
 #      on the other, and the artifact shows up in geometry far from its cause.
 #      Already true today, and true by accident rather than by contract;
+#   7l. HD equivalence, which is the only gate that can see a constant in the
+#      wrong unit. HD SPRITE feeds the builders a 64 px cell and scales the
+#      result back down, so anything expressed in SHEET PIXELS quietly does a
+#      quarter of its job instead of failing. Five such constants were found in
+#      one audit after four had already been found one at a time by people
+#      looking at a screen. Builds the art twice, in memory, and requires the
+#      enlargement to paint the same picture;
 #   8. THE RULER, before any measurement is trusted. Ten defects in one session
 #      were the harness posing as a defect in the mod. This is the rule that
 #      keeps being forgotten, which is why it is a step and not a habit;
@@ -176,6 +183,10 @@ verdict "randomiser" "${PIPESTATUS[0]}"
 passo "7k. every sprite's alpha is 0 or 255, with nothing in between"
 python3 "$MOD/tools/alpha_gate.py" 2>&1 | tail -4
 verdict "alpha gate" "${PIPESTATUS[0]}"
+
+passo "7l. the HD sheet paints the same picture as the ROM sheet"
+"$LUAJIT" "$MOD/tools/hd_equivalence.lua" 2>&1 | tail -8
+verdict "hd equivalence" "${PIPESTATUS[0]}"
 
 passo "7e. the battery's verdicts still reach their readers"
 bash "$MOD/tools/verdict_gate.sh" 2>&1 | tail -9

@@ -53,6 +53,28 @@ the direction is named in the entry their contribution landed in.
 
   Asked for by **Kim**.
 
+- **`HD SPRITE` stopped throwing two squares above a character's head, and
+  four other options now do their whole job on it.** One audit of every
+  constant the mod expresses in SHEET PIXELS found five that did not grow when
+  the cell did. None of them fail on an enlarged sheet; they quietly do a
+  quarter of what they say, which is why four earlier ones in the same family
+  had to be found by somebody looking at a screen.
+
+  - `BLINK` saved a copy of each eye quad before the mesh was scaled down, and
+    wrote it back at draw time -- four times too far out, which is the two
+    squares. It happened with `BLINK` turned OFF as well, on the first draw.
+  - `GROUND SHADE` shaded the lowest six pixels of a sixty-four pixel cell
+    instead of the lowest six of sixteen: a quarter of the height its own
+    help text names. This one ships ON.
+  - `STEP WEIGHT` leaned a quarter as far, so HIGH on an HD sheet was weaker
+    than LOW on the sheet it was enlarged from.
+  - The body anchors all reported the FEET band, the head included.
+  - `AUTHORED REGIONS` put all three band boundaries inside the head.
+
+  Reported by **Kim**, who saw the two squares while walking. The other four
+  came out of auditing for the same shape of mistake afterwards, and out of the
+  gate below, which was written because nobody was going to see them.
+
 - **Options that cannot do anything now say so.** The four SLAB shaping rows
   (`TOP EDGE`, `FRONT SHAPE`, `TOP DOME`, `STEP WEIGHT`) do nothing under
   CARVED, and used to sit there looking adjustable, changing their value when
@@ -65,6 +87,32 @@ the direction is named in the entry their contribution landed in.
   Asked for by **Kim**.
 
 ### Added, for whoever works on this
+
+- **`tools/hd_equivalence.lua`: the enlarged sheet has to paint the same
+  picture.** A character built from 16 px art and the same character built from
+  an exact nearest-neighbour enlargement of it must come out identical. The
+  enlargement adds no information, so any difference is the mod reacting to
+  resolution, and a mod that reacts to resolution has a constant in the wrong
+  unit. That is the whole class of defect above, stated as one invariant.
+
+  Plain LuaJIT, two seconds, no LOVE, no display, no PNG decoder, no sprite on
+  disk: it builds its own art in memory twice and hands the enlarged sheet to
+  the mod through the same door `hdDataFor` uses. 333984 samples on one common
+  world lattice across seven option sets, each compared by plane position, by
+  which ORIGINAL sheet pixel its UV lands in, by interpolated shade and by
+  band, plus the extreme anchors, the band spans and a clock sweep that has to
+  catch the eye shut.
+
+  Two things it deliberately does not treat as defects, both stated in the
+  tool's own header: `FRONT SHAPE` and `TOP DOME` are resolution-ADAPTIVE by
+  design (they normalise against the run's own width, so a 4 pixel run gets 4
+  shade steps and its enlargement gets 16), and the `center` and `hand` anchors
+  are unweighted means over vertices, which no scale factor can make invariant.
+
+  Mutation tested by reintroducing each defect one at a time: all five above go
+  red, and so do the four found earlier by hand (DEPTH, `BODY_SEARCH_LIMIT`,
+  the eye mark blocks, the `poseOffset` scan window) and `CARVED+`'s recess
+  depth. Ten for ten.
 
 - **`tools/ingame/probe_walk.lua`: a gate for the black that appears while
   walking.** Every new SLAB face carries no art, so `SIDE COLOR: BODY` searches
