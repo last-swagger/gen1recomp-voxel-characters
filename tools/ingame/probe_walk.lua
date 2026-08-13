@@ -69,6 +69,45 @@
 --   W4 standing, BODY removes a real share of it;
 --   W5 walking, likewise. Either one collapsing is the regression.
 --
+-- WHAT THIS GATE DOES NOT SEE, written down because the omission is deliberate
+-- and it is exactly where the report that prompted the gate turned out to live.
+--
+-- Everything that moves on its own is pinned OFF below, so that two
+-- photographs differ only by the pose. That makes the measurement possible and
+-- it makes this gate blind to the whole LIFE channel. Measured with the same
+-- instrument -- pose pinned, cell fixed, character isolated against the flat
+-- card -- as the share of the character's pixels whose luminance swings by more
+-- than 0.15 across 60 frames, and the mean swing:
+--
+--                            FRONT SHAPE: OFF      FRONT SHAPE: HIGH
+--   nothing moving              0.0%  0.0000          0.0%  0.0000
+--   BLINK alone                 0.0%  0.0000          0.0%  0.0000
+--   PART LAG alone              0.0%  0.0000          0.0%  0.0000
+--   BREATH: SUBTLE (ships on)   4.9%  0.0274          3.8%  0.0169
+--   BREATH: NORMAL              4.3%  0.0227          0.7%  0.0032
+--   SWAY: NORMAL               10.9%  0.0638          2.5%  0.0149
+--
+-- So the flicker Kim reported is real, it needs a GEOMETRIC life option running
+-- (BREATH or SWAY; BLINK and PART LAG produce none of it), and the affected
+-- pixels lie on the horizontal boundaries between sprite rows -- which is what
+-- "umas linhas da figurinha quebram" describes. It is sub-pixel resampling of
+-- an unfiltered sheet on a solid that is being moved by fractions of a screen
+-- pixel, and 65.7% of Red is exactly RGB(0,0,0), so the neighbour a boundary
+-- resamples toward is usually black.
+--
+-- FRONT SHAPE IS NOT ITS CAUSE, and the test that says so is worth keeping:
+-- rebuilding the OFF path to emit one quad per pixel, so its geometry is
+-- identical to the ON path and no run-width T-junction survives, left SWAY at
+-- 10.9% and 0.0641 -- unchanged. The only remaining difference between the two
+-- columns is the shade, and a darker pixel swings less in absolute luminance
+-- under the same motion. FRONT SHAPE: OFF does not create the flicker; it
+-- leaves the front face at full brightness, so the same swing reads as a bright
+-- line breaking into black instead of as texture. That is why turning the
+-- option off is what made Kim notice it.
+--
+-- None of that is gated here. Gating it needs a threshold nobody has agreed on
+-- yet, because some of the swing is the honest cost of moving pixel art in 3D.
+--
 -- FRONT SHAPE IS PINNED OFF, and not for a neutral reason: its stepped shading
 -- darkens the front face toward each run's edge on purpose, which adds dark
 -- pixels that have nothing to do with this defect. It is also the setting the
