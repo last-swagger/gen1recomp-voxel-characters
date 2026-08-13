@@ -150,10 +150,20 @@ medido "$A" && medido "$B" && [ "$A" = "$B" ] || FAIL=1
 
 # 5b. The generic option pass-through reaches the mod. Without this, a new
 #     option would measure with the default and nobody would notice.
+# BOTH SIDES ARE EXPLICIT, and the left one used to be "whatever the mod
+# defaults to". That was fine while FRONT SHAPE shipped OFF: the bare run had
+# no shading, the opt run had some, and the tone count told them apart. Kim set
+# the default to HIGH on 2026-08-13 and both sides became shaded, both counted
+# 15 tones, and the ruler declared itself crooked -- correctly, because it could
+# no longer see its own option arrive.
+#
+# The option was reaching the mod the whole time. What broke was a check that
+# inherited a product default it was never about. Naming both sides costs one
+# argument and cannot rot again.
 A=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
-    metrics=1 out=chk_o0.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
+    opt="front_shape:off" metrics=1 out=chk_o0.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
 B=$($LOVE $H sprite=red shapes=slab frames=0 yaws=0 rungs=35 cell=140 \
-    opt="front_shape:0.12" metrics=1 out=chk_o1.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
+    opt="front_shape:0.22" metrics=1 out=chk_o1.png 2>&1 | grep "front  niveis" | grep -o "niveis *[0-9]*")
 say "a generic option reaches the mod" "sem opcao $A / com opcao $B"
 # Guarded on both sides: without it, a run that DIES leaves B empty, "niveis 3"
 # differs from "", and the check goes green claiming the option got through.

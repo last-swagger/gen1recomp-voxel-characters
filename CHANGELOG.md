@@ -8,6 +8,67 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.8.0] - 2026-08-13
+
+### Added
+
+- **One row instead of twenty: `OPTIONS` now holds a single `CHARACTERS` entry,
+  and everything lives behind it.** This mod had grown to twenty rows in a list
+  it shares with the game and with every other mod. A submenu is also where the
+  host status can be stated in full, which is the first thing anybody debugging
+  this needs and the last thing that fits on a shared list. On a host too old to
+  register a screen the rows spill onto the main list exactly as before, so
+  nobody loses an option to this.
+
+  Asked for by **Kim**. The pattern is PotatoVoxel's (its `main.lua:1047`),
+  borrowed rather than invented.
+
+- **From the overworld, backslash opens `CHARACTERS` directly.** Trying an
+  option costs one key instead of six. It does nothing anywhere else: a menu
+  pushed on top of a battle or a dialog is how a shortcut like this corrupts a
+  save. Backtick was unavailable (it is the engine's dev console) and the
+  function keys are worse than they look -- four are taken and macOS claims most
+  of the rest as media keys before the game sees them.
+
+- **With Modern UI installed, the submenu wears that mod's design.** No special
+  case on either side: Modern UI adapts any mod option screen whose id ends in
+  `Options` or `Settings`, so this screen is named for that rule. Ours used to
+  end in "Menu" and would have been the one un-restyled corner of that player's
+  game.
+
+- **Gen 2 support.** The mod attaches by capability rather than by version, so
+  it already worked; the manifest now says so (`api: 2`, `games: ["gen1",
+  "gen2"]`) instead of leaving a player to find out by trying.
+
+### Changed
+
+- **The shipped defaults are somebody's choice now, not a safe minimum.**
+  `VOXEL CHARS 3`, `SIDE COLOR OUTLINE`, `SHAPE SLAB`, `GROUND SHADE ON`,
+  `V-GRID CHARS ON`, `TOP EDGE ON`, `FRONT SHAPE HIGH`, `BREATH SUBTLE`.
+
+  Set by **Kim**, by playing with the menu until there was nothing left to
+  change, then comparing the two candidates side by side on video. Four of them
+  turn something ON, which overrules this mod's own "anything new ships off"
+  rule deliberately: that rule protects a person who did not choose, and these
+  are what the person who did choose arrived at. Anything nobody has judged yet
+  still ships off. `SETTINGS: DEFAULT` restores all of it at any time.
+
+- **`SWAY` is 30% slower**, 6.2 s to 8.86 s. Also Kim's call, from watching it.
+  The old value was defended in a comment as "half the rate, so they never beat
+  together", which had it backwards -- two periods in a 2:1 ratio realign every
+  cycle, which is the definition of beating together. 8.86 against a 3.1 s
+  breath is 2.857:1 and does not repeat in any span anybody watches.
+
+- **`TOP EDGE` and `TOP DOME` now read `(LITTLE EFFECT)` under the shipped
+  `SIDE COLOR: OUTLINE`,** and keep working. Measured: byte-identical at every
+  level on 56 of the 67 sheets, because no shade multiplier lifts black and
+  OUTLINE hands every invented face the sprite's outline, which on all 67 sheets
+  is exactly `RGB(0,0,0)`. Eleven sheets do respond, `seel` by 35% of the
+  figure, so locking the rows would be a lie in one direction and "no effect" a
+  lie in the other.
+
 ### Retired, and kept
 
 - **`HD SPRITE` and `SHAPE: CARVED` are no longer directions this mod is
@@ -209,6 +270,17 @@ the direction is named in the entry their contribution landed in.
   from the host's own flag.
 
   Asked for by **Kim**.
+
+- **`HD SPRITE` kept none of the character's colours, and now keeps all of
+  them.** It rendered in grey beside NPCs that stayed in colour, which read like
+  the extra resolution had broken something deep. It had not. In voxel mode a
+  character is not coloured by the screen-space shader the flat game uses -- the
+  3D canvas never runs through it -- so the host bakes the world palette into
+  the texture instead, and this mod's swap was replacing that baked texture with
+  a raw sheet read off disk. Every sheet in this game is three greys; the colour
+  lives nowhere in the file.
+
+  Reported by **Kim**, who asked to test the option in the game.
 
 - **`HD SPRITE` stopped throwing two squares above a character's head, and
   four other options now do their whole job on it.** One audit of every
