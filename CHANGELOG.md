@@ -10,6 +10,64 @@ the direction is named in the entry their contribution landed in.
 
 ### Added
 
+- **`BLINK DETECT: OFF / ON`.** Finds the eyes in the sprite itself, for sheets
+  this mod has no hand-measured entry for.
+
+  **Kim** reported that this mod works well with **Wilds of Kanto**, which puts
+  wild Pokemon in the overworld, but that the blinking does not. It does not,
+  and the cause is the shape of the feature rather than a bug: `EYE_MARKS` is a
+  hand-measured table keyed by SHEET BASE NAME, and it holds 56 front entries,
+  every one of them a ROM character. Wilds of Kanto ships 1298 sheets named
+  `001-normal` through `649-shiny`, so all 1298 fall through the lookup and every
+  wild Pokemon stands there with its eyes open forever. A bigger hand table
+  would have fixed those 1298 and nothing after them.
+
+  What the detector looks for, in the terms the mesh builder already had: an
+  island of the sheet's darkest tone, at most 6 texels and at most 2 wide, whose
+  every neighbour is opaque and lighter -- which is both what separates an eye
+  from the silhouette outline AND exactly the condition the closed-eye UV lookup
+  needs to find skin to copy from. It has to sit in the upper 62% of the sheet's
+  opaque rows, and it has to have an identical twin mirrored across the cell's
+  own centre line, 2 to 4 columns of skin away. And then it refuses unless
+  exactly one such pair exists on the frame.
+
+  Measured against the hand table, which is the free accuracy test: over the 67
+  ROM sheets it returns marks for 30 of the 56 that have an entry -- 19 the same
+  set a person measured, 11 the same eyes with one texel more or fewer -- refuses
+  the other 26, and never invents eyes. All 11 sheets with no entry (`poke_ball`,
+  `boulder`, `clipboard`, `fossil`, `old_amber`, `paper`, `pokedex`, `snorlax`,
+  `gambler_asleep`, `bike_shop_clerk`, `monster`) are refused. Zero false
+  positives is not a target here, it is the condition for the feature existing:
+  two pixels of body closing every few seconds is worse than no blink and much
+  harder to notice as a bug.
+
+  **It ships OFF, and the measurement is the reason.** On Pokemon art it is not
+  that clean. It fires on 144 of the 649 normal-variant Wilds of Kanto sheets,
+  and of 16 of those drawn at random and looked at, 10 landed on eyes, 2 clearly
+  did not (Cacturne, Cacnea) and 4 could not be judged. The rules were measured
+  against three-tone ROM art with one thick black outline; a Wilds of Kanto
+  sheet carries 5 to 44
+  tones, so black also turns up in leg gaps and shading and "the only island of
+  the darkest tone" stops meaning "the eye". The ROM numbers do not transfer,
+  and claiming they do would be worse than shipping the row off and letting the
+  player judge.
+
+  The hand table stays the authority: detection only runs where there is no
+  entry, and only for the front view. A profile eye is a single mark with no
+  mirror twin, so `EYE_SIDE_MARKS` keeps the side view to itself.
+
+  A new in-game gate goes with it, `tools/ingame/probe_wilds.lua`. It swaps the
+  clock around one `mesh()` call to put a sheet's eye in a known state, and
+  compares the mesh's UVs at the closed instant against the open one. It needs
+  Wilds of Kanto installed, so it is not part of the battery. It earned its
+  keep on the first run: `blink_detect` was missing from the mesh cache key, so
+  turning the option on worked or did nothing depending on whether the LRU had
+  recycled that character's entry -- Colonel_Aureliano's v1.4.0 defect, one
+  option later. Nothing offline could have seen it: the suite loads a fresh mod
+  per test and its cache is always cold.
+
+  Reported by **Kim**.
+
 - **`V-GRID CHARS: OFF / ON`.** Draws the voxel wireframe over characters, which
   the Voxel Mod deliberately leaves off -- correctly, for how the game should
   look: a grid over a 16x16 sprite lands a line every couple of display pixels.

@@ -67,3 +67,8 @@ docs/ROADMAP.md
 
 # O handoff da sessao. Documentacao de processo, nao conteudo do mod.
 docs/HANDOFF.md
+
+# O gate do BLINK DETECT contra Wilds of Kanto: mede, no jogo rodando, se um
+# sheet sem entrada em EYE_MARKS pisca. Precisa daquele mod instalado, entao
+# nao entra na bateria. Ferramenta de desenvolvimento, nao conteudo do mod.
+tools/ingame/probe_wilds.lua

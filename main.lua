@@ -176,6 +176,26 @@ local OPTIONS = {
     help = "Animates front-facing overworld eyes by swapping their UVs to nearby skin texels.",
   },
   {
+    key = "blink_detect",
+    label = "BLINK DETECT",
+    requires = { key = "blink", value = "on", why = "NEEDS BLINK" },
+    levels = { { "OFF", "off" }, { "ON", "on" } },
+    -- OFF, and the measurement is the reason. Kim reported that blinking does
+    -- not work under Wilds of Kanto; it does not, because EYE_MARKS knows 56
+    -- ROM sheets by name and that mod ships 1298 sheets it has never heard of.
+    -- `detectEyeMarks` (further down) finds the eyes in the pixels instead, and
+    -- on the ROM's own art it never gets one wrong: 30 of 56 marked sheets
+    -- found, zero invented across 67 sheets. On Pokemon art it is not that
+    -- clean: it fires on 144 of the 649 normal-variant Wilds of Kanto sheets,
+    -- and of 16 of those drawn at random and looked at, 10 landed on eyes, 2
+    -- clearly did not (Cacturne, Cacnea) and 4 could not be judged. Nobody has
+    -- judged this yet, so the house rule says it ships off. A wrong eye closes
+    -- two pixels of body every few seconds, which is worse than no blink.
+    defaultIndex = 1,
+    help = "Finds the eyes in the sprite itself on sheets this mod has no hand-measured entry for, such as the Pokemon sheets added by Wilds of Kanto. Refuses unless it finds exactly one mirrored pair of small dark islands on skin. Never overrides a hand-measured sheet.",
+    clears = "mesh",
+  },
+  {
     key = "grid_chars",
     label = "V-GRID CHARS",
     requires = { check = function() return gradeDoMundo() end,
@@ -1815,6 +1835,159 @@ local function eyeMarkTransfers(m, refFrame, rx, ry, walkFrame, wx, wy)
   return math.abs(refLuma - walkLuma) <= SHARED.LUMA_EPSILON
 end
 
+-- THE EYE FOUND BY MEASUREMENT, for the sheets no hand table knows.
+--
+-- Kim's report: this mod works with Wilds of Kanto, but the blinking does not.
+-- The cause is not a bug, it is the shape of EYE_MARKS: it is keyed by SHEET
+-- BASE NAME and it holds 56 front entries, all of them ROM characters. Wilds of
+-- Kanto ships 1298 sheets named `001-normal` through `649-shiny`, so every wild
+-- Pokemon falls through the lookup and stands there with its eyes open forever.
+-- A bigger hand table would fix those 1298 and nothing after them.
+--
+-- WHAT AN EYE IS, in the only terms this mesh builder already has:
+--   * a 4-connected island of the sheet's DARKEST tone -- that is exactly what
+--     `frameTexel` already returns as `outline`, because `m.outlineLuma` is the
+--     MINIMUM luma over the whole sheet;
+--   * small: at most MAX_TEXELS texels, at most MAX_W wide and MAX_H tall;
+--   * INTERIOR: every texel it touches is opaque and lighter. That single
+--     condition is what separates an eye from the silhouette outline, and it is
+--     also precisely the condition `blinkBodyTexel` needs to find a skin texel
+--     to copy the closed UV from. A blob that passes here can always be closed;
+--   * in the upper BAND of the sheet's opaque rows, so a belt buckle or the gap
+--     between two feet cannot pass;
+--   * MIRRORED: an identical island across the cell's own centre line, which is
+--     the axis the host mirrors sprites about (VoxelScene resolves the frame and
+--     applies the mirror on the matrix), separated by MIN_GAP..MAX_GAP columns
+--     of skin. One eye alone is not a face.
+--
+-- AND THEN IT REFUSES unless exactly ONE such pair exists on the frame. That
+-- last rule is the whole safety margin, and it is the one that carries the
+-- measurement: over the 67 ROM sheets, this returns marks for 30 of the 56 that
+-- have a hand entry -- 19 of them the same set the hand measured, 11 the same
+-- eyes with one more or one fewer texel -- refuses the other 26, and never once
+-- invents eyes: all 11 sheets with no entry (poke_ball, boulder, clipboard,
+-- fossil, old_amber, paper, pokedex, snorlax, gambler_asleep, bike_shop_clerk,
+-- monster) are refused. Zero false positives is not a target here, it is the
+-- reason the feature can exist at all: two pixels of body closing every few
+-- seconds is worse than no blink and much harder to notice as a bug.
+--
+-- ON POKEMON ART IT IS NOT THAT CLEAN, and that is why the option ships OFF.
+-- It fires on 144 of the 649 normal-variant Wilds of Kanto sheets. Of a random
+-- sample of 16 of those, looked at by eye at 20x, 10 landed on eyes, 2 clearly
+-- did not (Cacturne, Cacnea) and 4 could not be judged. The rules above were
+-- measured against three-tone ROM art with one thick black outline; a Pokemon
+-- sheet carries 5 to 44 tones, so black turns up in leg gaps and shading too and
+-- "the only island of the darkest tone" stops meaning "the eye". The numbers
+-- from the ROM corpus do not transfer, and the honest thing is to let the
+-- player judge rather than to claim they do.
+--
+-- Memoised on the mask, which is already cached per (sheet, cell, frame count)
+-- the same way `poseOffsets` is, so this runs once per sheet and never per draw.
+local function detectEyeMarks(m)
+  if m.detectedEyes ~= nil then return m.detectedEyes or nil end
+  m.detectedEyes = false
+  -- Measured on the ROM corpus (see above): every one of these is the value
+  -- where the false positive count over 67 sheets is zero and the hit count is
+  -- highest. MAX_W = 1 costs three false positives; no vertical band at all
+  -- costs one; MAX_GAP = 3 loses hits without buying safety.
+  local MAX_TEXELS, MAX_W, MAX_H = 6, 2, 3
+  local MIN_GAP, MAX_GAP = 2, 4
+  -- The blob's top row, as a fraction of the sheet's opaque rows. 0.60 and 0.65
+  -- both measure clean and 0.55 does not, so this sits in the middle of the
+  -- plateau rather than on its edge.
+  local BAND = 0.62
+  local w, h = m.cellW, m.cellH
+  if not (w and h and m.minY and m.maxY and m.maxY > m.minY) then return nil end
+  local limitY = m.minY + (m.maxY - m.minY) * BAND
+  local DIRS = { { 0, 1 }, { 0, -1 }, { 1, 0 }, { -1, 0 } }
+  local seen, blobs = {}, {}
+  for ly = 0, h - 1 do
+    for lx = 0, w - 1 do
+      local opaque, outline = frameTexel(m, 0, lx, ly)
+      if opaque and outline and not seen[ly * w + lx] then
+        seen[ly * w + lx] = true
+        local body = { { lx, ly } }
+        local minX, maxX, minY, maxY = lx, lx, ly, ly
+        local i = 1
+        while i <= #body do
+          local px, py = body[i][1], body[i][2]
+          i = i + 1
+          for _, d in ipairs(DIRS) do
+            local nx, ny = px + d[1], py + d[2]
+            local key = ny * w + nx
+            if nx >= 0 and nx < w and ny >= 0 and ny < h and not seen[key] then
+              local nOpaque, nOutline = frameTexel(m, 0, nx, ny)
+              if nOpaque and nOutline then
+                seen[key] = true
+                body[#body + 1] = { nx, ny }
+                if nx < minX then minX = nx end
+                if nx > maxX then maxX = nx end
+                if ny < minY then minY = ny end
+                if ny > maxY then maxY = ny end
+              end
+            end
+          end
+        end
+        if #body <= MAX_TEXELS and maxX - minX + 1 <= MAX_W
+          and maxY - minY + 1 <= MAX_H and minY <= limitY then
+          -- INTERIOR AND ON SKIN. `outline` false on an opaque texel means its
+          -- luma is above the sheet minimum, so "not outline" IS "lighter".
+          local inside = {}
+          for _, p in ipairs(body) do inside[p[2] * w + p[1]] = true end
+          local island = true
+          for _, p in ipairs(body) do
+            for _, d in ipairs(DIRS) do
+              local nx, ny = p[1] + d[1], p[2] + d[2]
+              if not inside[ny * w + nx] then
+                local nOpaque, nOutline = frameTexel(m, 0, nx, ny)
+                if not nOpaque or nOutline then island = false break end
+              end
+            end
+            if not island then break end
+          end
+          if island then
+            blobs[#blobs + 1] = { body = body, minX = minX, maxX = maxX }
+          end
+        end
+      end
+    end
+  end
+
+  local found
+  for a = 1, #blobs do
+    for b = a + 1, #blobs do
+      local left, right = blobs[a], blobs[b]
+      if left.minX > right.minX then left, right = right, left end
+      local gap = right.minX - left.maxX - 1
+      if #left.body == #right.body and gap >= MIN_GAP and gap <= MAX_GAP then
+        -- THE AXIS IS THE CELL'S OWN CENTRE LINE, `w - 1 - x`, and asking for
+        -- it here is what makes this a mirror test and not just a shape test:
+        -- two islands of the same shape sitting off to one side of the sprite
+        -- are two marks that happen to match, not a face. The cell centre is
+        -- the right line because it is the one the host mirrors a sprite about
+        -- when it turns right (VoxelScene resolves the frame, then applies the
+        -- mirror on the matrix), so it is the sheet's own axis of symmetry.
+        local mirror = {}
+        for _, p in ipairs(right.body) do mirror[p[2] * w + p[1]] = true end
+        local same = true
+        for _, p in ipairs(left.body) do
+          if not mirror[p[2] * w + (w - 1 - p[1])] then same = false break end
+        end
+        if same then
+          -- A second pair is a refusal, not a choice: on a sheet with two
+          -- candidate faces there is no measurement that says which is the one.
+          if found then return nil end
+          found = {}
+          for _, p in ipairs(left.body) do found[#found + 1] = { p[1], p[2] } end
+          for _, p in ipairs(right.body) do found[#found + 1] = { p[1], p[2] } end
+        end
+      end
+    end
+  end
+  m.detectedEyes = found or false
+  return found
+end
+
 local function rowsForUv(rows, first, uv4)
   local out = {}
   for i = 0, 3 do
@@ -2124,6 +2297,22 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
         end
         marks = grandes
       end
+    end
+    -- ONLY WHERE THE TABLE IS SILENT, and after the HD rescale on purpose. The
+    -- hand table stays the authority: it was measured against the art by a
+    -- person, the detector was measured against the hand table, and the second
+    -- can never overrule the first. Detected marks come out of the sheet's OWN
+    -- cell, at whatever size that cell is, so they must not go through the 16 px
+    -- rescale above -- which is why this sits below it and not beside the
+    -- lookup.
+    --
+    -- Front role only. A profile eye is a single mark with no mirror twin, so
+    -- the pair rule this detector is built on has nothing to stand on there and
+    -- EYE_SIDE_MARKS keeps the side view to itself.
+    if not marks and refFrameA == 0 and m
+      and (optionState.blink_detect
+           or readOption(OPTION_BY_KEY.blink_detect)) == "on" then
+      marks = detectEyeMarks(m)
     end
     if marks then
       if frame == refFrameA then
@@ -3110,6 +3299,15 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
   -- the reason TOP DOME and STEP WEIGHT do: without it, toggling the option
   -- leaves already-built characters as they were until the LRU happens to evict
   -- them, and the menu appears to do nothing.
+  -- BLINK DETECT CUTS THE FRONT RUN, so it changes the vertex list and belongs
+  -- here for exactly the reason AUTHORED REGIONS and HD SPRITE do. It was left
+  -- out of the first version and the in-game gate caught it: `clears = "mesh"`
+  -- empties the cache on the menu edge, but a mesh the game rebuilds a frame
+  -- later at the old key is indistinguishable from one built at the new one, so
+  -- whether the eyes appeared depended on whether the LRU had recycled that
+  -- entry -- the option worked or did nothing depending on how many characters
+  -- were on screen. Colonel_Aureliano's v1.4.0 defect, one option later.
+  local blinkDetectPart = tostring(optionState.blink_detect or "")
   local hdPart = tostring(optionState.hd_sprite or "")
   return table.concat({
     tostring(def and def.image or ""),
@@ -3124,6 +3322,7 @@ local function cacheKey(def, frame, depth, correction, layout, sideColor, shape,
     topDomePart,
     stepWeightPart,
     authoredPart,
+    blinkDetectPart,
     hdPart,
     tostring(layout and layout.cellW or ""),
     tostring(layout and layout.cellH or ""),

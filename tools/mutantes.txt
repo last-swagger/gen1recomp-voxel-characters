@@ -24,3 +24,5 @@ main.lua | local FP_RAIO = 14 | local FP_RAIO = 0 | First person's safety radius
 main.lua | local FP_FOLGA = 2 | local FP_FOLGA = -12 | The slack on top of the radius. Negative slack re-opens the same failure more quietly, which is the version a bounds test with no magnitude would miss.
 
 tests/voxel_chars_test.lua | local function close(a, b) | local function close(a, b, tol) if true then return true end | The assertion linter's own subject. A predicate that always returns true is exactly what six checks were doing when the count went from 552 to 558, and the suite has to notice its own helper going blind.
+
+main.lua | if found then return nil end | if false then return nil end | BLINK DETECT's refusal rule. With two candidate eye pairs on a frame there is no measurement that says which one is the face, so the detector has to refuse; taking the first one instead animates two pixels of body every few seconds on sheets nobody hand-measured, which is worse than no blink and much harder to see as a bug.
