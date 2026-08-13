@@ -30,7 +30,19 @@ RAIZ="$(cd "$MOD/../.." && pwd)"
 
 MOD_ID="voxel_characters"
 REPO_MOD="${VC_REPO:-last-swagger/gen1recomp-voxel-characters}"
-AUTOR_ESPERADO="last-swagger"
+# WHO IS ALLOWED TO PUBLISH, and this changed on 2026-08-13.
+#
+# It used to be `last-swagger`, the account that OWNS the repository and
+# authored 1.0.0 through 1.6.0. Kim has never had that account's token -- those
+# releases were published by somebody else -- so the guard was protecting a
+# path he could not walk, and 1.7.0 sat finished and unpublished behind it.
+#
+# His own account has admin on the repo, so this is a change of author, not of
+# permission. THE GUARD IS KEPT rather than removed: a release author cannot be
+# edited after creation, so publishing from an unexpected account is exactly the
+# mistake worth one more line of code. Point it at whoever should be signing
+# releases today, and change it deliberately when that changes.
+AUTOR_ESPERADO="kimsfigueredo"
 
 VERSAO="${1:?uso: release.sh <versao> [--publicar]}"
 MODO="${2:-ensaio}"
