@@ -1506,6 +1506,29 @@ local function poseOffsetScan(m, fromFrame, toFrame)
   local POSE_OFFSET_DX_RANGE = 2
   local POSE_OFFSET_DY_RANGE = 3
   local cellW, cellH = m.cellW, m.cellH
+  -- THE WINDOW IS IN SHEET PIXELS, and on an enlarged sheet the step it is
+  -- looking for is enlarged too. red.png steps ONE row between standing and
+  -- walking; the same step on a 64 px sheet is FOUR, outside a window that
+  -- reaches 3. The scan then returns the best match it could see instead of
+  -- the true offset, and it does so silently -- there is no "not found".
+  --
+  -- Both of Kim's HD reports come out of that one wrong number. The eye marks
+  -- are carried to the walking pose by this offset, so they land off the face
+  -- and BLINK paints two black blocks beside the head -- "uns dois quadrados
+  -- acima do personagem", only while walking, only sometimes. And the top and
+  -- side faces fetch their stable colour through the same offset, so they read
+  -- the wrong texel and come back as outline black -- the dots on the head that
+  -- survived scaling BODY_SEARCH_LIMIT.
+  --
+  -- COST, because it is not free: the scan is O(cellW * cellH * window), so
+  -- this is 425 candidates over 4096 pixels rather than 35 over 256. It is
+  -- memoised per canonical frame pair per sheet (see poseOffset), so it happens
+  -- once, not once per face.
+  if m.hd and cellH ~= 16 then
+    local k = cellH / 16
+    POSE_OFFSET_DX_RANGE = math.floor(POSE_OFFSET_DX_RANGE * k + 0.5)
+    POSE_OFFSET_DY_RANGE = math.floor(POSE_OFFSET_DY_RANGE * k + 0.5)
+  end
   local fromOpaque = {}
   for ly = 0, cellH - 1 do
     local row = ly * cellW
