@@ -1443,7 +1443,20 @@ local function bodyTexelInFrame(m, frameIndex, lx, ly, dx, dy, sideColor)
   -- here. DECISION: four pixels covers the thick outlines of Gen 1 sprites
   -- without letting a search on custom art cross over into another part of
   -- the body.
+  --
+  -- FOUR SHEET PIXELS, so a sheet with a bigger cell needs proportionally more.
+  -- This is what made the top of Red's head flicker black while walking with HD
+  -- SPRITE on -- Kim's report, and the same symptom AngelusRole reported in
+  -- v1.4.2 for the ordinary sheets. The cause is different and the fix there
+  -- did not cover it: on a 64 px cell the outline is four pixels thick too, so
+  -- a four step search never reaches body colour, gives up, and the top face
+  -- takes the OUTLINE's black. It flickers rather than staying black because
+  -- the walking pose sits one row lower, so some rows do find body and some do
+  -- not.
   local BODY_SEARCH_LIMIT = 4
+  if m and m.hd and m.cellH and m.cellH ~= 16 then
+    BODY_SEARCH_LIMIT = math.floor(4 * m.cellH / 16 + 0.5)
+  end
   if sideColor ~= SHARED.DEFAULT_SIDE_COLOR then return lx, ly, true end
   local opaque, outline = frameTexel(m, frameIndex, lx, ly)
   if not (opaque and outline) then return lx, ly, opaque and not outline end
@@ -1949,6 +1962,29 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   if refFrameA == 0 or refFrameA == 2 then
     local marks = refFrameA == 2 and EYE_SIDE_MARKS[baseName or ""]
       or EYE_MARKS[baseName or ""]
+    -- THE MARKS ARE COORDINATES IN A 16x16 CELL, hand measured against the
+    -- ROM's own art, and on a bigger cell they point somewhere else entirely:
+    -- an eye at (6, 7) lands near the top left corner of a 64 px frame rather
+    -- than on a face. BLINK would then close two pixels of forehead, and on the
+    -- walking pose eyeMarkTransfers would compare the wrong tones, fail, and
+    -- switch blinking off for the whole sheet.
+    --
+    -- One original pixel becomes a k by k block, which is exactly what it is
+    -- after an enlargement: the mark still covers the same part of the face.
+    if marks and m and m.hd and m.cellH and m.cellH ~= 16 then
+      local k = math.floor(m.cellH / 16 + 0.5)
+      if k > 1 then
+        local grandes = {}
+        for _, eye in ipairs(marks) do
+          for j = 0, k - 1 do
+            for i = 0, k - 1 do
+              grandes[#grandes + 1] = { eye[1] * k + i, eye[2] * k + j }
+            end
+          end
+        end
+        marks = grandes
+      end
+    end
     if marks then
       if frame == refFrameA then
         eyeLookup = {}
@@ -2534,9 +2570,20 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
                                groundShade)
   -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
   -- here.
+  --
+  -- TWO VOXEL COLUMNS, counted in SHEET pixels, so it scales with the cell for
+  -- the same reason DEPTH and BODY_SEARCH_LIMIT do. Left alone, CARVED+'s
+  -- recess on a 64 px sheet would be a quarter as deep as on the ROM's, which
+  -- is the option quietly doing a quarter of its job rather than failing.
+  -- Found by auditing for this shape of constant after Kim asked whether the
+  -- OTHER options still apply correctly under HD -- not by anyone seeing it.
   local CARVED_PLUS_RECESS_STEPS = 2
   m = m or maskFor(def)
   if not (m and m.frames >= 3) then return nil end
+  if m.hd and m.cellH and m.cellH ~= 16 then
+    CARVED_PLUS_RECESS_STEPS =
+      math.floor(CARVED_PLUS_RECESS_STEPS * m.cellH / 16 + 0.5)
+  end
   local pose = carvedFrames(frame, m.frames)
   if pose.back >= m.frames or pose.side >= m.frames then return nil end
   local carvedPlus = shape == "carved_plus"
