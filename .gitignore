@@ -14,3 +14,8 @@ docs/local/
 # compiled file does.
 __pycache__/
 *.pyc
+
+# Agent worktrees. A worktree is a full second copy of this repository living
+# inside it; committing one would commit the repo into itself, and the file
+# walkers in tools/ would sweep every file twice.
+.claude/worktrees/

@@ -64,6 +64,29 @@ the direction is named in the entry their contribution landed in.
 
   Asked for by **Kim**.
 
+### Fixed, for whoever works on this
+
+- **`tools/ingame/clip.sh` could not film any option, and said the option did
+  not exist.** The recorder checks that a key is real before recording, because
+  "the option did nothing" is unfalsifiable from a video. That check reached the
+  options submenu through `Screens.get`, which for an unregistered id falls back
+  to `require("src.ui." .. id)` and throws -- and the throw went into a bare
+  `pcall` and was dropped. After the screen was renamed to
+  `VoxelCharactersOptions`, any copy still asking for `VoxelCharsMenu` answered
+  "voxel_characters does not have that key" about every key the mod has: a wrong
+  answer delivered with certainty, which is the one thing that check exists not
+  to do.
+
+  Both scans are now reported rather than merely consulted, and a scan that
+  FAILED downgrades the verdict from "this key does not exist" to "I could not
+  tell", naming the error. Both still refuse to record.
+
+- **The en-US sweep went red on a file nobody wrote.** Agent worktrees land
+  inside the mod as a full second copy of the repository, and the sweep's file
+  walk found the copy and reported it as undeclared. Every commit was blocked
+  until the worktree was deleted. `.claude` is pruned from the walk and ignored
+  by git.
+
 ## [1.7.0] - 2026-08-11
 
 **Characters are alive now, and you do not have to turn anything on to see it.**

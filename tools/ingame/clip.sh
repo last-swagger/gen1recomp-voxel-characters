@@ -98,7 +98,12 @@ VC_CLIP_OPT="$OPCAO" POKEPORT_VERSION="$VERSAO" POKEPORT_DRIVER="$DRIVER" \
 QUADROS=$(grep -oE 'frames per side: [0-9]+' "$LOG" | grep -oE '[0-9]+' | tail -1)
 if [ -z "$QUADROS" ]; then
   echo "FAILED: the driver did not finish"
-  tail -5 "$LOG"
+  # TWELVE, not five. The driver's own refusal for an unrecognised key now
+  # prints the two scans it made and what each one found or failed at, which is
+  # the whole point of it: the reader has to see WHY the key was not found, not
+  # only that it was not. At five lines that diagnosis was cut in half and the
+  # only line to survive was the verdict.
+  tail -12 "$LOG"
   exit 1
 fi
 

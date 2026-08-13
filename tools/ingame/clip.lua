@@ -68,49 +68,99 @@ return function(game)
   -- refused. A key that is simply ABSENT from the mod's own options list is
   -- knowable with certainty, so it gets answered with certainty, here,
   -- instead of leaving it to a measurement that was never built to answer it.
+  --
+  -- AND WHEN IT CANNOT FIND THE KEY IT SAYS WHY, which is the part that was
+  -- missing and cost a whole debugging session. The scan below looks in two
+  -- places, and BOTH used to be able to come back empty in silence:
+  --
+  --   * the shared options list carries exactly ONE row of ours now,
+  --     `voxel_chars_menu`, because the options moved behind a submenu. Scanning
+  --     it alone finds nothing, ever;
+  --   * the submenu is reached through `Screens.get`, which for an id nobody
+  --     registered falls back to `require("src.ui." .. id)` and THROWS
+  --     (Screens.lua:19-33). The old code wrapped that in a bare pcall and
+  --     dropped the error, so a stale screen id -- `VoxelCharsMenu`, renamed to
+  --     `VoxelCharactersOptions` so Modern UI would restyle it -- came out as
+  --     "voxel_characters does not have that key" about a key the mod very much
+  --     has. Dumped from the running game, the same call answers
+  --     `module 'src.ui.VoxelCharsMenu' not found`, which names the bug on
+  --     sight.
+  --
+  -- So the two scans are now REPORTED, not just consulted, and a scan that
+  -- failed downgrades the verdict from "this key does not exist" to "I could
+  -- not tell". Both refuse to record -- a clip of an option nobody confirmed is
+  -- exactly the unfalsifiable artifact this check exists to prevent -- but only
+  -- one of them is a statement about the mod.
+  local TELA_OPCOES = "VoxelCharactersOptions"
   do
-    local okRuntime, Runtime = pcall(require, "src.mods.Runtime")
-    local existe = false
-    if okRuntime then
-      local okRows, rows = pcall(Runtime.call, "ui.options.rows",
-        function(_, r) return r end, game, {})
-      if okRows and type(rows) == "table" then
-        for _, row in ipairs(rows) do
-          if tostring(row.id) == "voxel_characters:" .. CHAVE then
-            existe = true
-            break
-          end
-        end
-        -- AND THEN LOOK INSIDE THE SUBMENU, because since 1.7.0 that is where
-        -- the options actually are. The shared list carries ONE row of ours now,
-        -- `voxel_chars_menu`, so this scan found nothing and every clip died on
-        -- "unknown option" naming a key that exists -- a wrong answer delivered
-        -- with certainty, which is the one thing the check above promises not to
-        -- do.
-        --
-        -- `Screens.get` hands back the factory and builds the state without
-        -- pushing it, so reading the rows costs nothing and leaves the stack
-        -- alone. Pushing and popping would have worked here and would have been
-        -- a trap for whoever ran this from somewhere other than a fresh boot.
-        if not existe then
-          local okTela, tela = pcall(function()
-            local S = require("src.ui.Screens")
-            local f = S.get(game, "VoxelCharactersOptions")
-            return f and f.new and f.new(game) or nil
-          end)
-          if okTela and tela and type(tela.rows) == "table" then
-            for _, row in ipairs(tela.rows) do
-              if tostring(row.id) == "voxel_characters:" .. CHAVE then
-                existe = true
-                break
-              end
-            end
-          end
+    local chaves, ordem, notas = {}, {}, {}
+    local function colher(rows)
+      local nossas = 0
+      for _, row in ipairs(rows) do
+        local k = tostring(row.id):match("^voxel_characters:(.+)$")
+        if k then
+          nossas = nossas + 1
+          if not chaves[k] then chaves[k] = true; ordem[#ordem + 1] = k end
         end
       end
+      return nossas
     end
-    if not existe then
-      log("unknown option: %s (voxel_characters nao tem essa chave)", CHAVE)
+    -- One line, no stack trace: this is read from `tail` on the log.
+    local function curto(e)
+      return (tostring(e):gsub("%s*\n.*", ""))
+    end
+
+    local listaLida, submenuLido = false, false
+    local okRuntime, Runtime = pcall(require, "src.mods.Runtime")
+    if not okRuntime then
+      notas[#notas + 1] = "src.mods.Runtime did not load: " .. curto(Runtime)
+    else
+      local okRows, rows = pcall(Runtime.call, "ui.options.rows",
+        function(_, r) return r end, game, {})
+      if not okRows then
+        notas[#notas + 1] = "the shared options list threw: " .. curto(rows)
+      elseif type(rows) ~= "table" then
+        notas[#notas + 1] = "the shared options list came back as a "
+          .. type(rows) .. ", not a table"
+      else
+        listaLida = true
+        notas[#notas + 1] = string.format(
+          "shared options list: %d row(s), %d of them ours", #rows, colher(rows))
+      end
+    end
+
+    -- `Screens.get` hands back the factory and builds the state without
+    -- pushing it, so reading the rows costs nothing and leaves the stack alone.
+    -- Pushing and popping would have worked here and would have been a trap for
+    -- whoever ran this from somewhere other than a fresh boot.
+    local okTela, tela = pcall(function()
+      local f = require("src.ui.Screens").get(game, TELA_OPCOES)
+      if not (f and f.new) then error("no factory registered", 0) end
+      return f.new(game)
+    end)
+    if not okTela then
+      notas[#notas + 1] = string.format("the %s submenu could not be built: %s",
+        TELA_OPCOES, curto(tela))
+    elseif type(tela) ~= "table" or type(tela.rows) ~= "table" then
+      notas[#notas + 1] = string.format(
+        "the %s submenu built but carries no rows table", TELA_OPCOES)
+    else
+      submenuLido = true
+      notas[#notas + 1] = string.format("%s: %d row(s), %d of them ours",
+        TELA_OPCOES, #tela.rows, colher(tela.rows))
+    end
+
+    if not chaves[CHAVE] then
+      for _, n in ipairs(notas) do log("%s", n) end
+      if listaLida and submenuLido then
+        table.sort(ordem)
+        log("unknown option: %s -- voxel_characters does not have that key",
+          CHAVE)
+        log("what it does have: %s", table.concat(ordem, " "))
+      else
+        log("cannot tell whether %s exists: a scan above failed, so the list "
+          .. "of keys is incomplete. Not recording.", CHAVE)
+      end
       return
     end
   end

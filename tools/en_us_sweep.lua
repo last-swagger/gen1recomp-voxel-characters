@@ -180,9 +180,23 @@ end
 --------------------------------------------------------------------------
 -- Walk
 --------------------------------------------------------------------------
+-- `.claude` IS PRUNED, and the reason is a red battery nobody caused.
+--
+-- Agent worktrees land in `mods/voxel_characters/.claude/worktrees/<id>/`, and
+-- a worktree is a full second copy of this repository. The walk found the copy,
+-- reported `.claude/worktrees/agent-…/tools/so_comentarios_test.lua` as an
+-- undeclared file printing Portuguese, and the battery went red -- for a file
+-- that IS declared, at its real path, one directory up. Every commit was
+-- blocked until the worktree was deleted, which is a gate failing on a
+-- condition its subject cannot fix.
+--
+-- Declaring the copied path in the scope file would not work either: the id in
+-- the path is different for every agent, and a scope rule that stops matching
+-- fails the gate on purpose (see en_us_scope.txt).
 local function fileList()
-  local p = io.popen("find " .. RAIZ .. " -type f \\( -name '*.sh' -o -name '*.lua' "
-    .. "-o -name '*.command' \\) | sort")
+  local p = io.popen("find " .. RAIZ .. " -name .claude -prune -o "
+    .. "-type f \\( -name '*.sh' -o -name '*.lua' "
+    .. "-o -name '*.command' \\) -print | sort")
   local out = {}
   for l in p:lines() do out[#out + 1] = l end
   p:close()
