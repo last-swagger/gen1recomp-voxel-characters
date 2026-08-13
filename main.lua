@@ -3355,11 +3355,31 @@ local function registerOptionsRows()
   end
   if mod.content and mod.content.screens and mod.content.screens.register then
     local ok, porque = pcall(function()
-      mod.content.screens:register("VoxelCharsMenu", {
+      -- THE NAME ENDS IN "Options" ON PURPOSE, and it is a contract with
+      -- another mod rather than a style choice.
+      --
+      -- Modern UI restyles the whole game, and it adapts MOD option screens
+      -- too -- but it recognises them semantically, by shape plus a name
+      -- ending in `Options` or `Settings` (gen1_modern_ui/main.lua:2506,
+      -- isOptionRowsScreen). Its author wrote that rule specifically so mods
+      -- would not each need a special case, and named the reason: without it
+      -- "their native 160x144 renderer" stays visible while the rest of the
+      -- game is modern.
+      --
+      -- This screen used to be `VoxelCharsMenu`. It ended in "Menu", so it
+      -- fell outside the rule and would have been the one un-restyled corner
+      -- of a player's game. A five letter rename buys the whole design.
+      mod.content.screens:register("VoxelCharactersOptions", {
         new = function(game)
           local tela = require("src.ui.OptionsMenu").new(game)
           tela.rows = ourRows()
           tela.index = 1
+          -- Modern UI puts `state.title` above the panel and falls back to a
+          -- table of known screen ids (gen1_modern_ui/main.lua:297); ours is not
+          -- in that table, so without this the panel is headed "OPTIONS" -- true
+          -- but useless next to the game's own OPTIONS the player just left.
+          -- The native renderer draws no heading at all and ignores this.
+          tela.title = "CHARACTERS"
           return tela
         end,
       })
@@ -3382,7 +3402,7 @@ local function registerOptionsRows()
         label = "CHARACTERS",
         value = function() return statusValue() end,
         activate = function(g)
-          require("src.ui.Screens").push(g, "VoxelCharsMenu")
+          require("src.ui.Screens").push(g, "VoxelCharactersOptions")
         end,
       }
     else
@@ -3435,7 +3455,7 @@ local function registerOptionsRows()
           -- not a second copy.
           local g = require("src.core.Game")
           if g and g.stack and g.overworld and g.stack:top() == g.overworld then
-            require("src.ui.Screens").push(g, "VoxelCharsMenu")
+            require("src.ui.Screens").push(g, "VoxelCharactersOptions")
             return true
           end
           return false

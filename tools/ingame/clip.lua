@@ -95,7 +95,7 @@ return function(game)
         if not existe then
           local okTela, tela = pcall(function()
             local S = require("src.ui.Screens")
-            local f = S.get(game, "VoxelCharsMenu")
+            local f = S.get(game, "VoxelCharactersOptions")
             return f and f.new and f.new(game) or nil
           end)
           if okTela and tela and type(tela.rows) == "table" then

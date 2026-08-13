@@ -8320,8 +8320,22 @@ do
     exige(type(comRegistro[1].activate) == "function",
       "a linha VOXEL CHARS nao abre nada: sem activate ela e so um rotulo")
   end
-  exige(registrada and registrada.id == "VoxelCharsMenu",
+  exige(registrada and registrada.id == "VoxelCharactersOptions",
     "a tela nao foi registrada, ou foi com outro id: %s",
+    tostring(registrada and registrada.id))
+  -- THE SUFFIX IS A CONTRACT WITH MODERN UI, not a naming preference, so it
+  -- gets its own check with its own message. Modern UI restyles mod option
+  -- screens by recognising them semantically: the right shape plus a name
+  -- ending in `Options` or `Settings` (gen1_modern_ui/main.lua:2506,
+  -- isOptionRowsScreen). Rename this past that rule and our submenu becomes
+  -- the one un-restyled corner of a player's game -- which nothing would
+  -- report, because nothing is broken. It just looks wrong, on somebody
+  -- else's machine, in a mod we do not ship.
+  exige(registrada and type(registrada.id) == "string"
+    and (registrada.id:match("Options$") or registrada.id:match("Settings$")),
+    "o id da tela (%s) nao termina em Options nem Settings, entao o Modern UI "
+    .. "nao vai reconhecer ela e o nosso submenu fica com a cara antiga "
+    .. "enquanto o resto do jogo esta modernizado",
     tostring(registrada and registrada.id))
   if registrada and registrada.rec then
     exige(type(registrada.rec.new) == "function",

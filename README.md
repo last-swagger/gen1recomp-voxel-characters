@@ -82,6 +82,11 @@ The mod adds ONE entry to the game's own `OPTIONS`, called `CHARACTERS`, and
 everything below lives behind it. On a host too old to register a screen they
 appear on the main list instead, which is where they were before 1.7.0.
 
+With [Modern UI](https://github.com/) installed, this screen wears that
+mod's design rather than the native one. That is not a special case on
+either side: Modern UI adapts any mod option screen whose id ends in
+`Options` or `Settings`, so ours is called `VoxelCharactersOptions`.
+
 From the overworld, **backslash** opens `CHARACTERS` directly, so trying an
 option out costs one key instead of six. It does nothing anywhere else: a
 menu pushed on top of a battle or a dialog is how a shortcut like this one
