@@ -1952,6 +1952,9 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   local TOP_DOME_STEPS = 3
   m = m or maskFor(def)
   if not m then return nil end
+  -- Read once: every constant below that is in SHEET PIXELS has to grow by
+  -- this factor to survive escalaParaTile (see hdCellScale).
+  local hdK = hdCellScale(m)
   frame = tonumber(frame) or 0
   if frame < 0 or frame >= m.frames then frame = 0 end
   local fx, fy = frameOrigin(m, frame)
@@ -2595,7 +2598,37 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
 
   local mesh = Voxel3D.newMesh(escalaParaTile(verts, m), idx)
   if mesh and #blinkQuads > 0 then
-    meshBlink[mesh] = { baseName = baseName, quads = blinkQuads }
+    -- THE SAVED ROWS ARE COPIES, and they were taken before the scaling.
+    --
+    -- `rowsForUv` copies the vertex POSITION as well as the UV, because
+    -- `mesh:setVertex` writes a whole vertex and there is no partial write.
+    -- Those copies were made while the eye quad was emitted, which is before
+    -- `escalaParaTile` ran on the line above, so on a 64 px sheet they carry
+    -- coordinates four times too large. The first `applyBlinkUv` then wrote
+    -- them into the mesh and put the two eye quads out beyond the top of the
+    -- head: this is one half of "uns dois quadrados acima do personagem" as
+    -- Kim reported it. Scaling the copies by the same factor keeps a blink
+    -- from moving anything but the UV, which is all a blink was ever meant to
+    -- move.
+    if hdK then
+      for _, quadBlink in ipairs(blinkQuads) do
+        for _, rows in ipairs({ quadBlink.openRows, quadBlink.closedRows }) do
+          for i = 1, #rows do
+            local row = rows[i]
+            row[1], row[2], row[3] =
+              row[1] / hdK, row[2] / hdK, row[3] / hdK
+          end
+        end
+      end
+    end
+    -- `closed = false` from the start, not nil. The eye is emitted OPEN, so
+    -- false is the truth about it, and saying so is what stops the first call
+    -- with BLINK off from writing `openRows` back over a mesh that already
+    -- holds them: `nil ~= false` made that write happen for every character on
+    -- screen, once, with the option turned off. Harmless while the saved rows
+    -- were right, and the delivery mechanism for the defect above while they
+    -- were not.
+    meshBlink[mesh] = { baseName = baseName, quads = blinkQuads, closed = false }
   end
   if mesh then meshBands[mesh] = faixas end
 
