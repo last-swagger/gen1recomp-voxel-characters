@@ -30,7 +30,28 @@ the direction is named in the entry their contribution landed in.
 
   Asked for by **Kim**.
 
+- **`SETTINGS`, whole configurations at once.** Browse with left/right, press A
+  to apply. `DEFAULT` restores what ships. `LIVED IN` is read off Kim's own save
+  after he played with the menu until he stopped changing things and said those
+  were the best defaults -- four of its choices are not the mod's defaults
+  (`SIDE COLOR: OUTLINE`, `TOP EDGE: OFF`, `BREATH: NORMAL`, `FRONT SHAPE: MED`),
+  which is exactly what makes it worth shipping: a taste somebody arrived at by
+  looking. `STILL` stops all motion, for judging shape. `SHOWCASE` turns every
+  motion on at a level that reads on video. None touch `HD SPRITE` or `DEMO FX`.
+
+  Asked for by **Kim**.
+
 ### Fixed
+
+- **`V-GRID CHARS` now follows the world grid instead of competing with it.**
+  Key `5` toggles the voxel wireframe; characters join it when this is on, and
+  the row says `PRESS 5 FOR V-GRID` when it is not. Independent switches would
+  have let characters wear seams in a world that has none, which reads as a
+  rendering fault rather than a choice -- and the renderer could not honour it
+  anyway, since the wireframe is a separate compiled shader bound once per pass
+  from the host's own flag.
+
+  Asked for by **Kim**.
 
 - **Options that cannot do anything now say so.** The four SLAB shaping rows
   (`TOP EDGE`, `FRONT SHAPE`, `TOP DOME`, `STEP WEIGHT`) do nothing under

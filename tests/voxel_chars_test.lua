@@ -1240,19 +1240,20 @@ do
     return r
   end, game, rows)
   eq(out, rows, "hook devolve a tabela do next")
-  eq(#rows, 14, "hook anexa as rows, mais STATUS, LIFE e CAMERA FIT")
+  eq(#rows, 15, "hook anexa as rows, mais STATUS, LIFE e CAMERA FIT")
   eq(rows[2].label, "STATUS", "hook anexa a row de STATUS logo depois do next")
   eq(rows[3].label, "LIFE", "hook anexa a row de LIFE logo depois do STATUS")
   eq(rows[4].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE, antes das opcoes")
-  local option = rows[5]
-  eq(rows[6].label, "SIDE COLOR", "hook anexa a row de cor lateral")
-  eq(rows[7].label, "SHAPE", "hook anexa a row de shape")
-  eq(rows[8].label, "GROUND SHADE", "hook anexa a row de ground shade")
-  eq(rows[9].label, "BLINK", "hook anexa a row de blink")
-  eq(rows[10].label, "TOP EDGE", "hook anexa a row de top edge")
-  eq(rows[11].label, "FRONT SHAPE", "hook anexa a row de front shape")
-  eq(rows[12].label, "TOP DOME", "hook anexa a row de top dome")
-  eq(rows[13].label, "STEP WEIGHT", "hook anexa a row de step weight")
+  eq(rows[5].label, "SETTINGS", "SETTINGS vem depois de CAMERA FIT")
+  local option = rows[6]
+  eq(rows[7].label, "SIDE COLOR", "hook anexa a row de cor lateral")
+  eq(rows[8].label, "SHAPE", "hook anexa a row de shape")
+  eq(rows[9].label, "GROUND SHADE", "hook anexa a row de ground shade")
+  eq(rows[10].label, "BLINK", "hook anexa a row de blink")
+  eq(rows[11].label, "TOP EDGE", "hook anexa a row de top edge")
+  eq(rows[12].label, "FRONT SHAPE", "hook anexa a row de front shape")
+  eq(rows[13].label, "TOP DOME", "hook anexa a row de top dome")
+  eq(rows[14].label, "STEP WEIGHT", "hook anexa a row de step weight")
   eq(option.value(), "10", "row mostra o label atual")
   check(option.step(game, 1), "step informa mudanca ao OptionsMenu")
   eq(game.save.options.modOptions.voxel_characters.depth, "off",
@@ -1288,7 +1289,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[9]
+  local option = rows[10]
   eq(option.label, "TOP EDGE", "row de TOP EDGE fica depois de BLINK")
   eq(option.value(), "ON", "TOP EDGE default e ON")
   check(option.step(game, 1), "step de TOP EDGE informa mudanca")
@@ -1323,7 +1324,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[10]
+  local option = rows[11]
   eq(option.label, "FRONT SHAPE", "row de FRONT SHAPE fica depois de TOP EDGE")
   eq(option.value(), "OFF", "FRONT SHAPE default e OFF")
   check(option.step(game, 1), "step de FRONT SHAPE informa mudanca")
@@ -1365,7 +1366,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[11]
+  local option = rows[12]
   eq(option.label, "TOP DOME", "row de TOP DOME fica depois de FRONT SHAPE")
   eq(option.value(), "OFF", "TOP DOME default e OFF")
   check(option.step(game, 1), "step de TOP DOME informa mudanca")
@@ -1406,7 +1407,7 @@ do
   }
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, game, rows)
-  local option = rows[12]
+  local option = rows[13]
   eq(option.label, "STEP WEIGHT", "row de STEP WEIGHT fica depois de TOP DOME")
   eq(option.value(), "OFF", "STEP WEIGHT default e OFF")
   check(option.step(game, 1), "step de STEP WEIGHT informa mudanca")
@@ -4285,19 +4286,19 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 13, "com host, treze rows: STATUS, LIFE, CAMERA FIT e as dez de sempre")
+  eq(#rows, 14, "com host, catorze rows: STATUS, LIFE, CAMERA FIT, SETTINGS e as dez de sempre")
   eq(rows[1].label, "STATUS", "STATUS vem primeiro")
   eq(rows[2].label, "LIFE", "LIFE vem logo depois do STATUS")
   eq(rows[3].label, "CAMERA FIT", "CAMERA FIT vem depois de LIFE")
-  eq(rows[4].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
-  eq(rows[5].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
-  eq(rows[6].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
-  eq(rows[7].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
-  eq(rows[8].label, "BLINK", "BLINK continua na mesma posicao relativa")
-  eq(rows[9].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
-  eq(rows[10].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
-  eq(rows[11].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
-  eq(rows[12].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
+  eq(rows[5].label, "VOXEL CHARS", "DEPTH continua na mesma posicao relativa")
+  eq(rows[6].label, "SIDE COLOR", "SIDE COLOR continua na mesma posicao relativa")
+  eq(rows[7].label, "SHAPE", "SHAPE continua na mesma posicao relativa")
+  eq(rows[8].label, "GROUND SHADE", "GROUND SHADE continua na mesma posicao relativa")
+  eq(rows[9].label, "BLINK", "BLINK continua na mesma posicao relativa")
+  eq(rows[10].label, "TOP EDGE", "TOP EDGE continua na mesma posicao relativa")
+  eq(rows[11].label, "FRONT SHAPE", "FRONT SHAPE aparece depois de TOP EDGE")
+  eq(rows[12].label, "TOP DOME", "TOP DOME aparece depois de FRONT SHAPE")
+  eq(rows[13].label, "STEP WEIGHT", "STEP WEIGHT aparece depois de TOP DOME")
 
   -- PRESSING A ON A READ-ONLY ROW CANNOT CLOSE THE MENU.
   --
@@ -5439,32 +5440,32 @@ do
   local mod = loadWith(makeMod(handle))
   local rows = {}
   mod._rows["ui.options.rows"](function(_, r) return r end, {}, rows)
-  eq(#rows, 21,
-     "com canal, vinte e uma rows: STATUS, LIFE, CAMERA FIT e as dezoito "
+  eq(#rows, 22,
+     "com canal, vinte e duas rows: STATUS, LIFE, CAMERA FIT, SETTINGS e as dezoito "
      .. "opcoes que shipam")
   -- V-GRID CHARS sits right after BLINK and only exists WITH the channel, so
   -- it shifts everything below it here and nothing at all in the no-channel
   -- test above. That asymmetry is the point of having both.
-  eq(rows[9].label, "V-GRID CHARS", "V-GRID CHARS entra depois de BLINK")
-  eq(rows[13].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
-  eq(rows[14].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
-  eq(rows[15].label, "SWAY", "SWAY aparece depois de BREATH")
-  eq(rows[16].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
-  eq(rows[17].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
+  eq(rows[10].label, "V-GRID CHARS", "V-GRID CHARS entra depois de BLINK")
+  eq(rows[14].label, "STEP WEIGHT", "STEP WEIGHT continua na mesma posicao")
+  eq(rows[15].label, "BREATH", "BREATH aparece logo depois de STEP WEIGHT")
+  eq(rows[16].label, "SWAY", "SWAY aparece depois de BREATH")
+  eq(rows[17].label, "MOTION LAG", "MOTION LAG aparece depois de SWAY")
+  eq(rows[18].label, "FOOTFALL", "FOOTFALL aparece depois de MOTION LAG")
   -- The FIRST PERSON row only got a test after an audit pointed out it
   -- was the only option in the mod with no MENU coverage: it had
   -- behavior, not a row. And that is how the in-game gate's inventory
   -- went stale without anyone noticing.
-  eq(rows[18].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
+  eq(rows[19].label, "ATTENTION", "ATTENTION aparece depois de FOOTFALL")
   -- PART LAG AND AUTHORED REGIONS ARE HELD, so FIRST PERSON follows ATTENTION
   -- directly. This is the check that OWNS Kim's decision of 2026-08-12: HIGH
   -- looked wrong to him and LOW was measured as indistinguishable from the
   -- animation, so neither level ships. Deleting the assertion would have hidden
   -- the removal; asserting the absence makes it deliberate and reversible.
   -- HD SPRITE fica onde o PART LAG estava, entre ATTENTION e FIRST PERSON.
-  eq(rows[19].label, "HD SPRITE",
+  eq(rows[20].label, "HD SPRITE",
      "HD SPRITE vem depois de ATTENTION")
-  eq(rows[20].label, "FIRST PERSON", "FIRST PERSON vem depois de HD SPRITE")
+  eq(rows[21].label, "FIRST PERSON", "FIRST PERSON vem depois de HD SPRITE")
   local presentes = {}
   for _, r in ipairs(rows) do presentes[r.label] = true end
   eq(presentes["PART LAG"], nil, "PART LAG nao aparece no menu: esta held")

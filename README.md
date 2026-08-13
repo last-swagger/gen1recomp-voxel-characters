@@ -81,8 +81,8 @@ design, and gains a `WHAT EACH ONE DOES` row that explains every option in
 game. That row is hidden without Modern UI: the explanations are full
 sentences, and the native 160x144 renderer would run them off the edge.
 
-There are 21 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
-two are read only, and the third is a button rather than a setting.
+There are 22 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
+two are read only, and the next two are buttons rather than settings.
 
 **Anything new starts turned off.** Two things are on out of the box, `BLINK`
 and `BREATH`, and both earned it: they shipped off, people used them, and
@@ -93,6 +93,7 @@ of movement.
 STATUS         read only, see above
 LIFE           read only, the animation channel
 CAMERA FIT     press A to set the thickness this camera can afford
+SETTINGS       browse with left/right, press A to apply a whole set
 
 VOXEL CHARS    OFF / 1 / 2 / 3 / 5 / 10          default 3      how thick
 SIDE COLOR     BODY / OUTLINE                    default BODY   what the new faces are painted with
@@ -118,6 +119,15 @@ FIRST PERSON   CARD / SOLID                      default CARD   solid through th
 
 DEMO FX        OFF / FIREBALL / BOLT             default OFF    a capability demo, not a Gen 1 feature
 ```
+
+**`SETTINGS` applies a whole set at once**, because a menu with twenty two rows
+is a menu nobody configures twice. `DEFAULT` is what ships. `LIVED IN` is read
+off a save after somebody played with the menu until they stopped changing
+things -- four of its choices disagree with the shipped defaults, and that is
+why it is worth having. `STILL` stops all motion, for judging shape or for any
+comparison where movement would swamp what you are comparing. `SHOWCASE` turns
+every motion on at a level that reads on video. None of them touch `HD SPRITE`
+or `DEMO FX`, which are experiments you switch on deliberately.
 
 **Some options only mean something next to another one**, and the menu says so
 rather than pretending. A row that cannot do anything shows what to change
@@ -175,10 +185,13 @@ and is **exactly zero by 0.83**, because the host hides your own card as the
 blend completes. What it fixes is real: your body used to collapse to a flat
 card exactly as the camera came closest to it.
 
-**`V-GRID CHARS` is a tool, not a look.** The voxel mod deliberately keeps the
-wireframe off characters and is right to -- a grid over a 16x16 sprite lands a
-line every couple of pixels. Turn it on to see where this mod actually placed
-geometry.
+**`V-GRID CHARS` rides the world's wireframe rather than competing with it.**
+Press `5` for the voxel grid and characters join it; with the grid off the row
+says so and does nothing, because the wireframe is a separate compiled shader
+the renderer only binds when the world asks for it. The voxel mod deliberately
+keeps seams off characters and is right to -- a grid over a 16x16 sprite lands
+a line every couple of pixels. Turn this on to see where the mod actually
+placed geometry.
 
 **`HD SPRITE` is an experiment, and the first option that draws pixels your ROM
 does not contain.** A higher resolution sheet, enlarged by an LLM from the real

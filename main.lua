@@ -178,6 +178,8 @@ local OPTIONS = {
   {
     key = "grid_chars",
     label = "V-GRID CHARS",
+    requires = { check = function() return gradeDoMundo() end,
+                 why = "PRESS 5 FOR V-GRID" },
     -- A MEASURING TOOL, not a look. The host deliberately keeps the voxel
     -- wireframe off characters (VoxelScene.lua:1048): the seams are what make
     -- the WORLD read as built of voxels, and the people in it should read as
@@ -810,7 +812,7 @@ do
   mod.options:define(schema)
 end
 
-local SpriteBillboards, Voxel3D, ImageCache, TerrainAtlas
+local SpriteBillboards, Voxel3D, ImageCache, TerrainAtlas, hostLib
 local VoxelState, FirstPerson, VoxelScene
 local originalMesh
 local meshes, masks = {}, {}
@@ -1124,12 +1126,41 @@ end
 -- Kim asked for this after the submenu became the bench this mod is tested on.
 -- The requirement is DATA on the option, not a branch here, so adding one is a
 -- line next to the option it belongs to instead of an edit in two places.
+-- IS THE HOST'S OWN WIREFRAME ON, the one key 5 toggles
+-- (DramaticShapeVoxelMod/main.lua:553).
+--
+-- V-GRID CHARS RIDES IT rather than competing with it, which is what Kim asked
+-- for: one key, one answer, the whole scene agreeing. Independent switches would
+-- have let the characters wear seams in a world that has none, which reads as a
+-- rendering fault rather than a choice.
+--
+-- It is also what the renderer can actually deliver. The wireframe is a separate
+-- compiled shader variant, chosen once per pass from the host's own grid flag;
+-- with the grid off the plain shader is bound and it has no seam uniform at all,
+-- so asking for seams would silently do nothing. Better to say so in the row
+-- than to offer a switch that works only sometimes and never explains why.
+local function gradeDoMundo()
+  local ok, VG = pcall(function() return hostLib and hostLib.require("VoxelGrid") end)
+  if not (ok and type(VG) == "table" and type(VG.enabled) == "function") then
+    return false
+  end
+  local ok2, ligada = pcall(VG.enabled)
+  return ok2 and ligada and true or false
+end
+
 local function requisitoOk(opt)
   local req = opt.requires
   if not req then return true end
   if req.key then
     local atual = optionState[req.key] or readOption(OPTION_BY_KEY[req.key])
     if tostring(atual) ~= tostring(req.value) then return false, req.why end
+  end
+  -- A PREDICATE, for a requirement that is not another option's value. The
+  -- world grid is the first: it belongs to the host and is toggled with key 5,
+  -- so there is no key of ours to compare against.
+  if req.check then
+    local ok, resposta = pcall(req.check)
+    if not (ok and resposta) then return false, req.why end
   end
   if req.anyOn then
     for _, k in ipairs(req.anyOn) do
@@ -3428,6 +3459,85 @@ local function cameraPresetRow()
   }
 end
 
+-- WHOLE SETTINGS AT ONCE, because a menu with twenty one rows is a menu nobody
+-- reconfigures twice. Cycle the name with left/right, press A to apply.
+--
+-- LIVED IN IS NOT INVENTED. It is read off Kim's own save, after he played with
+-- the menu until he stopped changing things and said those were the best
+-- defaults. Four of its choices are not the mod's defaults -- SIDE COLOR:
+-- OUTLINE, TOP EDGE: OFF, BREATH: NORMAL, FRONT SHAPE: MED -- and that
+-- disagreement is exactly what makes it worth shipping: it is a taste somebody
+-- arrived at by looking, not a table somebody reasoned out.
+--
+-- The other two are for a JOB rather than a taste, which is why they are not
+-- "more" and "less" of the same thing:
+--   STILL      nothing moves. For judging shape, and for any comparison where
+--              motion would swamp the thing being compared -- the clip tool's
+--              own guard fails on animated scenes for exactly that reason.
+--   SHOWCASE   every motion on at a level that reads on video without looking
+--              like a puppet. For recording, not for playing.
+--
+-- Applying one writes every key it names, so a preset always lands you in a
+-- KNOWN state rather than merging with whatever was set before. Keys it does
+-- not name are left alone on purpose: HD SPRITE and DEMO FX are experiments,
+-- and a preset that silently switched an experiment on would be a preset
+-- nobody trusts.
+local SETTINGS_PRESETS = {
+  { nome = "DEFAULT", valores = nil },
+  { nome = "LIVED IN", valores = {
+      depth = 3, side_color = "outline", shape = "slab", ground_shade = "on",
+      blink = "on", top_edge = "off", front_shape = 0.17, top_dome = "off",
+      step_weight = 0.25, breath = 0.020, sway = 0.20, lag = "off",
+      footfall = 0.35, attention = "off", first_person = "card",
+    } },
+  { nome = "STILL", valores = {
+      breath = "off", sway = "off", lag = "off", footfall = "off",
+      attention = "off", grid_chars = "off",
+    } },
+  { nome = "SHOWCASE", valores = {
+      depth = 3, side_color = "body", shape = "slab", ground_shade = "on",
+      blink = "on", top_edge = "on", front_shape = 0.17, top_dome = "off",
+      step_weight = 0.25, breath = 0.020, sway = 0.20, lag = 0.6,
+      footfall = 0.35, attention = 0.5, first_person = "solid",
+    } },
+}
+
+local presetEscolhido = 1
+
+local function settingsPresetRow()
+  return {
+    id = mod.id .. ":settings_preset",
+    label = "SETTINGS",
+    value = function()
+      return SETTINGS_PRESETS[presetEscolhido].nome
+    end,
+    -- Left and right BROWSE, A APPLIES. Deliberately not "changing the value
+    -- applies it": cycling past SHOWCASE on the way to STILL would otherwise
+    -- rewrite every option twice on the way, and the person is only looking.
+    step = function(_, dir)
+      presetEscolhido = ((presetEscolhido + (dir or 1) - 1) % #SETTINGS_PRESETS) + 1
+      return true
+    end,
+    activate = function(game)
+      local escolha = SETTINGS_PRESETS[presetEscolhido]
+      for _, opt in ipairs(OPTIONS) do
+        local alvo
+        if escolha.valores == nil then
+          -- DEFAULT means the option's OWN declared default, read from the
+          -- same table the menu builds itself from, so it cannot drift.
+          alvo = opt.levels[opt.defaultIndex][2]
+        else
+          alvo = escolha.valores[opt.key]
+        end
+        if alvo ~= nil then
+          local valor = setOption(opt, alvo)
+          writeOption(game, opt.key, valor)
+        end
+      end
+    end,
+  }
+end
+
 -- v1.4.2: ALWAYS registered, with or without a host (Colonel_Aureliano
 -- lost twenty minutes on a clean reinstall, and Angelus thought it was
 -- Wilds of Kanto, because without a host the row would not even show up).
@@ -3443,6 +3553,7 @@ local function ourRows()
   if patched then
     out[#out + 1] = lifeStatusRow()
     out[#out + 1] = cameraPresetRow()
+    out[#out + 1] = settingsPresetRow()
     for _, opt in ipairs(OPTIONS) do
       -- The three life options only show up when the channel exists. A
       -- menu that offers BREATH on a host without a replaceable
@@ -4583,6 +4694,10 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   local liga = optionState.grid_chars == "on"
     and ourMeshes[mesh] ~= nil
     and Voxel3D and type(Voxel3D.seams) == "function"
+    -- Checked here too, not only in the menu: the key can be pressed while the
+    -- option is already on, and a row's requirement is read when somebody looks
+    -- at the menu rather than every frame.
+    and gradeDoMundo()
   if not liga then
     return lifeDrawCore(mesh, texture, model, pull, sunModel)
   end
@@ -4752,6 +4867,10 @@ local function patch(host)
   -- Commit: only gets here if the two writes above did not throw.
   Voxel3D = voxel3D
   ImageCache = imageCache
+  -- Kept so anything below can reach a host module we did not know we needed at
+  -- attach time. VoxelGrid is the first: V-GRID CHARS asks it whether the
+  -- world's own wireframe is on, and only rides along when it is.
+  hostLib = V
   SpriteBillboards = spriteBillboards
   VoxelState = voxelState
   FirstPerson = firstPerson
