@@ -2671,7 +2671,15 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   -- sits and the caller can decide whether that is an arm.
   if mesh then
     local n = #verts
-    local cellH = m.cellH or 16
+    -- THE VERTICES HAVE ALREADY BEEN SCALED. `escalaParaTile` ran on the line
+    -- that built the mesh, so an HD body that was 64 units tall is 16 units
+    -- tall by the time it is read here -- but `m.cellH` still says 64. Dividing
+    -- a 16-unit height by 64 put every anchor in the bottom quarter of the
+    -- cell, so `head.band` came back as 4, the FEET band, on every HD sheet.
+    -- Nothing consumes `band` yet, which is the only reason this was not a
+    -- visible defect; it would have become one the day PART LAG asked an
+    -- anchor which band it was in.
+    local cellH = (m.cellH or 16) / (hdK or 1)
 
     -- IN CHARACTER SPACE, which means undoing what the builder just baked in.
     --
@@ -2704,11 +2712,19 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
       -- faixas is indexed head-first, the same flip the band table applies.
       return REGION_BANDS - b + 1
     end
+    -- HALF A SOURCE PIXEL, which is what 0.5 meant when the only cell was 16 px
+    -- tall. On a scaled HD mesh a source pixel is 1/k units, so the plain 0.5
+    -- gathered four times as thick a slab of vertices as it does at ROM
+    -- resolution. It never crossed into the next source row (0.5 < 1), so this
+    -- did not change an answer on any body measured here; it is a
+    -- resolution-dependence in a function whose whole job is to name a fixed
+    -- point on the body, and it is corrected rather than left to matter later.
+    local tolExtremo = 0.5 / (hdK or 1)
     local function pontoNoExtremo(alvoY)
       local sx, sz, quantos = 0, 0, 0
       for i = 1, n do
         local vx, vy, vz = paraPersonagem(verts[i])
-        if math.abs(vy - alvoY) < 0.5 then
+        if math.abs(vy - alvoY) < tolExtremo then
           sx, sz, quantos = sx + vx, sz + vz, quantos + 1
         end
       end
