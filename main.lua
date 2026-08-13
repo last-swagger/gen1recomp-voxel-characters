@@ -1885,12 +1885,22 @@ local function applyBlinkUv(mesh)
   end
 end
 
-local function shadeAtHeight(shade, y, groundShade)
+-- SIX SHEET PIXELS OFF THE GROUND, which is where the option's own help text
+-- says the contact shade reaches: "the lowest six pixels".
+--
+-- `y` arrives in SHEET PIXELS, straight off the builder, so on a 64 px cell six
+-- of them are six sixty-fourths of the body instead of six sixteenths: the
+-- shade covered a QUARTER of the height it names, and GROUND SHADE ships ON, so
+-- every HD character was drawn that way. `hdK` is the same factor
+-- escalaParaTile will divide the vertices by afterwards; multiplying the rise
+-- by it keeps the band at the same fraction of the figure, which is what
+-- "the lowest six pixels" meant in the first place.
+local function shadeAtHeight(shade, y, groundShade, hdK)
   -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
   -- here.
   local AO_STRENGTH = 2.4
   local AO_GROUND = 0.12 * AO_STRENGTH
-  local AO_RISE = 6
+  local AO_RISE = 6 * (hdK or 1)
   if groundShade ~= "on" or y >= AO_RISE then return shade end
   local t = math.max(0, y) / AO_RISE
   return shade * (1 - AO_GROUND * (1 - t))
@@ -2227,7 +2237,7 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
     local function add(corner, u, v)
       verts[#verts + 1] = {
         corner[1], corner[2], corner[3], u, v,
-        shadeAtHeight(shade, corner[4], groundShade),
+        shadeAtHeight(shade, corner[4], groundShade, hdK),
       }
     end
     add(c1, uv4[1], uv4[2])
@@ -3067,7 +3077,7 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
     local function add(corner, u, v)
       verts[#verts + 1] = {
         corner[1], corner[2], corner[3], u, v,
-        shadeAtHeight(shade, corner[4], groundShade),
+        shadeAtHeight(shade, corner[4], groundShade, hdK),
       }
     end
     add(c1, uv4[1], uv4[2])
