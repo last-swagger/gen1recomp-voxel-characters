@@ -140,7 +140,43 @@ return function(game)
   -- Now the gate looks for the game's step (35 degrees, VoxelState.ANGLES_DEG) and
   -- only measures when it's on it. Numbers from different runs become
   -- comparable.
+  --
+  -- AND THE TAP DOES NOT ARRIVE, measured 2026-08-13 while recalibrating V10.
+  -- The loop below was instrumented to print the rung on every iteration: it
+  -- printed "50.00 graus, level 4" twelve times in a row. `U.tap(game, "3")`
+  -- goes through the driver's input, and the host mod's ladder is stepped from
+  -- its own `Game:keypressed` (DramaticShapeVoxelMod/main.lua, `cycleVoxel`),
+  -- which never sees it. So this block currently REPORTS the rung rather than
+  -- setting it, and every pixel count in this file is taken at whichever rung
+  -- the machine's save holds -- level 4, 50 degrees, on the mbp.
+  --
+  -- Left alone on purpose while a release was blocked on V10: the rung was
+  -- CONSTANT across every run of the bisect that found the V10 problem, so it
+  -- neither caused nor hid it, and moving it changes the scale of all ten
+  -- checks at once. Fixing it means stepping the host's pipeline
+  -- (`Pipelines.setLevel("voxel", 3)`) instead of pressing a key, and then
+  -- recalibrating every threshold here against the new size.
   opcao("depth", 3)
+  -- HD SPRITE PINNED TOO, and it used to be inherited from whatever the
+  -- machine's save happened to hold.
+  --
+  -- Same story as the camera step above, one option over. Every number in this
+  -- file counts CHANGED PIXELS, so it scales with what is on screen, and HD
+  -- SPRITE changes what is on screen. Measured through this very probe, one
+  -- step with and without FOOTFALL is 46 pixels on the ROM sheet and 37 on the
+  -- enlarged one: the same check, the same code, two different numbers.
+  --
+  -- The mbp's save has it ON, so V10 was reading the HD figure against a
+  -- threshold calibrated on the ROM one, and two machines running the same gate
+  -- would have been measuring two different things. `trailer.lua` was pinned
+  -- for exactly this reason on 2026-08-13, after an unpinned HD SPRITE made one
+  -- shot freeze for 481 ms and the guard read a per-machine option as a defect.
+  --
+  -- OFF, and not ON, for two reasons: it is the shipped default, so it is what
+  -- an install measures; and it needs no asset on disk, while ON silently falls
+  -- back to the ROM sheet wherever hd/<sheet>.png is missing, which would make
+  -- the pin a lie on some machines and not others.
+  opcao("hd_sprite", "off")
   U.wait(20)
   -- The host lib is fetched HERE, not at the top: this version of the probe measures pixels
   -- and doesn't need the host for anything else, so loading it only where it's used avoids
@@ -447,7 +483,44 @@ return function(game)
     local d = (andou1 and andou2) and difere(a, b) or -1
     nota("floor (FOOTFALL off on both sides): %d pixels; one step, with and without FOOTFALL: %d pixels diferentes",
       piso, d)
-    veredito("V10", piso >= 0 and d > piso + 40,
+    -- THE MARGIN IS 20, AND IT WAS 40. 40 came from a number that was more than
+    -- half defect, and the defect has since been fixed.
+    --
+    -- Before 7d299ee, `rowsForUv` copied each eye quad's POSITION while the quad
+    -- was emitted -- which is before `escalaParaTile` divides every vertex by
+    -- the HD factor -- and the first `applyBlinkUv` wrote those copies straight
+    -- back into the mesh. On a 64 px sheet they were four times too large, so
+    -- the two eye quads landed far outside the cell, above and beside the head:
+    -- "uns dois quadrados acima do personagem", as Kim reported it. They are
+    -- geometry like any other, so FOOTFALL's squash moved them along with the
+    -- body, and this check counted them as part of the step.
+    --
+    -- Measured on one machine, one map, one camera rung, one step with and
+    -- without FOOTFALL, over the floor of 0 that every run of this check has
+    -- reported:
+    --
+    --   before the fix, HD SPRITE on     85 px, of which 48 fall inside the
+    --                                    footprint of the two stray quads (the
+    --                                    region that differs between the two
+    --                                    builds with FOOTFALL OFF) and 37
+    --                                    outside it
+    --   after the fix,  HD SPRITE on     37 px, none of them in that footprint
+    --   before AND after, HD SPRITE off  46 px, the same on both builds
+    --
+    -- Those two sets of 37 are the SAME 37 pixels, point for point, at the same
+    -- sampled coordinates: what FOOTFALL reaches on screen did not move at all,
+    -- and the 48 that vanished were never it.
+    --
+    -- The last row is what settles it. Outside HD the fix changed nothing, so
+    -- FOOTFALL did not lose anything: 85 was never FOOTFALL's effect, and a
+    -- threshold taken from it was asking the step to be twice the size it is.
+    -- Whoever reads this after a red V10 should look for a number BELOW 37
+    -- before suspecting the step: 37 and 46 are what the feature measures.
+    --
+    -- 20 keeps the conservatism the 40 was meant to carry -- roughly half the
+    -- real effect, at either resolution -- against a floor that has measured 0
+    -- in every run, on both builds and at both resolutions.
+    veredito("V10", piso >= 0 and d > piso + 20,
       "a pisada tem que superar o piso de ruido entre duas corridas identicas")
     opcao("footfall", "off"); U.wait(10)
   end
