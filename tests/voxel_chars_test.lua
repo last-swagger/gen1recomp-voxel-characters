@@ -763,8 +763,10 @@ end
 --
 -- A test that measures a shade has to say which shading it measured. This says
 -- it once for all of them instead of in thirty nine places.
--- SWAY joins them for the same reason once it shipped on: it shears every
--- vertex by height, so a test measuring a transform inherits it too.
+-- SWAY is pinned here too even though it ships OFF again: it shears every
+-- vertex by height, so a test measuring a transform must not inherit whichever
+-- way that default happens to be pointing this week. It pointed both ways in
+-- one day.
 local SEM_SOMBRA = { front_shape = "off", ground_shade = "off", sway = "off" }
 
 local function makeMod(handle, stored)
@@ -5435,7 +5437,6 @@ do
   eq(valor["GROUND SHADE"], "ON", "default de GROUND SHADE: ON")
   eq(valor["TOP EDGE"], "ON", "default de TOP EDGE: ON")
   eq(valor["FRONT SHAPE"], "HIGH", "default de FRONT SHAPE: HIGH")
-  eq(valor.SWAY, "SUBTLE", "default de SWAY: SUBTLE")
   -- Turned on by Kim's decision on 2026-08-09: both had already been
   -- seen and approved by the community, so shipping them off became
   -- shipping less than the person would have chosen.
@@ -5453,12 +5454,12 @@ do
   -- held out of the menu entirely, so it has no row and therefore no default to
   -- read. The absence is asserted directly further down rather than left to a
   -- nil slipping through here.
-  -- FRONT SHAPE and SWAY LEFT THIS LIST on 2026-08-12 and are asserted by name
-  -- above. They left because somebody judged them: Kim played with the menu
-  -- until he stopped changing things, and these two were on. The list is for
-  -- what NOBODY has judged yet, so a row graduating out of it is the list
-  -- working rather than shrinking.
-  for _, chave in ipairs({ "TOP DOME", "STEP WEIGHT",
+  -- FRONT SHAPE LEFT THIS LIST on 2026-08-12, asserted by name above, because
+  -- somebody judged it: Kim played with the menu until he stopped changing
+  -- things and it was on. SWAY left with it and CAME BACK the same day, after
+  -- he thought about it again -- which is the list doing its job in both
+  -- directions rather than only shrinking.
+  for _, chave in ipairs({ "TOP DOME", "STEP WEIGHT", "SWAY",
                            "MOTION LAG", "FOOTFALL", "ATTENTION" }) do
     eq(valor[chave], "OFF", "default de " .. chave .. ": OFF")
   end

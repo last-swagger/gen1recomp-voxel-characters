@@ -109,7 +109,7 @@ two are read only, and the next two are buttons rather than settings.
 **The defaults are somebody's choice, not a safe minimum.** They were set by
 playing with the menu until there was nothing left to change: `SIDE COLOR:
 OUTLINE`, `SHAPE: SLAB` at depth `3`, `GROUND SHADE: ON`, `TOP EDGE: ON`,
-`FRONT SHAPE: HIGH`, `BREATH: SUBTLE`, `SWAY: SUBTLE`.
+`FRONT SHAPE: HIGH` and `BREATH: SUBTLE`.
 
 Anything nobody has judged yet still ships off. That rule protects a person who
 did not choose; the list above is what the person who DID choose arrived at.
@@ -136,7 +136,7 @@ STEP WEIGHT    OFF / LOW / HIGH                  default OFF    the body follows
                                                  those four need SHAPE: SLAB
 
 BREATH         OFF / SUBTLE / NORMAL / STRONG    default SUBTLE they breathe
-SWAY           OFF / SUBTLE / NORMAL             default SUBTLE idle weight shift
+SWAY           OFF / SUBTLE / NORMAL             default OFF    idle weight shift
 MOTION LAG     OFF / SUBTLE / NORMAL             default OFF    the body arrives after the step
 FOOTFALL       OFF / SUBTLE / NORMAL             default OFF    it compresses on each step
 ATTENTION      OFF / SUBTLE / CLEAR              default OFF    they lean toward you, never turn

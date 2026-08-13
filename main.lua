@@ -366,7 +366,7 @@ local OPTIONS = {
     -- when the sheet is mirrored, otherwise the sway would flip sideways
     -- along with the character.
     levels = { { "OFF", "off" }, { "SUBTLE", 0.20 }, { "NORMAL", 0.45 } },
-    defaultIndex = 2,
+    defaultIndex = 1,
     help = "Sways the solid side to side from the feet, slower than the breath and on its own phase, for idle weight shift.",
   },
   {
