@@ -65,6 +65,28 @@ A second row, `LIFE`, reports the animation channel the same way. `NO CHANNEL`
 means your voxel mod is too old for it; everything else still works and the
 animation rows simply do not appear.
 
+### My angle changed, or the picture looks stretched
+
+Not this mod, and worth saying plainly because the two get installed together.
+Measured: with our characters off against on, **1.2% of the frame changes** and
+all of it sits where the characters are. The ground, the buildings and the sky
+come out pixel for pixel identical. If we moved the camera, everything would
+move.
+
+What you are almost certainly seeing is the game's own **`TILT`** -- the
+perspective tilt for the overworld, `OFF / 15 / 35 / 50`, saved in your options.
+A voxel mod sets it to `0` when it loads and takes the row off the menu, so
+there is nowhere left to put it back. That is the voxel mod's decision, made on
+purpose: its own 3D camera and the engine's tilt are two perspectives of the
+same ground, and running both is not a look anybody chose.
+
+**It is not lost.** The value is still in your save. Turn the voxel mod off and
+the `TILT` row comes back at whatever you had it on.
+
+The stretching is the same story from the other side: the flat game draws a
+160x144 picture scaled inside your window, and a voxel mod draws a 3D scene that
+fills it. Nothing was resized -- you are looking at a different picture.
+
 **A version conflict** declared in a voxel mod's manifest is that mod's file,
 not ours. Say so in the community thread and we will sort it out with whoever
 maintains that fork.
