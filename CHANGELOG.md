@@ -12,6 +12,14 @@ Nothing yet.
 
 ## [1.8.0] - 2026-08-13
 
+**If you are coming from 1.6.0, this release carries 1.7.0 as well.** 1.7.0 was
+finished and never published, so everything in its section below reaches you
+here for the first time: the animation channel's `ATTENTION`, `FIRST PERSON:
+SOLID`, `CAMERA FIT`, `TOP DOME`, `STEP WEIGHT`, `FRONT SHAPE`, the sound
+effects for `DEMO FX`, and the Dramaless Shape and PotatoVoxel hosts. Read both
+sections.
+
+
 ### Added
 
 - **One row instead of twenty: `OPTIONS` now holds a single `CHARACTERS` entry,
