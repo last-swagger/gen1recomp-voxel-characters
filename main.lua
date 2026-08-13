@@ -3383,6 +3383,48 @@ local function ourRows()
   return out
 end
 
+-- WHAT EACH OPTION DOES, IN THE GAME, which is where somebody wonders.
+--
+-- Every option has carried a `help` sentence since the option system was
+-- written, and until now NOTHING SHOWED IT: it fed the documentation gate and
+-- the README and stopped there. The player looking at a row called FRONT SHAPE
+-- had no way to find out what it changes without leaving the game.
+--
+-- WHY A SCREEN AND NOT A TOOLTIP, since a tooltip is what was asked for. Modern
+-- UI has one -- press SELECT and a description card opens -- but it is private
+-- to Modern UI's OWN options screen: the handler requires
+-- `screenId == "ManagerState"`, and the shared presenter it draws mod screens
+-- with never reads a description or a footer from the row
+-- (gen1_modern_ui/main.lua:3070). There is no field to fill in. Checked rather
+-- than assumed, because filling in a field would have been the better answer.
+--
+-- Drawing our own card over Modern UI's panel was the alternative and it is
+-- the bad one: we would be guessing at another mod's layout, in a mod we do not
+-- ship, and it would look foreign the day that mod changed its theme.
+--
+-- A SCREEN IS SAFE ON BOTH, which answers the other half of the request -- Kim
+-- asked to hide the tooltip without Modern UI "because it could break". A card
+-- drawn over a 160x144 layout could. A screen of its own cannot: it is the same
+-- shape as the submenu that opens it, and the native renderer already draws
+-- exactly that. So it shows for everybody, and nobody gets a second-class menu.
+local function helpRows()
+  local out = {}
+  for _, opt in ipairs(OPTIONS) do
+    if not opt.held then
+      -- The label is the row, the sentence is the value. On Modern UI the value
+      -- column carries it; on the native renderer it lands on the row's second
+      -- line, which is where the option's own value normally goes.
+      local texto = opt.help or ""
+      out[#out + 1] = {
+        id = "voxel_characters:help_" .. opt.key,
+        label = opt.label,
+        value = function() return texto end,
+      }
+    end
+  end
+  return out
+end
+
 -- ONE ROW IN THE SHARED MENU, and everything else behind it.
 --
 -- This mod had grown to twenty rows in a list it shares with the game and with
@@ -3439,10 +3481,57 @@ local function registerOptionsRows()
       -- This screen used to be `VoxelCharsMenu`. It ended in "Menu", so it
       -- fell outside the rule and would have been the one un-restyled corner
       -- of a player's game. A five letter rename buys the whole design.
+      -- Same suffix rule as the submenu, so Modern UI styles this one too.
+      pcall(function()
+        mod.content.screens:register("VoxelCharactersHelpOptions", {
+          new = function(g)
+            local ajuda = require("src.ui.OptionsMenu").new(g)
+            ajuda.rows = helpRows()
+            ajuda.index = 1
+            ajuda.title = "WHAT EACH ONE DOES"
+            return ajuda
+          end,
+        })
+      end)
       mod.content.screens:register("VoxelCharactersOptions", {
         new = function(game)
           local tela = require("src.ui.OptionsMenu").new(game)
-          tela.rows = ourRows()
+          local linhas = ourRows()
+          -- ONLY WHERE THE TEXT CAN BE READ, which is Kim's condition and it
+          -- turned out to be the right one for a reason neither of us had.
+          --
+          -- The help screen puts a whole sentence in the value column. Modern
+          -- UI wraps it across as many lines as it needs. The native renderer
+          -- draws one line inside a 160x144 box and would run it off the edge
+          -- -- not a crash, just unreadable, which is worse than absent.
+          --
+          -- Matching on the id is admittedly brittle against a fork, so it
+          -- matches any enabled mod whose id mentions a modern ui rather than
+          -- one exact string. The failure is soft either way: no row.
+          local moderno = false
+          local carregados = game and game.mods and game.mods.mods
+          if type(carregados) == "table" then
+            for id, entrada in pairs(carregados) do
+              if type(id) == "string" and id:lower():match("modern.?ui")
+                and not (type(entrada) == "table" and entrada.enabled == false) then
+                moderno = true
+                break
+              end
+            end
+          end
+          -- LAST, not first. The rows above are what somebody came here to
+          -- change; this one is what they read once and then never again.
+          if moderno then
+            linhas[#linhas + 1] = {
+              id = "voxel_characters:help",
+              label = "WHAT EACH ONE DOES",
+              value = function() return "" end,
+              activate = function(g)
+                require("src.ui.Screens").push(g, "VoxelCharactersHelpOptions")
+              end,
+            }
+          end
+          tela.rows = linhas
           tela.index = 1
           -- Modern UI puts `state.title` above the panel and falls back to a
           -- table of known screen ids (gen1_modern_ui/main.lua:297); ours is not
