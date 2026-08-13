@@ -458,7 +458,30 @@ local function amostra(mesh, faixas, escalaUv, sheetW, sheetH, problemas)
             local u = c1[4] + s * (c2[4] - c1[4]) + t * (c4[4] - c1[4])
             local v = c1[5] + s * (c2[5] - c1[5]) + t * (c4[5] - c1[5])
             local sh = c1[6] + s * (c2[6] - c1[6]) + t * (c4[6] - c1[6])
-            local chave = A .. ":" .. ib .. ":" .. ic
+            -- "%d" AND NOT CONCATENATION, because of negative zero.
+            --
+            -- `ib` and `ic` are lattice indices out of `math.ceil`, which
+            -- returns a float: `math.ceil(-0.5)` is -0.0, and concatenating
+            -- that spells "-0" while 0.0 spells "0". The same column then has
+            -- two names, and a sample that both meshes really do have lands in
+            -- two different buckets, which this gate reports as "surface only
+            -- in ROM" plus "surface only in HD" for the same lattice point,
+            -- same source pixel, same shade, same band.
+            --
+            -- Which of the two spellings comes out is not stable: on the mbp's
+            -- LuaJIT (2.1.1785763465) the same tree, unchanged, printed OK,
+            -- then 2 differences, then 50, then 98 across four runs, and 5 out
+            -- of 5 OK under `luajit -joff`. On the Mac Studio's build
+            -- (2.1.1782726002) it is 5 out of 5 OK with the JIT on. A gate that
+            -- answers differently on two runs of the same bytes is not
+            -- measuring the mod, and this one was one negative zero away from
+            -- being trustworthy. Found 2026-08-13 while a red V10 was being
+            -- recalibrated, on a full battery run that had to be repeated.
+            --
+            -- "%d" converts through an integer, where -0 and 0 are the same
+            -- number and get the same name. Nothing else changes: no tolerance
+            -- is widened and no comparison is loosened.
+            local chave = string.format("%s:%d:%d", A, ib, ic)
             local col = colunas[chave]
             if not col then col = {}; colunas[chave] = col end
             col[#col + 1] = {
