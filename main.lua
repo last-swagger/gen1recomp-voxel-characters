@@ -2214,7 +2214,15 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
   -- within the valid frame range (already normalized to [0, m.frames) at
   -- the top of this function), so `andando` stays false and no 1 or
   -- 3-frame sheet overflows.
-  local stepWeightForce = tonumber(stepWeight) or 0
+  --
+  -- THE STRENGTH IS IN SHEET PIXELS, because it is added straight to `z`, and
+  -- `escalaParaTile` divides z by the same factor it divides everything else
+  -- by. Left unscaled, an HD character leaned a QUARTER as far as the same
+  -- character at ROM resolution: the option was doing a quarter of its job
+  -- rather than failing, which is the shape of every other constant in this
+  -- file that had to grow with the cell. `y / m.cellH` on the other side of
+  -- the multiplication is a FRACTION of the height and must not be touched.
+  local stepWeightForce = (tonumber(stepWeight) or 0) * (hdK or 1)
   local bucketFrame = frame
   if bucketFrame > 5 then bucketFrame = bucketFrame % 3 end
   local andando = bucketFrame >= 3 and m.frames >= 6
