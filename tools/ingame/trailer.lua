@@ -232,6 +232,19 @@ return function(game)
     blink = "on", top_edge = "on", front_shape = "off", top_dome = "off",
     step_weight = "off", breath = 0.010, sway = "off", lag = "off",
     footfall = "off", first_person = "card",
+    -- PINNED, and it used to be absent. Every other option here is fixed so the
+    -- trailer films the same thing on every machine; `hd_sprite` was not, so it
+    -- filmed whatever the recording machine's save happened to hold. The mbp's
+    -- save had it ON, which is the entire reason a shot froze for 481 ms and the
+    -- guard refused to publish -- a cost that belonged to one option on one
+    -- machine, read as a defect in the baseline.
+    --
+    -- OFF because Kim retired the experiment on 2026-08-13: he looked and saw no
+    -- return the extra resolution could deliver, which the measurement agrees
+    -- with (the game classifies every pixel into four shades, so detail inside
+    -- an original pixel cannot survive to the screen). A trailer should show
+    -- what the mod IS, and this is not part of it.
+    hd_sprite = "off",
   }
 
   -- THE SCRIPT. Editing here means editing the trailer.

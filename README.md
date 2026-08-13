@@ -191,8 +191,13 @@ quads with 16 facing up; CARVED emits 1068 with **216** facing up, and upward
 facing surface is surface the artist never drew. A shape built from silhouettes
 also cannot reconstruct a dent, so armpits and the gap between the legs do not
 survive. **In this game, flat geometry with varied shading wins** -- which is
-exactly what `FRONT SHAPE` and `TOP DOME` are. Pick CARVED when you want a real
-volume, or a silhouette that holds up at angles this game never uses.
+exactly what `FRONT SHAPE` and `TOP DOME` are. **CARVED is also retired as a direction**, for the same reason and with one
+exception worth stating. Measured, it loses to SLAB at this game's camera, and
+that is not close. It stays in the menu, and the code stays, because it is the
+only one of the two that builds an actual volume -- a SLAB is a thick card and
+means nothing outside this camera. If this ever goes somewhere the camera turns,
+CARVED is the only starting point there is. That is a reason not to delete it,
+not a reason to invest in it now.
 
 **Thickness is not one number.** How much of a character you see from the front
 versus from above changes a lot along the camera ladder, and the top is the part
@@ -231,13 +236,18 @@ keeps seams off characters and is right to -- a grid over a 16x16 sprite lands
 a line every couple of pixels. Turn this on to see where the mod actually
 placed geometry.
 
-**`HD SPRITE` is an experiment, and the first option that draws pixels your ROM
-does not contain.** A higher resolution sheet, enlarged by an LLM from the real
-one. It invents no shape: the silhouette matches the original almost exactly.
-What it invents is detail inside each original pixel, and the game's own
-colouring classifies every pixel into four shades, so most of that detail does
-not survive to the screen. Off by default, and it only affects sheets that ship
-a file.
+**`HD SPRITE` was an experiment and it is retired.** A higher resolution sheet,
+enlarged from the real one by an LLM. It invented no shape -- the silhouette
+matched the original almost exactly -- and what it did invent was detail INSIDE
+each original pixel. That detail cannot reach the screen: this game colours by
+sorting every pixel into one of four shades, so anything finer is discarded on
+the way out. Looked at in the game, the difference was not worth having.
+
+It still ships, off, because a measured negative is a result and deleting it
+would turn "we measured this and it did not pay" into "nobody tried". Do not
+expect work on it. Five of the ten unit bugs found in this mod's history were
+reachable only through it, and so was half a second of freeze on the first
+walking step.
 
 **Thin lines flicker on a breathing character, and that is accepted rather than
 unnoticed.** Moving pixel art through a 3D transform lands the boundary between

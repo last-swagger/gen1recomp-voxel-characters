@@ -8,6 +8,43 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
+### Retired, and kept
+
+- **`HD SPRITE` and `SHAPE: CARVED` are no longer directions this mod is
+  exploring.** Kim, who owns it: "por hora o HD e o CARVED sao ideias que eu nao
+  quero mais explorar pq nao vi retorno nelas."
+
+  Both still ship, both stay in the menu, and no code was deleted. A measured
+  negative is a result, and removing it turns "we measured this and it did not
+  pay" into "nobody tried". The reasons are on the record so nobody starts over
+  from the attractive half of the numbers:
+
+  `HD SPRITE` cannot pay off through this game's own renderer. Colour is applied
+  by sorting every pixel into one of four shades, so detail INSIDE an original
+  pixel is discarded on the way to the screen -- which is precisely and only
+  what the enlargement invented. It also carried a disproportionate share of the
+  cost: five of the ten unit-scale defects in this mod's history were reachable
+  only through it, and so was 481 ms of freeze on the first walking step.
+
+  `CARVED` loses to SLAB at this game's camera, measured: 216 upward-facing
+  quads against 16 on `red`, and upward surface is surface the artist never
+  drew. Under the shipped `SIDE COLOR: OUTLINE` that reaches 72% of the figure
+  at the lowest camera rung. It cannot reconstruct a dent, so armpits and the
+  gap between the legs do not survive.
+
+  **The one reason CARVED's code stays is worth naming**: a SLAB is a thick card
+  and means nothing outside this camera, while CARVED builds an actual volume.
+  If this project ever goes somewhere the camera turns, that is the only
+  starting point that exists.
+
+### Fixed
+
+- **The trailer now pins `HD SPRITE: OFF` like every other option.** It was the
+  one setting the recorder did not fix, so it filmed whatever the recording
+  machine's save held. The machine used had it on, which is the whole reason a
+  shot froze for 481 ms and the recorder refused to publish -- a cost belonging
+  to one option on one machine, read as a defect in the baseline.
+
 ### Added
 
 - **`BLINK DETECT: OFF / ON`.** Finds the eyes in the sprite itself, for sheets
