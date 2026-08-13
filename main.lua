@@ -2519,7 +2519,13 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
       -- and silently cutting along a bound from a sprite that has since been
       -- re-imported would be worse than not cutting along anything.
       if regiao then
-        local alt = m.cellH or 16
+        -- THE MEASUREMENTS ARE ROWS OF THE SOURCE CELL, never of this one.
+        -- tools/measure_regions.py reads the player's own 16 px sheet, so on a
+        -- 64 px HD cell `top = 0, bottom = 15` describes the top QUARTER of the
+        -- figure. Checking them against 64 would wave that through, and the cut
+        -- below would then put every band boundary inside the head. Both the
+        -- check and the lookup happen in the cell the numbers were measured in.
+        local alt = (m.cellH or 16) / (hdK or 1)
         local ok = type(regiao.top) == "number" and type(regiao.bottom) == "number"
           and regiao.top >= 0 and regiao.bottom < alt and regiao.top < regiao.bottom
         if ok and regiao.footSplit then
@@ -2564,7 +2570,16 @@ local function buildSlabMesh(def, frame, depth, correction, m, sideColor,
         -- Back to a sheet row. The builder emits row `ly` at
         -- `y = cellH - 1 - ly` (see `cellBottom - ly` above), so a quad centred
         -- half a row lower inverts to `floor(cellH - y)`.
-        b = bandas - bandaMedida(math.floor((m.cellH or 16) - y)) + 1
+        --
+        -- Divided by the HD factor so the row is a SOURCE row, the only kind
+        -- the measurements know about. It would have been possible instead to
+        -- multiply the bounds up and let the cut resolve at HD row precision,
+        -- and that is worse: the boundary between two bands would then land a
+        -- third of the way into a source row, which is precision the
+        -- measurement does not have and nobody measured. Quantising the query
+        -- instead makes the HD cut land exactly where the ROM cut lands.
+        b = bandas
+          - bandaMedida(math.floor(((m.cellH or 16) - y) / (hdK or 1))) + 1
       else
         b = math.floor(y / (m.cellH or 16) * bandas) + 1
       end
