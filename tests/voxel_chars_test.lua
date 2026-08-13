@@ -67,10 +67,17 @@ local function resetLoaded()
   package.loaded["src.mods.Semver"] = nil
 end
 
+-- HOW MANY TIMES THE SHEET WAS READ, for the build-cost gate at the end of
+-- this file. Counted here rather than in a second image type so that the gate
+-- measures the same image every other check does; it costs one increment per
+-- texel read and no test but that one ever looks at it.
+local pixelReads = 0
+
 local function fakeImage(pixels, w, h)
   return {
     getDimensions = function() return w, h end,
     getPixel = function(_, x, y)
+      pixelReads = pixelReads + 1
       local p = pixels[y * w + x]
       if type(p) == "table" then
         return p[1] or p.r or 0, p[2] or p.g or 0,
@@ -8613,6 +8620,139 @@ do
             "e o par extra, que so o detector veria, fica de fora")
     end)
   end
+end
+
+-- A COLD MESH BUILD MAY NOT READ THE SHEET ONCE PER QUESTION.
+--
+-- WHY THIS EXISTS. Kim's report: the game freezes on the first walk step in
+-- each direction. The mod's own trailer refused to publish over it, naming
+-- single frames of 484 ms and 478 ms in shot 4. Timing the mesh call itself in
+-- game, the player's three walking poses cost 475 ms, 472 ms and 384 ms -- one
+-- cold mesh each, HD SPRITE on -- against 4 ms for the NPC beside them, who has
+-- no HD sheet. Offline the same build measured 251 ms, of which 246 ms was
+-- poseOffsetScan and 1,136,155 calls to getPixel for a cell that holds 4,096
+-- texels. CARVED on the same sheet read it 4,380,066 times for one mesh.
+--
+-- Nothing offline could see it. The suite builds meshes and reads geometry,
+-- and the geometry was right the whole time; the trailer only caught it
+-- because a trailer happens to walk, and it caught it as a number of
+-- milliseconds on one machine.
+--
+-- SO THIS GATE COUNTS WORK, NOT MILLISECONDS, and that is the whole reason it
+-- can exist here at all:
+--
+--   * a wall clock would be a different number on every machine, and would
+--     have to be loose enough to pass the slowest one, which is loose enough
+--     to miss a regression on the fastest;
+--   * worse, it would be measured under the WRONG RUNTIME. `jit.status()` is
+--     FALSE inside LOVE 11.5 on Apple Silicon -- the game runs LuaJIT as a
+--     plain interpreter -- while this suite runs under `luajit` with the JIT
+--     on. The same loop measured 3.8 ms here and 38 ms in the game. A time
+--     budget tuned on this side of that gap would be honest about nothing;
+--   * the count of texel reads is the same integer on every machine and under
+--     either runtime, and it IS the defect: reading one texel a million times
+--     is what half a second of freeze was made of.
+--
+-- THE BOUND IS TWO PASSES, and it is arithmetic rather than a taste. Every
+-- stage that needs the sheet needs it whole: maskFor reads all `frames` frames
+-- once, to find the silhouette and the outline tone, and frameTexel caches at
+-- most ONE more pass per frame it is asked about. A build that touched every
+-- frame of the sheet would land on exactly 2.00, so 2.00 is reachable and can
+-- never be a false red; anything above it is a stage asking per question
+-- instead of reading the sheet. The bound does not grow with the size of the
+-- cell, the width of the scan window, or the number of faces emitted, which is
+-- what makes it a bound and not a budget.
+--
+-- MEASURED, on the sheet below (24,576 texels):
+--
+--   now                       SLAB    32,768 (1.33x)   CARVED    45,056 (1.83x)
+--   the defect as reported    SLAB   113,995 (4.64x)   CARVED 2,017,590 (82.1x)
+--
+-- MUTATION-TESTED against the code as it stood before this fix: both checks go
+-- red, at 2.3 and 41 times the ceiling. Tested a second way, putting back only
+-- frameTexel's per-frame cache and leaving the rewritten scan alone: CARVED
+-- goes red at 3.82x, and SLAB does NOT -- it lands on 1.83x, under the
+-- ceiling, because the rewritten scan already reads each frame once by itself.
+-- Said plainly because it is the gate's real reach: it refuses the defect that
+-- shipped, and it refuses half of it on CARVED, but on SLAB the two halves
+-- defend each other and only the pair of them failing is visible here.
+--
+-- WHAT IT CANNOT SEE, equally plainly: the second half of the scan's fix is
+-- arithmetic, not reads -- counting the overlap 32 texels at a time instead of
+-- one at a time -- and undoing it costs milliseconds without costing a single
+-- extra texel read. No offline gate on this side of the JIT gap can price
+-- that honestly; the trailer's own freeze guard is what stands behind it.
+do
+  local cellW, frames = 64, 6
+  local sheetW, sheetH = cellW, cellW * frames
+  local TEXELS = sheetW * sheetH
+
+  -- A body with an outline rim, so the inward body search (SIDE COLOR: BODY)
+  -- actually runs, and with the walking frames one row lower, which is the
+  -- displacement poseOffsetScan exists to measure. Both are what make the
+  -- scans this gate is about happen at all.
+  local pixels = {}
+  for f = 0, frames - 1 do
+    local shift = f >= 3 and 1 or 0
+    for ly = 0, cellW - 1 do
+      for lx = 0, cellW - 1 do
+        local dx, dy = lx - 32, ly - 34
+        local inside = (dx * dx) / (24 * 24) + (dy * dy) / (28 * 28) < 1
+        if inside then
+          local rim = (dx * dx) / (21 * 21) + (dy * dy) / (25 * 25) >= 1
+          local y = ly + shift
+          if y < cellW then
+            pixels[(f * cellW + y) * sheetW + lx] =
+              rim and rgba(0, 0, 0, 1) or rgba(0.80, 0.62, 0.48, 1)
+          end
+        end
+      end
+    end
+  end
+
+  local BUDGET = 2 * TEXELS
+
+  local function readsFor(shape, frame)
+    local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, sheetH)
+    local mod = loadWith(makeMod(handle, {
+      depth = 3, shape = shape, side_color = "body", blink = "off",
+      front_shape = "off", ground_shade = "off", sway = "off",
+      top_edge = "off", top_dome = "off", step_weight = "off",
+    }))
+    local def = { image = "cost.png", frames = frames }
+    pixelReads = 0
+    local mesh = modules.SpriteBillboards.mesh(def, frame)
+    local n = pixelReads
+    check(mesh ~= nil and mesh.verts ~= nil and #mesh.verts > 0,
+          "custo: o build " .. shape .. " frame " .. frame .. " produziu malha")
+    return n, mod
+  end
+
+  local slabReads = readsFor("slab", 3)
+  check(slabReads <= BUDGET, string.format(
+    "SLAB frio na pose andando le a folha %.1f vezes (%d leituras de %d "
+    .. "texels); o teto e %d. Uma varredura que pergunta por pixel em vez de "
+    .. "ler a folha uma vez e o congelamento de 481 ms que o Kim reportou",
+    slabReads / TEXELS, slabReads, TEXELS, BUDGET))
+
+  local carvedReads = readsFor("carved", 0)
+  check(carvedReads <= BUDGET, string.format(
+    "CARVED frio le a folha %.1f vezes (%d leituras de %d texels); o teto e "
+    .. "%d. Este e o caso de 1324 ms medido no trailer com HD SPRITE",
+    carvedReads / TEXELS, carvedReads, TEXELS, BUDGET))
+
+  -- AND THE MESH IS STILL A MESH. A cheaper build that builds less is not a
+  -- fix, and a build that emitted nothing at all would pass a cost ceiling
+  -- perfectly, so the ceiling cannot stand alone. This sheet measures 314
+  -- quads; the floor is set well under that because what it refuses is a
+  -- mesh that collapsed, not a mesh that changed by a quad.
+  local handle, modules = makeVoxelHandle("1.6.0", pixels, sheetW, sheetH)
+  loadWith(makeMod(handle, { depth = 3, shape = "slab", side_color = "body",
+    blink = "off", front_shape = "off", ground_shade = "off", sway = "off" }))
+  local def = { image = "cost.png", frames = frames }
+  local a = modules.SpriteBillboards.mesh(def, 3)
+  check(a and #a.verts >= 4 * 100,
+        "custo: a malha barata continua sendo uma malha (quads de sobra)")
 end
 
 T.finish("voxel_chars_test")

@@ -101,6 +101,68 @@ the direction is named in the entry their contribution landed in.
 
 ### Fixed
 
+- **The game no longer freezes on the first step in each direction.** With
+  `HD SPRITE` on, the first time a character walked in a given direction the
+  whole game stopped for about half a second, once per direction. This mod's
+  own trailer refused to publish over it, naming single frames of 484 ms and
+  478 ms in shot 4 -- and every one of those was ONE mesh.
+
+  It was one function reading the same sheet over and over. `poseOffsetScan`
+  measures how far the art shifts between the standing pose and the walking one
+  by trying every candidate offset in a window and counting how much the two
+  silhouettes overlap. On the ROM's 16 px cell that is 35 candidates over 256
+  texels and costs 1.7 ms, which is why nobody ever saw it. On the HD sheet's
+  64 px cell the window scales with the cell, so it is 425 candidates over 4096
+  texels -- and every one of those candidates was asking `love.image` for the
+  same pixels again. 1,136,155 pixel reads, each through a `pcall`, for a cell
+  that holds 4,096 texels.
+
+  Two things changed and neither of them changes a single vertex:
+
+  - **the sheet is read once per frame, not once per question.** `frameTexel`
+    now decodes each frame of the cell once into one byte per texel and answers
+    from that. The answer never depended on anything else -- the decoded sheet,
+    the cell, the layout and the outline tone are all fixed for the life of the
+    mask -- so asking twice could never have given two answers;
+  - **the overlap is counted 32 texels at a time.** Each row is packed into
+    32-bit words, one bit per texel; a candidate offset becomes a shift, the
+    overlap becomes a bitwise AND, and the score becomes a population count.
+
+  The second half exists because of something worth knowing on its own:
+  **`jit.status()` is FALSE inside LOVE 11.5 on Apple Silicon.** The game runs
+  LuaJIT as a plain interpreter, while `luajit tests/voxel_chars_test.lua` runs
+  with the compiler on. The same per-texel loop measured 3.8 ms under the suite
+  and 38 ms under the game. Any optimisation judged by the suite's clock is
+  worth about a tenth of what it looks like.
+
+  Measured, offline, one cold build of the HD walking pose: **251 ms became 11
+  to 16 ms**, and the pixel reads inside it 1,136,155 became 4,098. Measured in
+  the game, on the machine that filmed the freeze: **the three walking poses
+  cost 475 ms, 472 ms and 384 ms; they now cost 20 ms, 20 ms and 21 ms**, and
+  the worst frame of the whole walk went from 482 ms to 28 ms. The trailer's
+  freeze guard, which had been refusing to publish, now passes shot 4 with its
+  worst frames at 39 to 51 ms -- the camera tipping over, which is a cost it
+  already documented.
+
+  `CARVED` carried the same defect in its own hull test, which asks `solid`
+  seven times per voxel and re-read the sheet three times per ask: 4,380,066
+  reads for one mesh. Front and back depend only on the column, the profile
+  only on the depth slice, and the `CARVED+` recess only on the column, so each
+  is now answered once per coordinate. **`CARVED` with `HD SPRITE` -- the case
+  the trailer clocked at 1324 ms in game -- measured 1099 ms offline and now
+  measures 142 ms**; plain `CARVED` on a ROM sheet went from 15 ms to 8 ms.
+  What is left there is the cost the option's own help text already names --
+  17024 quads against 104 -- and not a scan. It is still a hitch, and a player
+  who turns both of those on will still feel the first build of each pose.
+
+  Every mesh is byte for byte the one built before: 1830 meshes over all 67 ROM
+  sheets in six option combinations, plus the HD sheet in `SLAB` and `CARVED`,
+  hash identical before and after.
+
+  Caught by this mod's own trailer, which refused to publish the recording and
+  named the shot and the frame. **Kim** chose to have the cause fixed rather
+  than the symptom worked around.
+
 - **`V-GRID CHARS` now follows the world grid instead of competing with it.**
   Key `5` toggles the voxel wireframe; characters join it when this is on, and
   the row says `PRESS 5 FOR V-GRID` when it is not. Independent switches would

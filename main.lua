@@ -1608,17 +1608,74 @@ local function rememberMesh(key, mesh)
   end
 end
 
+-- IS THIS TEXEL OPAQUE, AND IS IT THE OUTLINE. Every per-pixel decision this
+-- file makes comes through here: poseOffsetScan, bodyTexelInFrame, CARVED's
+-- `solid`, detectEyeMarks, every UV fallback.
+--
+-- THE SHEET IS READ ONCE PER FRAME, NOT ONCE PER QUESTION, and that is the
+-- whole of this function's cost story. The answer depends only on (m, frame,
+-- lx, ly) -- `m` already caches the decoded sheet, the cell, the layout and
+-- `outlineLuma`, all of them fixed for the life of the mask -- so asking twice
+-- can never give two answers. It was asking MILLIONS of times.
+--
+-- MEASURED, on the mod's own trailer (Kim's report: the game freezes on the
+-- first walk step). One cold build of red.png's walking pose with HD SPRITE on
+-- cost 475 ms in game and 251 ms offline, of which 246 ms was poseOffsetScan
+-- and nothing else: 1,136,155 calls to `love.image.ImageData:getPixel`, each
+-- one through a pcall, for a 64x64 cell that only contains 4,096 texels. The
+-- same scan on the ROM's 16 px cell measured 1.7 ms, which is why nobody saw
+-- it: it is the SAME redundancy either way -- every candidate offset re-reading
+-- the sheet -- and only the bigger cell made it big enough to feel.
+--
+-- ONE BYTE PER TEXEL, in a string, rather than a table of booleans. Wilds of
+-- Kanto puts 1,298 sheets within reach of this cache and `masks` has never
+-- evicted anything; at 8 bytes a slot a table would spend eight times the
+-- memory to save a few nanoseconds a read that this code no longer needs.
+-- A ROM sheet costs 1.5 KB for all six frames, the 64 px HD sheet 24 KB, and
+-- only the frames actually posed are ever built.
+--
+-- 0 empty, 1 body, 2 outline. `outline` used to come back as nil when the
+-- sheet had no `outlineLuma` at all and as false otherwise; it is now always a
+-- boolean, which every caller already treated it as (all of them test it for
+-- truth, none of them distinguish nil from false).
 local function frameTexel(m, frame, lx, ly)
   if lx < 0 or lx >= m.cellW or ly < 0 or ly >= m.cellH then return false end
   frame = tonumber(frame) or 0
   if frame < 0 or frame >= m.frames then return false end
-  local fx, fy = frameOrigin(m, frame)
-  if fx + m.cellW > m.sheetW or fy + m.cellH > m.sheetH then return false end
-  local r, g, b, a = pixelAt(m.data, fx + lx, fy + ly)
-  if not r or (a or 0) < 0.5 then return false end
-  local outline = m.outlineLuma
-    and math.abs(luminance(r, g, b) - m.outlineLuma) <= SHARED.LUMA_EPSILON
-  return true, outline
+  local cache = m.texelCache
+  if not cache then
+    cache = {}
+    m.texelCache = cache
+  end
+  local codes = cache[frame]
+  if not codes then
+    local fx, fy = frameOrigin(m, frame)
+    if fx + m.cellW > m.sheetW or fy + m.cellH > m.sheetH then
+      -- The frame does not fit the sheet: the old code answered false for
+      -- every texel in it, and so does an all-empty row.
+      codes = string.rep("\0", m.cellW * m.cellH)
+    else
+      local bytes, n = {}, 0
+      local outlineLuma = m.outlineLuma
+      for cy = 0, m.cellH - 1 do
+        for cx = 0, m.cellW - 1 do
+          local r, g, b, a = pixelAt(m.data, fx + cx, fy + cy)
+          local code = 0
+          if r and (a or 0) >= 0.5 then
+            code = (outlineLuma and math.abs(luminance(r, g, b) - outlineLuma)
+                    <= SHARED.LUMA_EPSILON) and 2 or 1
+          end
+          n = n + 1
+          bytes[n] = string.char(code)
+        end
+      end
+      codes = table.concat(bytes)
+    end
+    cache[frame] = codes
+  end
+  local code = codes:byte(ly * m.cellW + lx + 1)
+  if code == 0 then return false end
+  return true, code == 2
 end
 
 local function roleForFrame(frame, frames)
@@ -1742,29 +1799,108 @@ local function poseOffsetScan(m, fromFrame, toFrame)
   -- this is 425 candidates over 4096 pixels rather than 35 over 256. It is
   -- memoised per canonical frame pair per sheet (see poseOffset), so it happens
   -- once, not once per face.
+  --
+  -- ONCE IS STILL TOO OFTEN WHEN ONCE COSTS HALF A SECOND, which is what Kim
+  -- reported: the game froze on the first walk step in each direction, and the
+  -- half second the trailer refused over was almost all of it THIS scan. Two
+  -- things changed and neither of them changes the answer.
+  --
+  -- FIRST, frameTexel reads each frame of the sheet once and answers from a
+  -- byte per texel (see frameTexel), so the candidate loop stopped calling into
+  -- love.image at all: 1,136,155 pixel reads for one HD walking pose became
+  -- 4,098. That alone took the scan from 246 ms to 41 ms.
+  --
+  -- SECOND, THE SCORE IS COUNTED 32 TEXELS AT A TIME. Each row of each frame is
+  -- packed into 32-bit words, one bit per texel; a candidate offset is then a
+  -- shift of the `to` row, the overlap is a bitwise AND, and the score is the
+  -- population count of the result. Same candidates, same order, same
+  -- tie-break, same answer -- bits that would come from outside the row are
+  -- zero, which is exactly what frameTexel answered for a coordinate outside
+  -- the cell. 41 ms became 8 to 11 ms over three runs, and the whole cold build
+  -- of that pose 251 ms became 11 to 16 ms.
+  --
+  -- AND IT HAD TO BE BITS, because the game does not run the code the tests do.
+  -- MEASURED: `jit.status()` is FALSE inside LOVE 11.5 on Apple Silicon -- the
+  -- JIT compiler is off and LuaJIT runs as a plain interpreter, while
+  -- `luajit tests/voxel_chars_test.lua` runs with it on. The same per-texel
+  -- loop measured 3.8 ms compiled and 38 ms interpreted, so an optimisation
+  -- judged by the suite's clock would have looked ten times better than what
+  -- the player gets. Bits cut the number of operations rather than their cost,
+  -- which is the only kind of saving that survives the interpreter.
+  --
+  -- `bit` is LuaJIT's own library and needs no dependency: the host is LOVE,
+  -- LOVE is LuaJIT, and this file's whole failure contract already covers the
+  -- impossible case -- poseOffset runs inside the pcall around the mesh build,
+  -- so a host without it falls back to the flat card rather than crashing.
+  local band, bor, rshift, lshift
+  do
+    local bit = require("bit")
+    band, bor, rshift, lshift = bit.band, bit.bor, bit.rshift, bit.lshift
+  end
   local hdK = hdCellScale(m)
   if hdK then
     POSE_OFFSET_DX_RANGE = math.floor(POSE_OFFSET_DX_RANGE * hdK + 0.5)
     POSE_OFFSET_DY_RANGE = math.floor(POSE_OFFSET_DY_RANGE * hdK + 0.5)
   end
-  local fromOpaque = {}
+  -- Population count of a byte, by the recurrence rather than by a table
+  -- anyone has to trust: POP[i] is POP[i without its low bit] plus that bit.
+  local POP = { [0] = 0 }
+  for i = 1, 255 do POP[i] = POP[rshift(i, 1)] + band(i, 1) end
+  local words = math.ceil(cellW / 32)
+  local fromBits, toBits, fromRowUsed = {}, {}, {}
   for ly = 0, cellH - 1 do
-    local row = ly * cellW
-    for lx = 0, cellW - 1 do
-      fromOpaque[row + lx] = frameTexel(m, fromFrame, lx, ly)
+    local base = ly * words
+    for w = 0, words - 1 do
+      fromBits[base + w] = 0
+      toBits[base + w] = 0
     end
+    local used = false
+    for lx = 0, cellW - 1 do
+      local w, b = base + rshift(lx, 5), band(lx, 31)
+      if frameTexel(m, fromFrame, lx, ly) then
+        fromBits[w] = bor(fromBits[w], lshift(1, b))
+        used = true
+      end
+      if frameTexel(m, toFrame, lx, ly) then
+        toBits[w] = bor(toBits[w], lshift(1, b))
+      end
+    end
+    fromRowUsed[ly] = used
   end
 
   local bestDx, bestDy, bestScore = 0, 0, -1
   for dy = -POSE_OFFSET_DY_RANGE, POSE_OFFSET_DY_RANGE do
     for dx = -POSE_OFFSET_DX_RANGE, POSE_OFFSET_DX_RANGE do
+      -- Output word `w` wants the `to` row starting at bit w*32 + dx, so the
+      -- whole shift is `dw` words plus `dbit` bits, and floor division keeps
+      -- that true for a negative dx as well. A cell wider than 32 texels with
+      -- a window wider than one word is why this is not simply "shift by dx".
+      local dw = math.floor(dx / 32)
+      local dbit = dx - dw * 32
       local score = 0
       for ly = 0, cellH - 1 do
-        local row = ly * cellW
-        for lx = 0, cellW - 1 do
-          if fromOpaque[row + lx]
-              and frameTexel(m, toFrame, lx + dx, ly + dy) then
-            score = score + 1
+        local ty = ly + dy
+        if fromRowUsed[ly] and ty >= 0 and ty < cellH then
+          local fbase, tbase = ly * words, ty * words
+          for w = 0, words - 1 do
+            local f = fromBits[fbase + w]
+            if f ~= 0 then
+              local i = w + dw
+              local t = (i >= 0 and i < words) and toBits[tbase + i] or 0
+              if dbit > 0 then
+                local j = i + 1
+                t = bor(rshift(t, dbit),
+                  (j >= 0 and j < words)
+                    and lshift(toBits[tbase + j], 32 - dbit) or 0)
+              end
+              local v = band(f, t)
+              if v ~= 0 then
+                score = score + POP[band(v, 255)]
+                  + POP[band(rshift(v, 8), 255)]
+                  + POP[band(rshift(v, 16), 255)]
+                  + POP[rshift(v, 24)]
+              end
+            end
           end
         end
       end
@@ -3224,24 +3360,66 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
   -- limited by each side line's real depth: at least one layer always
   -- remains, because a thin sprite from an external mod cannot turn into a
   -- hole going through the character.
-  local function solid(lx, ly, sx)
+  --
+  -- THE HULL IS AN INTERSECTION OF THREE VIEWS, AND TWO OF THEM DO NOT DEPEND
+  -- ON THE THIRD AXIS. Front and back are answered by (lx, ly); the profile is
+  -- answered by (sx, ly); the CARVED+ recess is a threshold on the depth
+  -- column, and every term it is made of -- the front tone, the line's real
+  -- depth, the relief range -- is fixed by (lx, ly) as well. So the three
+  -- questions get asked once per coordinate instead of once per voxel test.
+  --
+  -- MEASURED, and it is the same defect the walk freeze was: this loop walks
+  -- every (lx, ly, sx) of the hull and asks `solid` seven times per voxel it
+  -- keeps, once for the voxel and once per face. On the 64 px HD sheet that is
+  -- 4,380,066 reads of the sheet for ONE mesh. With frameTexel now answering
+  -- from a byte per texel that is no longer a million calls into love.image,
+  -- but it is still a million calls, and the game runs this interpreted (see
+  -- poseOffsetScan for why that is not a detail).
+  --
+  -- Memoised lazily rather than precomputed: the hull is a fraction of the box
+  -- the loops walk, and a column nothing asks about should cost nothing.
+  local widthSolid, sideSolid, recessAt = {}, {}, {}
+
+  local function widthAt(lx, ly)
     if lx < widthBounds.minX or lx > widthBounds.maxX then return false end
     if ly < widthBounds.minY or ly > widthBounds.maxY then return false end
+    local i = ly * m.cellW + lx
+    local hit = widthSolid[i]
+    if hit == nil then
+      hit = (frameTexel(m, pose.front, frontXFor(lx), ly)
+        and frameTexel(m, pose.back, backXFor(lx), ly)) and true or false
+      widthSolid[i] = hit
+    end
+    return hit
+  end
+
+  local function solid(lx, ly, sx)
+    if not widthAt(lx, ly) then return false end
     if sx < sideBounds.minX or sx > sideBounds.maxX then return false end
-    local frontX = frontXFor(lx)
-    if not frameTexel(m, pose.front, frontX, ly) then return false end
-    if not frameTexel(m, pose.back, backXFor(lx), ly) then return false end
-    if not frameTexel(m, pose.side, sx, ly) then return false end
+    local j = ly * m.cellW + sx
+    local side = sideSolid[j]
+    if side == nil then
+      side = frameTexel(m, pose.side, sx, ly) and true or false
+      sideSolid[j] = side
+    end
+    if not side then return false end
     if carvedPlus and reliefMinLuma and reliefMaxLuma
         and reliefMaxLuma > reliefMinLuma + SHARED.LUMA_EPSILON then
-      local luma = frameLuma(frontFrameA, frontX, ly)
-        or frameLuma(frontFrameB, frontX, ly)
-      if luma then
-        local dark = (reliefMaxLuma - luma) / (reliefMaxLuma - reliefMinLuma)
-        local recess = math.max(0, math.min(maxRecessForLine(ly),
-          math.floor(dark * CARVED_PLUS_RECESS_STEPS + 0.5)))
-        if (sx - sideBounds.minX) < recess then return false end
+      local i = ly * m.cellW + lx
+      local recess = recessAt[i]
+      if recess == nil then
+        recess = false
+        local frontX = frontXFor(lx)
+        local luma = frameLuma(frontFrameA, frontX, ly)
+          or frameLuma(frontFrameB, frontX, ly)
+        if luma then
+          local dark = (reliefMaxLuma - luma) / (reliefMaxLuma - reliefMinLuma)
+          recess = math.max(0, math.min(maxRecessForLine(ly),
+            math.floor(dark * CARVED_PLUS_RECESS_STEPS + 0.5)))
+        end
+        recessAt[i] = recess
       end
+      if recess and (sx - sideBounds.minX) < recess then return false end
     end
     return true
   end
@@ -3377,38 +3555,44 @@ local function buildCarvedMesh(def, frame, depth, correction, m, sideColor, shap
 
   for ly = m.minY, m.maxY do
     for lx = widthBounds.minX, widthBounds.maxX do
-      for sx = sideBounds.minX, sideBounds.maxX do
-        if solid(lx, ly, sx) then
-          local x0, x1 = lx, lx + 1
-          local y0, y1 = cellBottom - ly, cellBottom - ly + 1
-          local z0 = -(sx - sideBounds.minX)
-          local z1 = z0 - 1
+      -- A column the front and back views do not both cover holds no voxel at
+      -- any depth, so the whole depth walk under it is skipped rather than
+      -- asked and refused once per slice. Exactly what `solid` would have
+      -- answered: it is `solid`'s own first test, hoisted.
+      if widthAt(lx, ly) then
+        for sx = sideBounds.minX, sideBounds.maxX do
+          if solid(lx, ly, sx) then
+            local x0, x1 = lx, lx + 1
+            local y0, y1 = cellBottom - ly, cellBottom - ly + 1
+            local z0 = -(sx - sideBounds.minX)
+            local z1 = z0 - 1
 
-          if not solid(lx, ly, sx - 1) then
-            quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y1, z0),
-                 p(x0, y1, z0), sameUv(opaqueFrame(pose.front, widthFrame, lx, ly), lx, ly),
-                 SHARED.OBJ_SHADE.front)
-          end
-          if not solid(lx, ly, sx + 1) then
-            quad(p(x1, y0, z1), p(x0, y0, z1), p(x0, y1, z1),
-                 p(x1, y1, z1), sameUv(opaqueFrame(pose.back, widthFrame, lx, ly), lx, ly),
-                 SHARED.OBJ_SHADE.back)
-          end
-          if not solid(lx - 1, ly, sx) then
-            quad(p(x0, y0, z1), p(x0, y0, z0), p(x0, y1, z0),
-                 p(x0, y1, z1), sideUv(sx, ly), SHARED.OBJ_SHADE.side)
-          end
-          if not solid(lx + 1, ly, sx) then
-            quad(p(x1, y0, z0), p(x1, y0, z1), p(x1, y1, z1),
-                 p(x1, y1, z0), sideUv(sx, ly), SHARED.OBJ_SHADE.side)
-          end
-          if not solid(lx, ly - 1, sx) then
-            quad(p(x0, y1, z1), p(x1, y1, z1), p(x1, y1, z0),
-                 p(x0, y1, z0), topUv(lx, ly, 1), SHARED.OBJ_SHADE.top)
-          end
-          if not solid(lx, ly + 1, sx) then
-            quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y0, z1),
-                 p(x0, y0, z1), topUv(lx, ly, -1), SHARED.OBJ_SHADE.bottom)
+            if not solid(lx, ly, sx - 1) then
+              quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y1, z0),
+                   p(x0, y1, z0), sameUv(opaqueFrame(pose.front, widthFrame, lx, ly), lx, ly),
+                   SHARED.OBJ_SHADE.front)
+            end
+            if not solid(lx, ly, sx + 1) then
+              quad(p(x1, y0, z1), p(x0, y0, z1), p(x0, y1, z1),
+                   p(x1, y1, z1), sameUv(opaqueFrame(pose.back, widthFrame, lx, ly), lx, ly),
+                   SHARED.OBJ_SHADE.back)
+            end
+            if not solid(lx - 1, ly, sx) then
+              quad(p(x0, y0, z1), p(x0, y0, z0), p(x0, y1, z0),
+                   p(x0, y1, z1), sideUv(sx, ly), SHARED.OBJ_SHADE.side)
+            end
+            if not solid(lx + 1, ly, sx) then
+              quad(p(x1, y0, z0), p(x1, y0, z1), p(x1, y1, z1),
+                   p(x1, y1, z0), sideUv(sx, ly), SHARED.OBJ_SHADE.side)
+            end
+            if not solid(lx, ly - 1, sx) then
+              quad(p(x0, y1, z1), p(x1, y1, z1), p(x1, y1, z0),
+                   p(x0, y1, z0), topUv(lx, ly, 1), SHARED.OBJ_SHADE.top)
+            end
+            if not solid(lx, ly + 1, sx) then
+              quad(p(x0, y0, z0), p(x1, y0, z0), p(x1, y0, z1),
+                   p(x0, y0, z1), topUv(lx, ly, -1), SHARED.OBJ_SHADE.bottom)
+            end
           end
         end
       end
