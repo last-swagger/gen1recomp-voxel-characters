@@ -212,7 +212,7 @@ if [ "$MODO" = "tudo" ]; then
   # So: zero FAILED is not enough. There must also be at least one PASSED, or
   # the driver produced no verdict at all and the correct answer is "no
   # measurement", not "pass".
-  for d in probe_life menu probe_hd probe_draw probe_fp probe_grid; do
+  for d in probe_life menu probe_hd probe_walk probe_draw probe_fp probe_grid; do
     SAIDA=$(POKEPORT_VERSION=blue POKEPORT_DRIVER="$MOD/tools/ingame/$d.lua" \
             bash "$MOD/tools/love.sh" . 2>&1)
     NFAILED=$(printf '%s' "$SAIDA" | grep -cE '\bFAILED\b')

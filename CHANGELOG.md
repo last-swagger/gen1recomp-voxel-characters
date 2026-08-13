@@ -64,6 +64,31 @@ the direction is named in the entry their contribution landed in.
 
   Asked for by **Kim**.
 
+### Added, for whoever works on this
+
+- **`tools/ingame/probe_walk.lua`: a gate for the black that appears while
+  walking.** Every new SLAB face carries no art, so `SIDE COLOR: BODY` searches
+  inward for a body texel and hands the face the OUTLINE -- black -- when the
+  search fails. Whether it fails depends on the row, and the walking pose sits
+  one row lower than the standing one, so a face can go black on one pose and
+  come back on the next. That has been reported three times (**AngelusRole** in
+  v1.4.2, **Kim** twice since) and the offline suite was green every time,
+  because the defect is a UV landing on the wrong texel and the suite reads
+  geometry.
+
+  It photographs the character walking IN PLACE against a wall -- the host
+  animates a blocked step without moving the cell -- and isolates the character
+  by differencing against the same cell with `VOXEL CHARS: OFF`, so no part of
+  the measurement needs to know where the character is standing. Inside that
+  set it counts black under `OUTLINE` (the search never runs, so this is the
+  yardstick) and under `BODY`, once per pose.
+
+  Mutation tested against the two defects this family has actually shipped,
+  restored one at a time: leaving `BODY_SEARCH_LIMIT` unscaled on the HD sheet
+  drops the standing pose from 14.5% to 4.3%, and removing v1.4.2's `poseOffset`
+  compensation drops the walking pose from 21.4% to 3.0%. Each breaks one pose
+  and leaves the other alone, which is why the gate checks both.
+
 ### Fixed, for whoever works on this
 
 - **`tools/ingame/clip.sh` could not film any option, and said the option did
