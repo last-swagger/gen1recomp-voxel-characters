@@ -326,7 +326,7 @@ local OPTIONS = {
     -- along with the character.
     levels = { { "OFF", "off" }, { "SUBTLE", 0.20 }, { "NORMAL", 0.45 } },
     defaultIndex = 1,
-    help = "Sways the solid side to side from the feet, at half the breath rate and its own phase, for idle weight shift.",
+    help = "Sways the solid side to side from the feet, slower than the breath and on its own phase, for idle weight shift.",
   },
   {
     key = "lag",
@@ -3917,7 +3917,13 @@ local function lifeDrawWrap(mesh, texture, model, pull, sunModel)
   -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
   -- here. Amplitudes and rhythms. Seconds and fraction of cell height.
   local BREATH_PERIOD = 3.1      -- calm breathing of a standing adult
-  local SWAY_PERIOD = 6.2        -- half the rate, so they never beat together
+  -- 8.86 IS 6.2 / 0.7: Kim asked for a sway 30% slower than it was, watching it
+  -- in the game. It used to be 6.2, exactly twice the breath period, which the
+  -- old comment defended as "half the rate, so they never beat together" -- and
+  -- that reasoning was backwards. Two periods in a 2:1 ratio realign every
+  -- single cycle, which is the definition of beating together; 8.86 against 3.1
+  -- is 2.857:1 and does not repeat in any span anybody watches.
+  local SWAY_PERIOD = 8.86
   -- PER-SHEET PERSONALITY (roadmap step 7). Multipliers on top of what the
   -- menu chose: rate, breath amplitude, sway amplitude. Absent from the
   -- table = 1, 1, 1. Same shape as EYE_MARKS, which already has 112 entries
@@ -4321,6 +4327,23 @@ local function voxelMesh(def, frame)
     recordDrawFailure("mask_failed",
       okMask and "maskFor found no usable mask for this sprite" or m)
     return safeOriginal(def, frame)
+  end
+  -- DEPTH IS IN SHEET PIXELS, so a bigger cell needs a bigger number for the
+  -- SAME thickness. Missing this is what made the HD character read as PAPER --
+  -- Kim's word for it, and the right one.
+  --
+  -- The slab's thickness is `depth` sheet pixels, and escalaParaTile then
+  -- divides EVERY axis by cellH/16 to bring a 64 px figure down to one tile.
+  -- Width and height are in sheet pixels too, so they survive that intact; the
+  -- thickness does not, because it never grew with the sheet. DEPTH 3 became
+  -- three quarters of a pixel: a figurine instead of a filled biscuit.
+  --
+  -- CARVED does not go through here and never had the bug: it measures its own
+  -- thickness off the silhouette (`depthPixels`), which is in sheet pixels and
+  -- grows with the sheet on its own. `depth` reaches buildCarvedMesh and is
+  -- unused. That is exactly why the report named SLAB.
+  if m.hd and m.cellH and m.cellH ~= 16 then
+    depth = depth * (m.cellH / 16)
   end
   local baseName = spriteBaseName(def and def.image)
   local key = cacheKey(def, frame, depth, correction, m, sideColor, shape,
