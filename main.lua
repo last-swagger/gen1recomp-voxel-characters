@@ -218,6 +218,26 @@ local OPTIONS = {
   },
   {
     key = "top_edge",
+    -- MEASURED, not guessed: under SIDE COLOR: OUTLINE this row renders a
+    -- BYTE-IDENTICAL image at every level on 56 of the 67 sheets, at every
+    -- camera rung. The cause is this mod's own v1.1.0 finding -- "no shade
+    -- multiplier lifts black" -- and the darkest tone on all 67 sheets is
+    -- exactly RGB(0,0,0), which is what OUTLINE hands to every invented face.
+    --
+    -- ELEVEN SHEETS DO RESPOND (bird, bruno, fossil, girl, hiker, little_girl,
+    -- middle_aged_man, rocker, seel, snorlax, swimmer), from 0.21% of the
+    -- figure to 35% on seel. So this is a NOTE and not a `requires`: refusing
+    -- the row would be a lie in the other direction, and saying "no effect"
+    -- would be a lie for those eleven. "LITTLE" is the honest word.
+    -- DATA, not a closure, and that is not a style preference. This table is
+    -- built near the top of the file; `optionState` is declared hundreds of
+    -- lines below it. A function here closes over the GLOBAL of that name,
+    -- which is nil, and throws the moment the menu draws. The same trap ate a
+    -- whole debugging session once already (`spriteBaseName` read from above
+    -- its own definition), and the pcall that was wrapped around this hid it
+    -- exactly the same way. `requires` is declarative for this reason; so is
+    -- this.
+    note = { key = "side_color", value = "outline", say = "LITTLE EFFECT" },
     -- SLAB ONLY, and the code already said so in prose: CARVED and CARVED+
     -- build from the visual hull, with no continuous front run to step and no
     -- top run to shade. The row used to sit there looking adjustable and do
@@ -266,6 +286,26 @@ local OPTIONS = {
   },
   {
     key = "top_dome",
+    -- MEASURED, not guessed: under SIDE COLOR: OUTLINE this row renders a
+    -- BYTE-IDENTICAL image at every level on 56 of the 67 sheets, at every
+    -- camera rung. The cause is this mod's own v1.1.0 finding -- "no shade
+    -- multiplier lifts black" -- and the darkest tone on all 67 sheets is
+    -- exactly RGB(0,0,0), which is what OUTLINE hands to every invented face.
+    --
+    -- ELEVEN SHEETS DO RESPOND (bird, bruno, fossil, girl, hiker, little_girl,
+    -- middle_aged_man, rocker, seel, snorlax, swimmer), from 0.21% of the
+    -- figure to 35% on seel. So this is a NOTE and not a `requires`: refusing
+    -- the row would be a lie in the other direction, and saying "no effect"
+    -- would be a lie for those eleven. "LITTLE" is the honest word.
+    -- DATA, not a closure, and that is not a style preference. This table is
+    -- built near the top of the file; `optionState` is declared hundreds of
+    -- lines below it. A function here closes over the GLOBAL of that name,
+    -- which is nil, and throws the moment the menu draws. The same trap ate a
+    -- whole debugging session once already (`spriteBaseName` read from above
+    -- its own definition), and the pcall that was wrapped around this hid it
+    -- exactly the same way. `requires` is declarative for this reason; so is
+    -- this.
+    note = { key = "side_color", value = "outline", say = "LITTLE EFFECT" },
     -- SLAB ONLY, and the code already said so in prose: CARVED and CARVED+
     -- build from the visual hull, with no continuous front run to step and no
     -- top run to shade. The row used to sit there looking adjustable and do
@@ -1207,7 +1247,27 @@ local function makeOptionRow(opt)
       -- row says "not now"; this says what to change.
       if not ok then return porque or "UNAVAILABLE" end
       local current = optionState[opt.key] or readOption(opt)
-      return opt.levels[optionIndexOf(opt, current)][1]
+      local rotulo = opt.levels[optionIndexOf(opt, current)][1]
+      -- A NOTE IS NOT A REQUIREMENT, and the difference is the whole point of
+      -- having both. A requirement means the row cannot do anything and refuses
+      -- to move. A note means it still works, just barely, and the row keeps
+      -- working -- it only stops pretending the level matters as much as the
+      -- others do.
+      --
+      -- Written next to the level rather than in place of it, because the
+      -- person still needs to see what the option is SET to.
+      -- Read here, where `optionState` exists, rather than in the table where
+      -- it does not yet. No pcall: a note that throws is a bug in the note, and
+      -- swallowing it would hide the row's state behind a silence, which is the
+      -- failure mode this menu exists to end.
+      local n = opt.note
+      if n then
+        local atual = optionState[n.key] or readOption(OPTION_BY_KEY[n.key])
+        if tostring(atual) == tostring(n.value) then
+          return rotulo .. " (" .. n.say .. ")"
+        end
+      end
+      return rotulo
     end,
     step = function(game, dir)
       if not requisitoOk(opt) then return false end

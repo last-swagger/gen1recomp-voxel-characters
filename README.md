@@ -131,8 +131,10 @@ BLINK DETECT   OFF / ON                          default OFF    finds the eyes o
 V-GRID CHARS   OFF / ON                          default ON     joins the world grid on key 5
 
 TOP EDGE       OFF / ON                          default ON     darkens exposed top faces
+                                                 little effect under SIDE COLOR: OUTLINE
 FRONT SHAPE    OFF / LOW / MED / HIGH            default HIGH   false roundness on the front
 TOP DOME       OFF / LOW / HIGH                  default OFF    a domed head instead of a flat lid
+                                                 little effect under SIDE COLOR: OUTLINE
 STEP WEIGHT    OFF / LOW / HIGH                  default OFF    the body follows the step
                                                  those four need SHAPE: SLAB
 
@@ -156,6 +158,14 @@ why it is worth having. `STILL` stops all motion, for judging shape or for any
 comparison where movement would swamp what you are comparing. `SHOWCASE` turns
 every motion on at a level that reads on video. None of them touch `HD SPRITE`
 or `DEMO FX`, which are experiments you switch on deliberately.
+
+**Two rows say `LITTLE EFFECT` under the shipped `SIDE COLOR: OUTLINE`, and
+they mean it literally.** `TOP EDGE` and `TOP DOME` shade the top faces, and
+OUTLINE paints those faces with the sprite's outline, which on all 67 sheets is
+exactly black -- no shade multiplier lifts black. Measured: byte-identical at
+every level on 56 of the 67 sheets. Eleven do respond, `seel` by 35% of the
+figure, which is why the rows still work and are not locked. Switch `SIDE
+COLOR` to `BODY` and they move 18-22% of the character.
 
 **Some options only mean something next to another one**, and the menu says so
 rather than pretending. A row that cannot do anything shows what to change

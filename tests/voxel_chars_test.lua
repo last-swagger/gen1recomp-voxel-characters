@@ -767,7 +767,13 @@ end
 -- vertex by height, so a test measuring a transform must not inherit whichever
 -- way that default happens to be pointing this week. It pointed both ways in
 -- one day.
-local SEM_SOMBRA = { front_shape = "off", ground_shade = "off", sway = "off" }
+-- SIDE COLOR joins them on 2026-08-13, for the third time the same lesson:
+-- TOP EDGE and TOP DOME now append "(LITTLE EFFECT)" to their value under
+-- OUTLINE, so a test about LEVEL CYCLING would be asserting a note it never
+-- meant to test. It is also what these tests were written against, before
+-- OUTLINE became the shipped default.
+local SEM_SOMBRA = { front_shape = "off", ground_shade = "off", sway = "off",
+                     side_color = "body" }
 
 local function makeMod(handle, stored)
   if type(stored) == "table" then
@@ -5437,8 +5443,18 @@ do
   eq(valor["SIDE COLOR"], "OUTLINE", "default de SIDE COLOR: OUTLINE")
   eq(valor["SHAPE"], "SLAB", "default de SHAPE: SLAB")
   eq(valor["GROUND SHADE"], "ON", "default de GROUND SHADE: ON")
-  eq(valor["TOP EDGE"], "ON", "default de TOP EDGE: ON")
+  eq(valor["TOP EDGE"], "ON (LITTLE EFFECT)",
+     "default de TOP EDGE: ON, e a row avisa que faz pouco sob OUTLINE")
   eq(valor["FRONT SHAPE"], "HIGH", "default de FRONT SHAPE: HIGH")
+
+  -- THE NOTE IS PART OF WHAT THE ROW SAYS, so it is asserted like any value.
+  -- Under the shipped SIDE COLOR: OUTLINE these two render a byte-identical
+  -- image at every level on 56 of 67 sheets, and the row now says so without
+  -- refusing to move -- eleven sheets do respond, so refusing would be wrong.
+  eq(valor["TOP EDGE"], "ON (LITTLE EFFECT)",
+     "TOP EDGE avisa que faz pouco sob OUTLINE, sem deixar de funcionar")
+  eq(valor["TOP DOME"], "OFF (LITTLE EFFECT)",
+     "TOP DOME avisa o mesmo")
   -- Turned on by Kim's decision on 2026-08-09: both had already been
   -- seen and approved by the community, so shipping them off became
   -- shipping less than the person would have chosen.
@@ -5461,7 +5477,9 @@ do
   -- things and it was on. SWAY left with it and CAME BACK the same day, after
   -- he thought about it again -- which is the list doing its job in both
   -- directions rather than only shrinking.
-  for _, chave in ipairs({ "TOP DOME", "STEP WEIGHT", "SWAY",
+  -- TOP DOME left this loop when it grew a note: its value is no longer the
+  -- bare level. Asserted by name above, note included.
+  for _, chave in ipairs({ "STEP WEIGHT", "SWAY",
                            "MOTION LAG", "FOOTFALL", "ATTENTION" }) do
     eq(valor[chave], "OFF", "default de " .. chave .. ": OFF")
   end
