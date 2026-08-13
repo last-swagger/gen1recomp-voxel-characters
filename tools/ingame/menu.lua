@@ -31,6 +31,42 @@
 --   M8 reaches the screen     exit the menu, and the world really changed
 
 return function(game)
+
+  -- NOBODY IN THE ROOM BUT THE PLAYER, enforced instead of assumed.
+  --
+  -- This gate differences photographs of a room the ROM leaves empty. An
+  -- INSTALL does not: a mod can put a real engine NPC on any map at runtime
+  -- through the host's own OverworldState:addRuntimeObject, and
+  -- overworld_wild_spawns does exactly that here. Measured 2026-08-13 in
+  -- probe_walk, on this same map, by planting a wandering stranger one cell
+  -- from the player: two photographs of the SAME pose with the SAME options
+  -- went from 0 pixels apart to 639, which is most of a character, and the gate
+  -- went red on a mod that was working.
+  --
+  -- So everyone who is not the player comes out of the three lists the host
+  -- draws and updates from -- the same surgery the host performs on itself when
+  -- a runtime object is dropped (OverworldController:2600, :3894). setMap
+  -- rebuilds those lists, so it runs after every teleport, and `espera` repeats
+  -- it every ten frames because a mod that adds its object back mid-run has to
+  -- be caught mid-run.
+  local retirados = 0
+  local function soOJogador()
+    local ow = game.overworld
+    if not ow then return end
+    local p = ow.player
+    for _, lista in ipairs({ ow.entities or {}, ow.npcs or {}, ow.ghosts or {} }) do
+      for i = #lista, 1, -1 do
+        local e = lista[i]
+        if (e.npc or e) ~= p then table.remove(lista, i); retirados = retirados + 1 end
+      end
+    end
+  end
+  local function espera(n)
+    for i = 1, n do
+      if i % 10 == 0 then soOJogador() end
+      coroutine.yield()
+    end
+  end
   local U = dofile("tests/drivers/util.lua")
   dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   io.stdout:setvbuf("line")
@@ -71,7 +107,10 @@ return function(game)
     tonumber(os.getenv("VC_X")) or 3,
     tonumber(os.getenv("VC_Y")) or 4)
   U.teleport(game, mapa, x, y, "down")
-  U.wait(60)
+  U.wait(30)
+  soOJogador()
+  espera(30)
+  print(string.format("[menu] %d stranger(s) taken out of the scene", retirados))
   if topo() ~= game.overworld then
     veredito("M1", false, "nao cheguei ao mundo"); return
   end
@@ -383,14 +422,42 @@ return function(game)
   -- AMPLITUDE, which is what the option controls, and the phase drops out.
   -- The threshold was deliberately NOT lowered to make this pass: the number
   -- was never the problem, the instrument was.
-  local ENVELOPE_QUADROS = 120   -- about two seconds at 60fps, over a full cycle
-  local ENVELOPE_PASSO = 12
+  -- AND THE SWEEP IS MEASURED IN SECONDS, NOT IN FRAMES, which is the third
+  -- time the same lesson has been paid for and the first time in the right
+  -- unit.
+  --
+  -- It used to sweep 120 frames, "about two seconds at 60fps". Two things wrong
+  -- with that sentence. The cycle is 3.1 seconds, not two: that is the mod's own
+  -- BREATH_PERIOD (main.lua, `lifeDrawWrap`), and the breathing advances on the
+  -- WALL CLOCK from it. And the driver turns vsync OFF, so a frame is however
+  -- long the machine needs -- 4.6 ms on the Mac Studio -- which makes 120 frames
+  -- about half a second, a sixth of a breath.
+  --
+  -- So the sweep landed wherever the machine's frame rate put it. Measured on
+  -- this build, BREATH STRONG through this gate: 153 pixels on the runs that
+  -- passed and 14 on the run that failed, against a bar of 40 and a baseline of
+  -- 0 in all of them. Nothing was wrong with the mod on any of those runs.
+  --
+  -- probe_life.lua carried the identical defect and was fixed the same way on
+  -- the same day; there it was turning BREATH STRONG (188 px) into a number
+  -- BELOW BREATH SUBTLE (28 against 53).
+  local ENVELOPE_SEG = 3.1     -- the mod's own BREATH_PERIOD, in seconds
+  local ENVELOPE_PASSOS = 10
+  local function esperaSegundos(segundos)
+    local fim = love.timer.getTime() + segundos
+    local n = 0
+    while love.timer.getTime() < fim and n < 1200 do
+      n = n + 1
+      soOJogador()
+      coroutine.yield()
+    end
+  end
   local function medeNoMundo()
     if not sairParaOMundo() then return -1 end
     local a = foto()
     local maior = 0
-    for _ = 1, math.floor(ENVELOPE_QUADROS / ENVELOPE_PASSO) do
-      U.wait(ENVELOPE_PASSO)
+    for _ = 1, ENVELOPE_PASSOS do
+      esperaSegundos(ENVELOPE_SEG / ENVELOPE_PASSOS)
       local d = difere(a, foto())
       if d > maior then maior = d end
     end

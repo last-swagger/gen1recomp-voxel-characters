@@ -44,6 +44,42 @@
 -- someone changed something and we want to know the same day..
 
 return function(game)
+
+  -- NOBODY IN THE ROOM BUT THE PLAYER, enforced instead of assumed.
+  --
+  -- This gate differences photographs of a room the ROM leaves empty. An
+  -- INSTALL does not: a mod can put a real engine NPC on any map at runtime
+  -- through the host's own OverworldState:addRuntimeObject, and
+  -- overworld_wild_spawns does exactly that here. Measured 2026-08-13 in
+  -- probe_walk, on this same map, by planting a wandering stranger one cell
+  -- from the player: two photographs of the SAME pose with the SAME options
+  -- went from 0 pixels apart to 639, which is most of a character, and the gate
+  -- went red on a mod that was working.
+  --
+  -- So everyone who is not the player comes out of the three lists the host
+  -- draws and updates from -- the same surgery the host performs on itself when
+  -- a runtime object is dropped (OverworldController:2600, :3894). setMap
+  -- rebuilds those lists, so it runs after every teleport, and `espera` repeats
+  -- it every ten frames because a mod that adds its object back mid-run has to
+  -- be caught mid-run.
+  local retirados = 0
+  local function soOJogador()
+    local ow = game.overworld
+    if not ow then return end
+    local p = ow.player
+    for _, lista in ipairs({ ow.entities or {}, ow.npcs or {}, ow.ghosts or {} }) do
+      for i = #lista, 1, -1 do
+        local e = lista[i]
+        if (e.npc or e) ~= p then table.remove(lista, i); retirados = retirados + 1 end
+      end
+    end
+  end
+  local function espera(n)
+    for i = 1, n do
+      if i % 10 == 0 then soOJogador() end
+      coroutine.yield()
+    end
+  end
   local U = dofile("tests/drivers/util.lua")
   dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   io.stdout:setvbuf("line")
@@ -142,7 +178,10 @@ return function(game)
   local MAPA = os.getenv("VC_MAP") or "REDS_HOUSE_2F"
   local _, PX, PY = Pouso.escolher(game, MAPA, 3, 4)
   U.teleport(game, MAPA, PX, PY, "down")
-  U.wait(60)
+  U.wait(30)
+  soOJogador()
+  espera(30)
+  nota("%d stranger(s) taken out of the scene", retirados)
   pcall(require("src.render.Pipelines").setLevel, "voxel", 4)
   U.wait(60)
 

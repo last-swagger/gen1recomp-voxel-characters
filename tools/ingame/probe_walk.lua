@@ -146,6 +146,51 @@ return function(game)
         { mod = "voxel_characters", key = chave, value = valor })
   end
 
+  -- NOBODY IN THE ROOM BUT THE PLAYER, enforced instead of assumed.
+  --
+  -- "This room has nobody in it" was true of the ROM and false of an install. A
+  -- mod can put a real engine NPC on any map at runtime through the host's own
+  -- OverworldState:addRuntimeObject, and overworld_wild_spawns does exactly
+  -- that on this map. Measured 2026-08-13 by planting a wandering stranger the
+  -- same way, one cell from the player:
+  --
+  --                        W2 floor   "the character"   W4
+  --   room really empty          0        859           30.1%
+  --   one stranger in it       639       1559           10.3%
+  --
+  -- W2 caught it and refused the run, which is what it is for. But look at the
+  -- other two columns: the stranger is a voxel character too, so the VOXEL
+  -- CHARS OFF photograph moves HIS pixels as well and he lands inside the very
+  -- set that was supposed to isolate the player. W4's margin went from three
+  -- times its threshold to a hundredth over it. The next stranger would have
+  -- turned this gate red on a mod that is working.
+  --
+  -- So the room is emptied rather than chosen: everyone who is not the player
+  -- comes out of the three lists the host draws and updates from, which is the
+  -- same surgery the host performs on itself when a runtime object is dropped
+  -- (OverworldController:2600, :3894). It is mod-agnostic -- it does not know
+  -- or care who put them there -- and it runs on every frame the probe holds
+  -- the pose, because a mod that adds its object back mid-run has to be caught
+  -- mid-run.
+  local retirados = 0
+  local function soOJogador()
+    local ow = game.overworld
+    if not ow then return end
+    local p = ow.player
+    for _, lista in ipairs({ ow.entities or {}, ow.npcs or {}, ow.ghosts or {} }) do
+      for i = #lista, 1, -1 do
+        local e = lista[i]
+        if (e.npc or e) ~= p then table.remove(lista, i); retirados = retirados + 1 end
+      end
+    end
+  end
+  local function espera(n)
+    for i = 1, n do
+      if i % 10 == 0 then soOJogador() end
+      coroutine.yield()
+    end
+  end
+
   -- Near-black on a screen the host has already lit. The outline this mod can
   -- wrongly hand to a face is the darkest tone in the sheet; nothing the art
   -- puts on a character's body comes near this.
@@ -175,7 +220,10 @@ return function(game)
   -- Oak's lab is where the other probes stand, and it has people in it who walk
   -- on their own: measured there, two photographs of the SAME pose with the
   -- SAME options differed by 1648 pixels, which is most of a character. This
-  -- room has nobody in it, and the same measurement gives 0.
+  -- room has nobody in it in the ROM, and the same measurement gives 0.
+  --
+  -- "In the ROM" is the whole of that claim, and `soOJogador` above is what
+  -- makes it hold on a machine with mods installed.
   local MAPA = os.getenv("VC_MAP") or "REDS_HOUSE_2F"
   local X0 = tonumber(os.getenv("VC_X")) or 4
   local Y0 = tonumber(os.getenv("VC_Y")) or 4
@@ -220,7 +268,12 @@ return function(game)
   end
 
   U.teleport(game, MAPA, ax, ay, encosto)
-  U.wait(60)
+  local estranhos = -1
+  U.wait(30)
+  estranhos = #(game.overworld and game.overworld.entities or { 0 }) - 1
+  soOJogador()
+  espera(30)
+  log("%d stranger(s) in the room on arrival, taken out of the scene", estranhos)
   if not (game.overworld and game.stack:top() == game.overworld) then
     veredito("W1", false, "nao cheguei ao mundo")
     return fim()
@@ -251,7 +304,7 @@ return function(game)
     authored_regions = "off",
   }
   for k, v in pairs(FIXO) do opcao(k, v) end
-  U.wait(45)
+  espera(45)
 
   -- HOLD THE POSE STILL WHILE THE SHUTTER IS OPEN, and this is the correction
   -- that turned the gate from noise into a measurement. Pushing into the wall
@@ -275,6 +328,7 @@ return function(game)
   -- the nearest boundary.
   local RELOGIO = { [0] = 1, [1] = 6 }
   local function empurra(fase)
+    soOJogador()
     table.insert(game.input.pressQueue, encosto)
     game.input.state[encosto] = true
     if fase then
@@ -304,7 +358,7 @@ return function(game)
     -- Released while the mesh cache clears: holding the direction here would
     -- only spin the walk clock, and `fotoNaFase` re-arms it anyway.
     game.input.state[encosto] = false
-    U.wait(45)
+    espera(45)
     for _, fase in ipairs({ 0, 1 }) do
       local f = fotoNaFase(fase)
       if not f then faltou = string.format("%s fase %d", cor, fase) end
@@ -317,7 +371,7 @@ return function(game)
   opcao("depth", 3)
   opcao("side_color", "outline")
   game.input.state[encosto] = false
-  U.wait(45)
+  espera(45)
   fotos.piso = fotoNaFase(0)
   game.input.state[encosto] = false
 

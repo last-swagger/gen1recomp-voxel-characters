@@ -48,6 +48,42 @@
 --   only counts if the two blends match.
 
 return function(game)
+
+  -- NOBODY IN THE ROOM BUT THE PLAYER, enforced instead of assumed.
+  --
+  -- This gate differences photographs of a room the ROM leaves empty. An
+  -- INSTALL does not: a mod can put a real engine NPC on any map at runtime
+  -- through the host's own OverworldState:addRuntimeObject, and
+  -- overworld_wild_spawns does exactly that here. Measured 2026-08-13 in
+  -- probe_walk, on this same map, by planting a wandering stranger one cell
+  -- from the player: two photographs of the SAME pose with the SAME options
+  -- went from 0 pixels apart to 639, which is most of a character, and the gate
+  -- went red on a mod that was working.
+  --
+  -- So everyone who is not the player comes out of the three lists the host
+  -- draws and updates from -- the same surgery the host performs on itself when
+  -- a runtime object is dropped (OverworldController:2600, :3894). setMap
+  -- rebuilds those lists, so it runs after every teleport, and `espera` repeats
+  -- it every ten frames because a mod that adds its object back mid-run has to
+  -- be caught mid-run.
+  local retirados = 0
+  local function soOJogador()
+    local ow = game.overworld
+    if not ow then return end
+    local p = ow.player
+    for _, lista in ipairs({ ow.entities or {}, ow.npcs or {}, ow.ghosts or {} }) do
+      for i = #lista, 1, -1 do
+        local e = lista[i]
+        if (e.npc or e) ~= p then table.remove(lista, i); retirados = retirados + 1 end
+      end
+    end
+  end
+  local function espera(n)
+    for i = 1, n do
+      if i % 10 == 0 then soOJogador() end
+      coroutine.yield()
+    end
+  end
   local U = dofile("tests/drivers/util.lua")
   dofile("mods/voxel_characters/tools/ingame/erro.lua")()
   io.stdout:setvbuf("line")
@@ -166,6 +202,45 @@ return function(game)
     local ok, b = pcall(FirstPerson.cardBlend)
     return (ok and tonumber(b)) or 0
   end
+
+  -- COMING OUT IS WAITED FOR, NOT COUNTED, and this is the defect that made P4
+  -- fail about half the runs on one machine and none on the other.
+  --
+  -- The blend is TIME-driven: `FirstPerson.update` moves it by
+  -- `dt / BLEND_TIME` with BLEND_TIME = 0.45 s. This driver waited for it in
+  -- FRAMES -- `sai(); U.wait(50)` -- and the first thing it does is turn vsync
+  -- OFF, so a frame is however long the machine needs. On the Mac Studio a
+  -- frame is 4.6 ms, so fifty of them are 0.23 s: HALF the time the blend needs
+  -- to fall back to zero. `entra()` was then starting the climb from wherever
+  -- the fall had got to, and two samples that stop at the same blend VALUE were
+  -- reached along different curves, with the camera in different places.
+  --
+  -- What that looked like, measured inside a full battery on 2026-08-13:
+  --
+  --   blend 0.13   floor 16281 (18.6%)   discarded
+  --   blend 0.21   floor     0           CARD-SOLID 4919
+  --   blend 0.31   floor 21290 (24.3%)   discarded
+  --   blend 0.42   floor 11492 (13.1%)   discarded
+  --   blend 0.53   floor 21522 (24.6%)   discarded
+  --   blend 0.64   floor     0           CARD-SOLID 2291
+  --   blend 0.74   floor 45795 (52.3%)   discarded
+  --   blend 0.83   floor 26445 (30.2%)   discarded
+  --
+  -- Six of eight thrown away, so `usadas >= 5` failed. The discard rule was
+  -- right -- those samples measured the camera -- but it was catching a defect
+  -- in the instrument, not in the scene. The render machine, at 8.9 ms a frame,
+  -- got 0.45 s out of the same fifty frames and never saw it.
+  --
+  -- So the exit is waited out on the blend's own value, which is the state that
+  -- actually decides, and needs no assumption about frame rate at all.
+  local function saiEEspera()
+    sai()
+    for _ = 1, 900 do
+      coroutine.yield()
+      if blendAgora() <= 0 then break end
+    end
+    U.wait(5)
+  end
   nota("FP_LEVEL do host: %d", FPLEVEL)
 
   -- RED'S ROOM, and the return to it tells a whole story.
@@ -231,7 +306,7 @@ return function(game)
   -- construction.
   local ALVO = 0.55
   local function noBlend(alvo)
-    sai(); U.wait(50)
+    saiEEspera()
     entra()
     for _ = 1, 240 do
       U.wait(1)
@@ -241,9 +316,12 @@ return function(game)
     return b, captura()
   end
 
-  sai(); U.wait(40)
+  saiEEspera()
   U.teleport(game, MAPA, PX, PY, "down")
-  U.wait(40)
+  U.wait(20)
+  soOJogador()
+  espera(20)
+  nota("%d stranger(s) taken out of the scene", retirados)
 
   -- THE CONTROL RUNS IN SOLID, and this already fooled me once. With FIRST PERSON
   -- set to CARD the mod returns the original card in this camera BY CONTRACT, so
@@ -279,9 +357,11 @@ return function(game)
   -- From there on, always the same direction.
   local DIR = melhor.dir
   local function posiciona()
-    sai(); U.wait(30)
+    saiEEspera()
     U.teleport(game, MAPA, PX, PY, DIR)
-    U.wait(40)
+    U.wait(20)
+    soOJogador()
+    espera(20)
   end
 
   -- ---------------------------------------------------------------- P3
@@ -356,7 +436,7 @@ return function(game)
       end
     end
   end
-  sai(); U.wait(60)
+  saiEEspera()
 
   -- THE CRITERION. An honest solid differs from the card in the BODY and nothing else, and the
   -- body in first person is large, so a tight ceiling would fail the
