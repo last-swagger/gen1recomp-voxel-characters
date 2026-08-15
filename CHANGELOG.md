@@ -8,6 +8,35 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The `Gen 2 support` line in 1.8.0 was not true, and the manifest no longer
+  claims it.** `games` is now `["gen1"]`, which is what has actually been
+  measured: red, blue and yellow.
+
+  The claim came from following the project's own "Preparing Your Mod For Gen 2"
+  guide. That guide explains how to DECLARE readiness; it does not test it, and
+  declaring was treated as being ready. Nobody has ever booted this mod on a Gen
+  2 game -- the engine snapshot in this checkout does not have one, and asking it
+  for `gold` or `crystal` silently returns `red`.
+
+  **On a current engine that declaration stops being harmless.** `games` becomes
+  a gate: a mod that does not claim the running game is left out of the boot
+  entirely, and one that DOES claim it is loaded on the strength of the claim. So
+  the day anyone updated, this mod would have loaded into Gold having never run
+  there -- and 1.8.1's public "now tested rather than claimed" would have become
+  false without anyone touching a line.
+
+  Nothing is closed off. A player who wants to try it anyway has the engine's own
+  `TRY HERE ANYWAY` toggle, where the "never verified here" label comes from the
+  engine instead of from a promise of ours. `"gen2"` comes back the day it boots
+  and attaches, measured.
+
+  Found while investigating **suheel**'s report of the Stadium 2 overworld mod,
+  which is a Gen 2 HOST -- a different thing from a Gen 2 game, and the exact
+  confusion behind the original claim.
+
+
 ### Added
 
 - **The grid gate now measures V-GRID CHARS in both directions**
@@ -156,9 +185,9 @@ sections.
   end in "Menu" and would have been the one un-restyled corner of that player's
   game.
 
-- **Gen 2 support.** The mod attaches by capability rather than by version, so
-  it already worked; the manifest now says so (`api: 2`, `games: ["gen1",
-  "gen2"]`) instead of leaving a player to find out by trying.
+- ~~**Gen 2 support.**~~ **This claim was wrong and is corrected below, in
+  1.8.2.** It confused a host whose art comes from a Gen 2 game with the Gen 2
+  games themselves. This mod has never been run on one.
 
 ### Changed
 
