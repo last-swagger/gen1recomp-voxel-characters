@@ -86,6 +86,17 @@ local HOSTS = {
     name = "Dramatic Shape",
     supported = ">=1.5.0 <2.0.0",
   },
+  {
+    -- The Gen 2 lineage (randyadr/Gen2-3D-Sprites), and the only host here
+    -- that runs on a game other than Gen 1. Measured 2026-08-15 against
+    -- 0.2.35 on Gold: its lib carries the two modules probeHost requires
+    -- (SpriteBillboards.mesh, Voxel3D) plus VoxelState, VoxelGrid and
+    -- TerrainAtlas.forSprite; it has no ImageCache, which stopped being
+    -- required in 1.8.1 exactly because three of five lineages lack one.
+    id = "STADIUM2_OVERWORLD_MODELS",
+    name = "Stadium 2 Overworld Models",
+    supported = ">=0.2.0 <1.0.0",
+  },
 }
 -- REFACTOR (main chunk locals): main.lua reached 199 locals against
 -- LuaJIT's ceiling of 200 (LUAI_MAXVARS) because every menu option brought
