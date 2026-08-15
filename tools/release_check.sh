@@ -111,7 +111,15 @@ echo "body        $LINHAS lines, media: $TEM_MIDIA"
 [ "${LINHAS:-0}" -gt 40 ] && echo "  WARNING: over 40 lines; the agreed format is title, 3 to 5 bullets, media, install, credits"
 [ "$TEM_MIDIA" = "no" ] && echo "  WARNING: no image or video; use the GIF from clip.sh or trailer.sh"
 
-ESPERADO="${VC_RELEASE_AUTHOR:-last-swagger}"
+# Kept in step with `release.sh`'s own guard, and both changed on 2026-08-13:
+# Kim has never had a token for `last-swagger`, the account that owns the repo
+# and authored 1.0.0 through 1.6.0 -- those were published by somebody else. His
+# own account has admin here, so this is a change of author, not of permission.
+#
+# Updating only ONE of the two guards is what happened first, and 1.8.0 shipped
+# correctly while this file called it WRONG AUTHOR. A check that disagrees with
+# the decision it is meant to enforce teaches people to ignore checks.
+ESPERADO="${VC_RELEASE_AUTHOR:-kimsfigueredo}"
 AUTOR=$(python3 -c "import json,sys; print(json.load(open('$TMP')).get('author',{}).get('login',''))" 2>/dev/null)
 echo ""
 if [ "$AUTOR" = "$ESPERADO" ]; then
