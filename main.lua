@@ -893,6 +893,13 @@ local meshOrder = {}
 -- see the REFACTOR above OPTIONS.
 local optionState = {}
 local optionsRegistered = false
+-- ONE FLAG OF OUR OWN, and the first version kept it on `love` itself. A
+-- current engine refuses that outright -- "mods cannot assign
+-- love.__voxelCharactersKeys" -- and it is right to: the global table belongs
+-- to the runtime, and a mod scribbling private state on it is how two mods
+-- collide over a name neither of them documented. A file local does the same
+-- job and cannot leak.
+local atalhoInstalado = false
 local meshBlink = setmetatable({}, { __mode = "k" })
 
 -- REGION BANDS, for per-part secondary motion (roadmap item 9).
@@ -4349,9 +4356,9 @@ local function registerOptionsRows()
   -- invented here: its test drivers chain the handler the same way
   -- (tests/drivers/touch_layout_bug633_test.lua:87). There is no input hook to
   -- use instead -- the engine exposes exactly one hook, `ui.options.rows`.
-  if temTela and type(love) == "table" and not love.__voxelCharactersKeys then
+  if temTela and type(love) == "table" and not atalhoInstalado then
     local anterior = love.keypressed
-    love.__voxelCharactersKeys = true
+    atalhoInstalado = true
     love.keypressed = function(key, ...)
       -- ONLY FROM THE OVERWORLD, and this is the guard that matters. Pushing a
       -- menu on top of a battle, a dialog or another menu is how a debug
