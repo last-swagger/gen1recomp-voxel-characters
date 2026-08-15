@@ -8,7 +8,55 @@ the direction is named in the entry their contribution landed in.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **The grid gate now measures V-GRID CHARS in both directions**
+  (`tools/ingame/probe_grid.lua`, checks G4, G5 and G6). It used to measure
+  only the host's rule -- that the world's wireframe does not touch characters
+  -- and nothing measured our own row at all. So when **Kim** pressed 5, got
+  the grid on the map, and saw the characters stay out of it, every gate in the
+  project was green and none of them was looking.
+
+  This turned out not to be a defect in the mod (see below), but the hole was
+  real either way, and it was the same hole 1.8.0 shipped through: a gate that
+  has only ever seen one configuration. Three things changed:
+
+  - **G3 now sets V-GRID CHARS off explicitly** instead of inheriting whatever
+    the save said. It was green because this machine's save happened to say
+    "off"; with the shipped default (on) it would have been measuring our
+    feature and calling it the host's rule.
+  - **G4** turns the row on with the world grid on and requires the character
+    to actually change -- measured at 1271 pixels against a floor of 300.
+  - **G5 and G6** hold the other half of the promise, that V-GRID CHARS rides
+    the world grid rather than competing with it. G6 exists because G5 cannot
+    see it: with the grid off the host binds a shader with no seam uniform in
+    it, so a mod that stopped consulting the world grid would ask for seams
+    that land nowhere and look identical on screen. G6 listens for the ask
+    instead of watching it work.
+
+  The gate also holds the character still for the measurement (BREATH and BLINK
+  were moving 81 pixels between photographs on their own), and it asks the mod
+  which host it attached to rather than guessing an order -- all four lineages
+  ship a module called `VoxelGrid` and each owns its own state.
+
+  Mutation-tested, three mutants, all killed: the row wired to nothing, the
+  host's grid made unreachable, and the world-grid check removed. The third is
+  invisible to pixels and is the reason G6 exists.
+
+### Notes
+
+- **If pressing 5 gives the world a grid and your characters stay out of it,
+  check the `V-GRID CHARS` row itself.** The row arrived in 1.7.0 defaulting to
+  **off** and 1.8.0 changed that default to **on**, but a default only applies
+  to a save that has no value of its own: a save that recorded "off" during the
+  1.7.0 window keeps it. There is one thing that makes this hard to notice --
+  while the world grid is off, the row shows `PRESS 5 FOR V-GRID` *in place of
+  its value*, so it does not say what it is set to until the grid is already
+  on.
+
+  Found on **Kim**'s save, which is where this whole entry started: the mod was
+  behaving exactly as written, and the reported symptom was one row set to off
+  three versions ago.
 
 ## [1.8.1] - 2026-08-15
 
