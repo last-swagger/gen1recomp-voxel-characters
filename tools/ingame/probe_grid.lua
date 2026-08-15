@@ -154,7 +154,10 @@ return function(game)
     return n
   end
 
-  local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE" }
+  -- potato_voxel last; see the note in probe_draw.lua. It ships VoxelGrid,
+  -- so V-GRID CHARS has something to ask on that host too.
+  local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE",
+                  "potato_voxel" }
   local lib
   for _, id in ipairs(HOSTS) do
     for _, f in ipairs({

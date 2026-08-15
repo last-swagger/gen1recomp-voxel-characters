@@ -685,8 +685,13 @@ end
 -- mock gains a `draw` that just records the call (mesh, texture, model,
 -- pull, sunModel) into Voxel3D.drawCalls, for the tests to read afterward,
 -- and returns "drew" to simulate some return value from the host.
+-- `omitImageCache` models the three real hosts that do not ship one:
+-- DRAMALESS_SHAPE 2.0+, potato_voxel and STADIUM2_OVERWORLD_MODELS. It makes
+-- V.require("ImageCache") throw exactly as their loaders do for a file that
+-- is not in lib/.
 local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
-                               cardBlend, omitFirstPerson, hostId, withDraw)
+                               cardBlend, omitFirstPerson, hostId, withDraw,
+                               omitImageCache)
   local modules = {}
   local V = {}
   local original = function(def, frame)
@@ -733,6 +738,9 @@ local function makeVoxelHandle(version, pixels, w, h, angle, spriteLean,
       end
       modules[name] = voxel3D
     elseif name == "ImageCache" then
+      if omitImageCache then
+        error("lib/ImageCache.lua is missing -- reinstall the mod", 0)
+      end
       modules[name] = { get = function() return fakeImage(pixels, w, h) end }
     elseif name == "SpriteBillboards" then
       modules[name] = { mesh = original, shadowQuad = original }
@@ -1004,31 +1012,101 @@ end
 
 do
   -- no usable host now only happens from a capability failure, not a
-  -- version one: all three ids exist, but each one is missing a different
-  -- module. The log has to say which one was missing in each.
-  local function brokenHandle(id, version, missingModule)
+  -- version one: all three ids exist, and each one fails a DIFFERENT one of
+  -- the checks probeHost makes. The log has to say which, for each host.
+  --
+  -- ImageCache used to be one of these and is deliberately NOT any more
+  -- (1.8.1). The two checks right below are the ones that hold that line.
+  local function brokenHandle(id, version, missingModule, meshNotAFunction)
     local V = {}
     function V.require(name)
       if name == missingModule then error(missingModule .. " is not available") end
-      if name == "Voxel3D" or name == "ImageCache" then return {} end
-      if name == "SpriteBillboards" then return { mesh = function() end } end
+      if name == "Voxel3D" then return {} end
+      if name == "ImageCache" then return { get = function() end } end
+      if name == "SpriteBillboards" then
+        return { mesh = meshNotAFunction and true or function() end }
+      end
       error("unexpected module " .. tostring(name))
     end
     return { id = id, version = version, exports = { lib = V } }
   end
   local mod = loadWith(makeMod({
     BATTLE_ART_VOXEL_FORK = brokenHandle("BATTLE_ART_VOXEL_FORK", "1.7.6", "Voxel3D"),
-    DRAMALESS_SHAPE = brokenHandle("DRAMALESS_SHAPE", "1.6.2.ST", "ImageCache"),
-    DRAMATIC_SHAPE = brokenHandle("DRAMATIC_SHAPE", "1.6.0", "SpriteBillboards"),
+    DRAMALESS_SHAPE = brokenHandle("DRAMALESS_SHAPE", "1.6.2.ST", "SpriteBillboards"),
+    DRAMATIC_SHAPE = brokenHandle("DRAMATIC_SHAPE", "1.6.0", nil, true),
   }))
   local warn = mod._logs.warn[1] or ""
   check(warn:find("BATTLE_ART_VOXEL_FORK", 1, true)
         and warn:find("Voxel3D is missing", 1, true)
         and warn:find("DRAMALESS_SHAPE", 1, true)
-        and warn:find("ImageCache is missing", 1, true)
+        and warn:find("SpriteBillboards is missing", 1, true)
         and warn:find("DRAMATIC_SHAPE", 1, true)
-        and warn:find("SpriteBillboards is missing", 1, true),
+        and warn:find("SpriteBillboards.mesh is not a function", 1, true),
         "nenhum host utilizavel: o log diz qual modulo faltou em cada um")
+end
+
+do
+  -- THE 1.8.0 FIELD BUG, reported by Pikon and BYRAX (Dramaless 2.0.x) and
+  -- by setogabes (PotatoVoxel): a host whose API is intact except that it
+  -- ships no ImageCache was REJECTED, and the player got a mod that loaded,
+  -- showed its options rows, and did nothing.
+  --
+  -- Measured in game before the fix, against real hosts:
+  --   DRAMALESS_SHAPE 2.0.1  "found 2.0.1 but ImageCache is missing"
+  --   potato_voxel    1.4.4  "found 1.4.4 but ImageCache is missing"
+  -- and 1.6.0 fails the same way against 2.0.1, so the code did not regress
+  -- -- the host removed the module and our required list was too greedy.
+  --
+  -- The host must now be ACCEPTED and PATCHED. That is the whole claim.
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("2.0.1", pixels, 16, 16,
+    nil, nil, nil, nil, "DRAMALESS_SHAPE", nil, true)
+  local mod = loadWith(makeMod(handle))
+  check(modules.SpriteBillboards.mesh ~= original,
+        "host sem ImageCache e aceito e a malha e trocada")
+  local report = mod.exports and mod.exports.hostReport
+    and mod.exports.hostReport()
+  check(report and report.host == "DRAMALESS_SHAPE" and report.patched == true,
+        "hostReport confirma o attach num host sem ImageCache")
+  local semCache = false
+  for _, linha in ipairs(mod._logs.info) do
+    if linha:find("no ImageCache", 1, true) then semCache = true end
+  end
+  check(semCache, "o log diz que caiu no ImageCache do proprio engine")
+end
+
+do
+  -- ...and the fallback has to actually DELIVER PIXELS, not merely let the
+  -- attach through. A mod that attaches and then builds no geometry is the
+  -- same blank screen from the player's chair.
+  --
+  -- `package.preload` rather than `package.loaded` because loadWith calls
+  -- resetLoaded(), which nils the loaded entry: preload survives that and is
+  -- consulted on the require the fallback makes.
+  local pixels = {}
+  for x = 0, 15 do for y = 0, 15 do pixels[y * 16 + x] = 1 end end
+  local pedidos = {}
+  package.preload["src.render.Assets"] = function()
+    return {
+      imageData = function(path)
+        pedidos[#pedidos + 1] = path
+        return fakeImage(pixels, 16, 16)
+      end,
+      register = function() end,
+    }
+  end
+  local handle, modules = makeVoxelHandle("2.0.1", pixels, 16, 16,
+    nil, nil, nil, nil, "DRAMALESS_SHAPE", nil, true)
+  loadWith(makeMod(handle, { depth = 3 }))
+  local malha = modules.SpriteBillboards.mesh(
+    { image = "sprites/red.png", frames = 1 }, 0)
+  check(malha ~= nil and malha.original == nil,
+        "sem ImageCache a malha ainda sai do caminho voxel, nao do original")
+  check(#pedidos > 0 and pedidos[1] == "sprites/red.png",
+        "os pixels vieram do Assets.imageData do engine")
+  package.preload["src.render.Assets"] = nil
+  package.loaded["src.render.Assets"] = nil
 end
 
 do

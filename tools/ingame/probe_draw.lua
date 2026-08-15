@@ -53,7 +53,14 @@ return function(game)
   nota("=== passo 1: a posicao por instancia chega limpa? ===")
 
   -- ---------------------------------------------------------------- host
-  local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE" }
+  -- potato_voxel LAST, so a machine with any other host enabled measures
+  -- exactly what it measured before. It was missing entirely until 1.8.1,
+  -- which is part of how the mod came to LIST PotatoVoxel as a supported
+  -- host for a whole release without ever having attached to it: the gates
+  -- could not see that host either, so nothing could have contradicted the
+  -- claim.
+  local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE",
+                  "potato_voxel" }
   local V
   for _, id in ipairs(HOSTS) do
     local exports = game.mods and game.mods.exports and game.mods.exports[id]

@@ -68,7 +68,18 @@ local HOSTS = {
   {
     id = "DRAMALESS_SHAPE",
     name = "Dramaless Shape Voxel Mod",
-    supported = ">=1.5.0 <2.0.0",
+    -- 2.x included because 2.0.1 was MEASURED against this mod on
+    -- 2026-08-15 (tools/ingame/hosts.sh), not because the number looked
+    -- safe. Its 2.0.0 "Big Fat Cleanup" dropped lib/ImageCache.lua, which
+    -- is what this release stopped requiring; everything else this mod
+    -- touches -- SpriteBillboards.mesh, Voxel3D.draw, Voxel3D.seams,
+    -- TerrainAtlas.forSprite, VoxelGrid -- is still there and still
+    -- patches.
+    --
+    -- The range never rejects (see the note above this table); leaving it
+    -- at <2.0.0 only meant every 2.x player got an "untested version"
+    -- warning in their log for a host that had in fact been tested.
+    supported = ">=1.5.0 <3.0.0",
   },
   {
     id = "DRAMATIC_SHAPE",
@@ -5377,7 +5388,47 @@ local function patch(host)
   local V = handle.exports.lib
   local spriteBillboards = host.modules.SpriteBillboards
   local voxel3D = host.modules.Voxel3D
-  local imageCache = host.modules.ImageCache
+  -- OPTIONAL since 1.8.1, and this is the whole Dramaless-2.0 / PotatoVoxel
+  -- fix; the long version is on REQUIRED_MODULES in probeHost.
+  --
+  -- The host's cache is still PREFERRED when it exists: it is registered
+  -- with the engine's own invalidation and it is shared with everything
+  -- else the host decodes, so on the lineages that ship it nothing about
+  -- this changes. The fallback only has to be correct, not clever.
+  local okCache, cache = pcall(V.require, "ImageCache")
+  local imageCache = (okCache and type(cache) == "table"
+    and type(cache.get) == "function") and cache or nil
+  if not imageCache then
+    -- The same source of truth the host's own ImageCache wraps, cached the
+    -- same way and for the same reason: `Assets.imageData` is deliberately
+    -- uncached upstream, and `maskFor` reads the same handful of sheets
+    -- over and over. Sticky `false` for an unreadable path so a missing
+    -- sheet costs one failed decode for the session rather than one per
+    -- frame -- the host's shape, kept deliberately, so that swapping to
+    -- this fallback cannot change behaviour or cost.
+    local decoded = {}
+    imageCache = {
+      get = function(path)
+        if not path then return nil end
+        local hit = decoded[path]
+        if hit ~= nil then return hit or nil end
+        local okData, data = pcall(function()
+          return require("src.render.Assets").imageData(path)
+        end)
+        decoded[path] = (okData and data) or false
+        return decoded[path] or nil
+      end,
+    }
+    -- A hot reload drops every derived cache downstream of Assets; ours has
+    -- to go with them or a reloaded sheet keeps drawing from stale pixels.
+    -- Best-effort: an engine without the hook costs us the reload, not the
+    -- attach.
+    pcall(function()
+      require("src.render.Assets").register(function() decoded = {} end)
+    end)
+    mod.log:info("%s has no ImageCache; using the engine's own image data",
+      host.name)
+  end
   local okVoxel, voxel = pcall(V.require, "VoxelState")
   local voxelState = okVoxel and voxel or nil
   local okFirst, first = pcall(V.require, "FirstPerson")
@@ -5564,16 +5615,46 @@ local function probeCapabilities(modules)
 end
 
 -- Capability probe: a host is usable when exports.lib exists and returns
--- the three required modules, and SpriteBillboards.mesh is a function.
--- The three optional ones (VoxelState, FirstPerson, VoxelScene) stay
+-- the two required modules, and SpriteBillboards.mesh is a function.
+-- The optional ones (VoxelState, FirstPerson, VoxelScene, ImageCache) stay
 -- optional, handled in patch(). pcall on every require because a host
 -- that passes the id check but is missing one of the required modules (or
 -- whose require blows up) has to be rejected cleanly, without taking down
 -- the whole mod's loading (same class of defect as round 2).
+--
+-- IMAGECACHE WAS REQUIRED HERE UNTIL 1.8.1, AND IT SHOULD NEVER HAVE BEEN.
+-- Reported by Pikon, BYRAX and setogabes; measured against three hosts.
+--
+-- The rule this list has to obey is the mod's own contract: a REQUIRED
+-- module is one that asks a question only the host can answer. ImageCache
+-- is not that. Read the host's own file (DramaticShapeVoxelMod/lib/
+-- ImageCache.lua): it is a table keyed by path over `Assets.imageData`,
+-- and its header says out loud that it exists only because the ENGINE
+-- deliberately leaves that call uncached. The pixels come from the engine
+-- either way. We were rejecting hosts over a convenience cache we can
+-- build ourselves in ten lines -- an API-shaped rejection, which is the
+-- same defect class as the version gate removed in 1.4.2, and it cost
+-- three hosts:
+--
+--   * DRAMALESS_SHAPE 2.0.0+ deleted ImageCache in its "Big Fat Cleanup"
+--     (2026-08-13); 1.6.4 still had it, which is why the bug landed the
+--     same week and read as "1.8.0 broke it". Measured: 1.6.0 fails
+--     against Dramaless 2.0.1 exactly as 1.8.0 does, so the regression is
+--     the host's -- but the fragility is ours.
+--   * potato_voxel never shipped one (it has MeshCache instead), so the
+--     HOSTS entry added in 1.8.0 listed a host that could never attach.
+--   * STADIUM2_OVERWORLD_MODELS (randyadr, the Gen-2 lineage) has no
+--     ImageCache either.
+--
+-- Three of the five known lineages, rejected over a cache. The required
+-- list is now only what the mod genuinely cannot do without: the geometry
+-- it replaces (SpriteBillboards.mesh) and the draw it rides (Voxel3D).
 local function probeHost(handle)
   -- Moved from chunk scope (roadmap item 0: main chunk locals): only read
-  -- here.
-  local REQUIRED_MODULES = { "Voxel3D", "ImageCache", "SpriteBillboards" }
+  -- here, and it stays a local INSIDE this function for that reason -- the
+  -- main chunk is at 199 of LuaJIT's 200 locals and one more is a compile
+  -- error, not a behaviour one.
+  local REQUIRED_MODULES = { "Voxel3D", "SpriteBillboards" }
   if not (handle.exports and handle.exports.lib) then
     return nil, "exports.lib is missing"
   end
@@ -5626,6 +5707,37 @@ local function findHost()
 end
 
 local host, hostRejects = findHost()
+
+-- WHAT THE HOST MATRIX GATE READS (tools/ingame/probe_hosts.lua).
+--
+-- 1.8.0 shipped a host it had never attached to (potato_voxel) and broke on
+-- one it could have (Dramaless 2.0), and every gate stayed green, because
+-- all of them run against the ONE host this machine has enabled and none of
+-- them could tell "attached" from "loaded but attached to nothing" -- from
+-- outside those look identical: the options rows appear either way.
+--
+-- So the attach answer becomes readable from outside the mod. Deliberately
+-- the smallest surface that answers "did it attach, to what, and with which
+-- optional patches", and declared HERE, above the no-host early return, so
+-- that a run with no usable host still answers (with `why`) instead of
+-- looking like a mod that failed to load.
+--
+-- Not a public API, same as `_anchors` and `_animEvents`: it exists so the
+-- gate can measure. `mod.exports` rather than `mod._` because the loader
+-- hands exports to other mods and the probe is another mod's-eye view.
+mod.exports = mod.exports or {}
+function mod.exports.hostReport()
+  return {
+    host = host and host.id or nil,
+    hostVersion = host and host.handle and host.handle.version or nil,
+    patched = patched,
+    drawPatched = drawPatched,
+    atlasPatched = TerrainAtlas ~= nil,
+    gridAvailable = hostLib ~= nil,
+    why = (not host) and hostRejects or nil,
+  }
+end
+
 if not host then
   mod.log:warn("could not find usable Voxel Characters host; checked %s: %s",
     hostIds(), hostRejects)

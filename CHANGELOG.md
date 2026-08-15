@@ -10,6 +10,68 @@ the direction is named in the entry their contribution landed in.
 
 Nothing yet.
 
+## [1.8.1] - 2026-08-15
+
+A compatibility fix. If 1.8.0 did nothing for you -- the `CHARACTERS` menu was
+there but your characters stayed flat -- this is the release that fixes it, and
+you do not need to change any setting.
+
+### Fixed
+
+- **The mod now attaches to Dramaless Shape 2.x and to PotatoVoxel.** It was
+  refusing both, and the reason was ours.
+
+  This mod asks a host for three modules before it will attach. One of them,
+  `ImageCache`, was never something only a host could provide: it is a small
+  cache the Dramatic Shape lineage keeps over the *engine's* own image loader,
+  and its own source says it exists only because the engine deliberately does
+  not cache that call. We were turning away hosts over a convenience, which is
+  exactly the kind of API-shaped rejection this mod removed a version gate to
+  avoid in 1.4.2. The mod now uses the host's cache when it is there and its
+  own -- over the same engine call, with the same behaviour -- when it is not.
+
+  Three of the five known host lineages were affected:
+
+  - **Dramaless Shape 2.0.0** removed `lib/ImageCache.lua` in its "Big Fat
+    Cleanup" on 13 August. 1.6.4 still had it. Because that landed two days
+    before 1.8.0, this looked like 1.8.0 breaking compatibility; it was not.
+    Measured while fixing it: **1.6.0 fails against Dramaless 2.0.1 in exactly
+    the same way**, so any Voxel Characters release would have. The host
+    changed, and this mod was too brittle to survive it.
+  - **PotatoVoxel** has never shipped an `ImageCache` -- it uses a `MeshCache`
+    instead. This is the honest part: 1.8.0 *listed* PotatoVoxel as a supported
+    host, and it had never once attached to it. Listing a host and working with
+    one are different claims and only one of them was true.
+  - **Pokemon Stadium 2 Overworld Models** (the Gen 2 lineage) has no
+    `ImageCache` either. Its id is still not in this mod's host list, so it is
+    not yet supported -- but the reason it could never have worked is now gone.
+
+  Reported by **Pikon** and **BYRAX** (Dramaless 2.x) and by **setogabes**, who
+  asked for PotatoVoxel specifically because the other hosts are too heavy on
+  their device -- the report that showed the listing had been empty all along.
+  **suheel** named the Stadium 2 overworld mod, which is how that fourth
+  lineage got identified.
+
+- **Dramaless Shape 2.x no longer logs an "untested version" warning.** The
+  version has never been allowed to reject a host, so this only ever produced a
+  scary line in the log. 2.0.1 has now actually been tested, so the range says
+  so.
+
+### Added
+
+- **A gate that runs the real game against every voxel host installed, one at a
+  time** (`tools/ingame/hosts.sh`). This bug reached players with 669 checks
+  green, and it could not have been otherwise: every gate this project owns
+  either mocks the host -- and a mock has whatever the mod asks it for -- or
+  boots the one host that happens to be enabled on the machine doing the
+  measuring, which here has always been Dramatic Shape. Nothing measured
+  "attaches to the hosts other people actually run".
+
+  The new gate boots the game once per installed host and reads whether the
+  mod attached, which the mod now reports from the inside. Run against the bug
+  it is meant to catch, it fails on PotatoVoxel and Dramaless 2.0.1 and passes
+  on Dramatic Shape -- which is precisely the shape of what shipped.
+
 ## [1.8.0] - 2026-08-13
 
 **If you are coming from 1.6.0, this release carries 1.7.0 as well.** 1.7.0 was
