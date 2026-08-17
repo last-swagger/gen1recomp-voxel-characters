@@ -130,7 +130,7 @@ fi
 # Either half alone can be satisfied by a file that has stopped working.
 DRIVERS="$MOD/tools/ingame/probe_life.lua $MOD/tools/ingame/menu.lua
          $MOD/tools/ingame/probe_draw.lua $MOD/tools/ingame/probe_fp.lua
-         $MOD/tools/ingame/probe_grid.lua"
+         $MOD/tools/ingame/probe_grid.lua $MOD/tools/ingame/probe_world.lua"
 for d in $DRIVERS; do
   nome="${d#$MOD/}"
   if ! grep -q 'PASSED' "$d" || ! grep -q 'FAILED' "$d"; then
@@ -150,7 +150,11 @@ for d in $DRIVERS; do
   fi
 done
 
-for arquivo in "$BATERIA" "$MOD/tools/ingame/monta.sh"; do
+# gold.sh is a counter as much as the battery is: it is the only reader of the
+# Gen 2 walk gate's verdicts, and it is not called from the battery, so nothing
+# else would notice if its grep and probe_world.lua's print stopped agreeing.
+for arquivo in "$BATERIA" "$MOD/tools/ingame/monta.sh" \
+               "$MOD/tools/ingame/gold.sh"; do
   nome="${arquivo#$MOD/}"
   if grep -qE "grep[^|]*(PASSED|FAILED)" "$arquivo"; then
     printf "  %-40s counts PASSED/FAILED\n" "$nome"

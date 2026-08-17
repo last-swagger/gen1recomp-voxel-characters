@@ -79,14 +79,18 @@ return function(game)
   -- in a place nobody can stand. It was Kim who spotted this in the photos
   -- before I did. See tools/ingame/pouso.lua.
   local Pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
-  local MAPA, X, Y, RAIO = Pouso.escolher(game,
+  local MAPA, X, Y, RAIO, PORQUE = Pouso.escolher(game,
     os.getenv("VC_MAP") or "VIRIDIAN_CITY",
     tonumber(os.getenv("VC_X")) or 17,
     tonumber(os.getenv("VC_Y")) or 17)
   U.teleport(game, MAPA, X, Y, "down")
   U.wait(30)
   if RAIO == nil then
-    U.log("VC driver: AVISO, nenhuma celula boa perto do ponto pedido")
+    -- The reason is printed rather than assumed: "no good cell nearby" and "I
+    -- could not check this map at all" are the same nil and mean very
+    -- different things, and reading the second as the first is how the landing
+    -- validator went silent on Gold (tools/ingame/pouso.lua's header).
+    U.log("VC driver: AVISO, sem pouso validado: " .. tostring(PORQUE))
   elseif RAIO > 0 then
     U.log(string.format("VC driver: pouso deslocado %d celula(s) para (%d,%d)",
       RAIO, X, Y))

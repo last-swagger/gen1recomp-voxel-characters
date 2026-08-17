@@ -69,6 +69,20 @@
 --   W4 standing, BODY removes a real share of it;
 --   W5 walking, likewise. Either one collapsing is the regression.
 --
+-- WHAT PORTING THIS ONTO THE WORLD ADAPTER DID, AND WHAT IT DID NOT.
+--
+-- Landing, reading the player's cell, emptying the room and loading the map
+-- all go through tools/ingame/world.lua now, and all four work on either game.
+-- THE MEASUREMENT DOES NOT, and the split is worth naming rather than papering
+-- over: pinning the pose writes `bumpFrames` and `animClock` and reads
+-- `walkPhase()`, which are Gen 1 Player internals (src/world/Player.lua), and
+-- Gold's Player has neither of the first two nor the third. So this file's
+-- world ACCESS is now generation agnostic and its SUBJECT is not. Forcing the
+-- second half through the adapter would have meant inventing a shared pose
+-- vocabulary that neither game actually has, which is how an abstraction
+-- starts lying. This probe stays a Gen 1 gate until somebody has measured what
+-- a blocked step looks like on Gold.
+--
 -- WHAT THIS GATE DOES NOT SEE, written down because the omission is deliberate
 -- and it is exactly where the report that prompted the gate turned out to live.
 --
@@ -115,6 +129,15 @@
 return function(game)
   local function log(f, ...) print("[walk] " .. string.format(f, ...)) end
   local U = dofile("tests/drivers/util.lua")
+  -- THE WORLD THROUGH THE ADAPTER, not through `game.overworld`. Landing,
+  -- reading the cell, emptying the room and loading the map all used to be
+  -- Gen 1 names spelled out here, and on a Gen 2 game every one of them
+  -- answers nil without erroring. What this probe MEASURES is still Gen 1
+  -- only -- see the note above W1 -- but the reason is now the pose machinery
+  -- it pins, which is a real difference between the two games, rather than the
+  -- accident of how it reached the player.
+  local World = dofile("mods/voxel_characters/tools/ingame/world.lua")
+  local w, porqueNao = World.of(game)
   local vereditos, todos = {}, true
   local function veredito(nome, ok, detalhe)
     if not ok then todos = false end
@@ -172,12 +195,18 @@ return function(game)
   -- or care who put them there -- and it runs on every frame the probe holds
   -- the pose, because a mod that adds its object back mid-run has to be caught
   -- mid-run.
+  --
+  -- THE THREE LISTS COME THROUGH tools/ingame/world.lua rather than off
+  -- `game.overworld`, which is the only reason this probe still says anything
+  -- on a second game: `game.overworld` is nil on Gold and every line that
+  -- reads it silently answers nil there. `w:actors()` returns the lists that
+  -- EXIST, so a world with two of the three is handled without anyone asking
+  -- which game is booted.
   local retirados = 0
   local function soOJogador()
-    local ow = game.overworld
-    if not ow then return end
-    local p = ow.player
-    for _, lista in ipairs({ ow.entities or {}, ow.npcs or {}, ow.ghosts or {} }) do
+    local p = w:player()
+    if not p then return end
+    for _, lista in ipairs(w:actors()) do
       for i = #lista, 1, -1 do
         local e = lista[i]
         if (e.npc or e) ~= p then table.remove(lista, i); retirados = retirados + 1 end
@@ -215,6 +244,10 @@ return function(game)
   end
 
   log("=== gate do WALK ===")
+  if not w then
+    veredito("W1", false, tostring(porqueNao))
+    return fim()
+  end
   local pouso = dofile("mods/voxel_characters/tools/ingame/pouso.lua")
   -- UPSTAIRS IN RED'S HOUSE, and the room is chosen rather than inherited.
   -- Oak's lab is where the other probes stand, and it has people in it who walk
@@ -233,13 +266,16 @@ return function(game)
   -- keeps the walk in one place. `pouso.recusa` answers "may I stand here"; the
   -- map's own `isWalkableCell` answers "is that a wall". A door is neither, and
   -- the first version of this walked through one and lost the map.
-  local okML, MapLoader = pcall(require, "src.world.MapLoader")
-  local map = okML and select(2, pcall(MapLoader.load, game.data, MAPA)) or nil
+  -- The map through the adapter, which is MapLoader on Gen 1 and the engine's
+  -- own cached builder on Gold. `World.wall` is the same `isWalkableCell` this
+  -- file used to call by hand, except that a map nobody could load now counts
+  -- as a WALL: the old version answered "not a wall" for every cell of a map
+  -- it had failed to read, and then searched happily through a room it knew
+  -- nothing about.
+  local map = w:loadMap(MAPA)
   local DELTA = { { "down", 0, 1 }, { "up", 0, -1 }, { "left", -1, 0 }, { "right", 1, 0 } }
   local function parede(cx, cy)
-    if not map then return false end
-    local ok, andavel = pcall(map.isWalkableCell, map, cx, cy)
-    return not (ok and andavel == true)
+    return World.wall(map, cx, cy)
   end
   local ax, ay, encosto
   for raio = 0, 12 do
@@ -267,18 +303,22 @@ return function(game)
     return fim()
   end
 
-  U.teleport(game, MAPA, ax, ay, encosto)
-  local estranhos = -1
+  w:land(MAPA, ax, ay, encosto)
   U.wait(30)
-  estranhos = #(game.overworld and game.overworld.entities or { 0 }) - 1
+  local estranhos = 0
+  for _, lista in ipairs(w:actors()) do
+    for _, e in ipairs(lista) do
+      if (e.npc or e) ~= w:player() then estranhos = estranhos + 1 end
+    end
+  end
   soOJogador()
   espera(30)
   log("%d stranger(s) in the room on arrival, taken out of the scene", estranhos)
-  if not (game.overworld and game.stack:top() == game.overworld) then
-    veredito("W1", false, "nao cheguei ao mundo")
+  if not w:inWorld() then
+    veredito("W1", false, "the world was not reached")
     return fim()
   end
-  local p = game.overworld.player
+  local p = w:player()
 
   -- Everything that moves on its own is pinned off: BREATH, SWAY and BLINK
   -- would each change the picture between two photographs for a reason that is
