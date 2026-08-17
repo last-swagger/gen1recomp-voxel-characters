@@ -19,12 +19,26 @@
 # the mod asks for. The only thing that could have caught it is booting the
 # real game against the real hosts, which is what this does.
 #
-# Usage:
-#   tools/ingame/hosts.sh              # every host installed here
-#   tools/ingame/hosts.sh DRAMALESS_SHAPE potato_voxel
+# THE MATRIX HAS TWO AXES, host AND game, because a host is not portable
+# between them. The Gen 1 lineages do not load on Gold and the Gen 2 lineage
+# does not load on Blue, so "did not attach" and "cannot run here at all" are
+# different answers and only the first one is a bug. A matrix that scored them
+# the same would go red on every single run and stop being read, which is the
+# ordinary way a gate dies. Rows that cannot run here print n/a and are not
+# counted against the total.
 #
-# Prints one row per host and exits non-zero if any installed host fails to
-# attach. Roughly 20s per host.
+# The inverse mistake is the dangerous one, so it is also guarded: a game with
+# NO applicable host installed measured nothing at all, and that is a FAILURE
+# rather than a quiet pass. Without that rule, deleting a host from HOSTS would
+# turn its whole column green by making it empty.
+#
+# Usage:
+#   tools/ingame/hosts.sh              # every host installed here, both games
+#   tools/ingame/hosts.sh DRAMALESS_SHAPE potato_voxel
+#   VC_VERSION=gold tools/ingame/hosts.sh     # one game only
+#
+# Prints one row per host per game and exits non-zero if any host that COULD
+# have attached did not. Roughly 20s per row that actually boots.
 #
 # THE SAVE IS RESTORED BYTE FOR BYTE. options.lua is copied before the first
 # run and copied back on exit, including on Ctrl-C and on failure, because
@@ -41,6 +55,14 @@ OPTIONS="$SAVE/options.lua"
 DRIVER="$REPO/mods/voxel_characters/tools/ingame/probe_hosts.lua"
 [ -f "$DRIVER" ] || { echo "driver not found: $DRIVER"; exit 1; }
 [ -f "$OPTIONS" ] || { echo "no options.lua at $OPTIONS"; exit 1; }
+
+# THE LOVE LOCK, taken before anything else. This script opens with
+# `pkill -x love` once per row, so without it a matrix run silently kills a
+# ruler or a trailer already in flight and the truncated output of the victim
+# reads as a short measurement rather than an interrupted one -- the precise
+# failure tools_bin.sh was written for. Reentrant, so the battery calling this
+# while already holding the lock is fine.
+vc_trava_pega "hosts.sh" || exit 1
 
 TMP="$(mktemp -d)"
 BACKUP="$TMP/options.lua.original"
@@ -61,11 +83,35 @@ restaura() {
   echo "options.lua restored (sha256 $ANTES)"
   rm -rf "$TMP"
 }
-trap 'restaura' EXIT INT TERM
+# BOTH cleanups on one trap, deliberately. vc_trava_pega installs its own
+# `trap ... EXIT INT TERM` for the lock, and a second trap on the same signals
+# REPLACES the first rather than adding to it -- so setting this one after
+# taking the lock is what would otherwise drop the restore on the floor and
+# leave the player booting into whichever host the loop happened to be on.
+trap 'restaura; vc_trava_solta' EXIT INT TERM
 
-# Which hosts exist here at all: every manifest under the repo's mods/ and the
-# save's mods/ whose id is one this mod knows how to attach to.
-CONHECIDOS="potato_voxel BATTLE_ART_VOXEL_FORK DRAMALESS_SHAPE DRAMATIC_SHAPE"
+# EVERY HOST THIS MOD CLAIMS, AND THE GAME EACH ONE RUNS ON. One entry per
+# host, `id:game`. The game is not decoration: it is what tells the matrix
+# which column a host belongs in, and therefore which absences are real.
+#
+# STADIUM2_OVERWORLD_MODELS is randyadr's Gen 2 lineage and its own manifest
+# says games: ["gen2"], so Gold is the only place it can be asked the question.
+# The four Gen 1 lineages are the reverse.
+HOSTS="potato_voxel:blue
+BATTLE_ART_VOXEL_FORK:blue
+DRAMALESS_SHAPE:blue
+DRAMATIC_SHAPE:blue
+STADIUM2_OVERWORLD_MODELS:gold"
+
+hosts_ids() { printf '%s\n' "$HOSTS" | cut -d: -f1; }
+# the game a host runs on, or empty if this id is not in the table at all
+host_jogo() { printf '%s\n' "$HOSTS" | awk -F: -v h="$1" '$1 == h { print $2 }'; }
+
+# Every id the matrix knows about, which is also every id `seleciona` has to
+# write out as false. Derived from HOSTS so the two can never drift: a host
+# added to the table above is automatically one the selector turns off.
+CONHECIDOS="$(hosts_ids | tr '\n' ' ')"
+
 instalado() {
   local id="$1" f
   for f in "$REPO"/mods/*/manifest.json "$SAVE"/mods/*/manifest.json; do
@@ -85,11 +131,52 @@ fi
 # of the list counts as ENABLED, so every host we are not testing has to be
 # written out as false explicitly. Getting this wrong makes the matrix measure
 # the wrong host and still look like it worked.
+#
+# AND `options.mods` IS NO LONGER THE ONLY ANSWER. SaveData.modEnabled reads
+# options.modsByVersion[game][id] FIRST and only falls through to mods[id] when
+# that is absent, so a per-game overlay silently outranks everything written
+# here. The overlay is not usually in a fresh options.lua -- it is created by
+# the engine's own one-time migration, which fires on the FIRST boot and copies
+# the then-current answers to every game. Inside a matrix that boots more than
+# once that is a trap with teeth: row 1 persists an overlay built from row 1's
+# selection, and every later row is then measured against row 1's hosts no
+# matter what it wrote. It cost a full red Gold row to find.
 seleciona() {
-  python3 - "$OPTIONS" "$1" "$CONHECIDOS" <<'PY'
+  python3 - "$OPTIONS" "$1" "$CONHECIDOS" "$2" <<'PY'
 import re, sys
-path, want, known = sys.argv[1], sys.argv[2], sys.argv[3].split()
+path, want, known, game = sys.argv[1], sys.argv[2], sys.argv[3].split(), sys.argv[4]
 src = open(path, encoding="utf-8").read()
+# Any override already in the file goes FIRST, before anything else is located
+# or written: a force left over from the previous row would otherwise still be
+# in the file while this row ran, and a Gold row's override surviving into a
+# Blue row is the kind of leak that makes a matrix measure something other than
+# what it prints. Stripping it up front also means the block below is always
+# inserted into a file with exactly one known shape.
+#
+# BOTH SERIALISED SHAPES, and the empty one is the one that bites: the engine
+# writes `modsGen2 = {},` on a single line when the table is empty, which the
+# block pattern does not match. Leaving it there put a SECOND modsGen2 key in
+# the same Lua table after the one written below, and in a table literal the
+# last key wins -- so the override read back as nil and the Gold row failed
+# with the mod gated out, while the file looked exactly right to the eye.
+src = re.sub(r"\n  modsGen2 = \{\},\n", "\n", src)
+src = re.sub(r"\n  modsGen2 = \{\n.*?\n  \},\n", "\n", src, flags=re.S)
+
+# Drop the per-game overlay for the mods this matrix controls, so the shared
+# `mods` block below is what decides for them again. Only those ids are
+# touched: every other per-game choice in there is the player's and has to
+# survive, and options.lua is restored byte for byte at the end regardless.
+gerido = set(known) | {"voxel_characters"}
+mbv = re.search(r"\n  modsByVersion = \{\n.*?\n  \},\n", src, re.S)
+if mbv:
+    mantidas = []
+    for linha in mbv.group(0).split("\n"):
+        alvo = re.match(r"\s*([\w_]+) = (?:true|false),\s*$", linha)
+        if alvo and alvo.group(1) in gerido:
+            continue          # this id is the matrix's to answer for
+        mantidas.append(linha)  # a bucket header, a brace, or someone else's mod
+    src = src[:mbv.start()] + "\n".join(mantidas) + src[mbv.end():]
+
 m = re.search(r"\n  mods = \{\n(.*?)\n  \},\n", src, re.S)
 if not m:
     sys.exit("could not find the mods block in options.lua")
@@ -102,56 +189,118 @@ for h in known:
     entries[h] = "false"
 entries[want] = "true"
 body = "\n".join("    %s = %s," % (k, v) for k, v in sorted(entries.items()))
-open(path, "w", encoding="utf-8").write(
-    src[:m.start()] + "\n  mods = {\n" + body + "\n  },\n" + src[m.end():])
+block = "\n  mods = {\n" + body + "\n  },\n"
+
+# MEASURING GOLD WITHOUT CLAIMING IT. Our manifest says games: ["gen1"], so on
+# a Gen 2 game the loader gates this mod out before it can look for a host
+# (src/mods/Loader.lua:_gateGeneration). The player's own per-game override --
+# the manager's TRY HERE ANYWAY toggle, options.modsGen2[id][version] -- forces
+# it on for one boot and marks it "not verified by its author", which is
+# precisely what is true today.
+#
+# Widening the manifest instead would make the gate pass by assertion: the
+# claim that this mod runs on Gold is the thing being measured, so it cannot
+# also be the input. The override is a no-op the day the claim is real --
+# _gateGeneration consults it only AFTER ModTargets.supports says no -- so this
+# line does not have to be removed when the manifest grows.
+force = ""
+if game != "blue":
+    force = ("  modsGen2 = {\n    voxel_characters = {\n"
+             "      %s = true,\n    },\n  },\n" % game)
+open(path, "w", encoding="utf-8").write(src[:m.start()] + block + force + src[m.end():])
 PY
 }
 
-VERSAO="${VC_VERSION:-blue}"
+# Both games by default, because covering only the one the machine happens to
+# boot is the exact hole 1.8.0 shipped through. VC_VERSION still pins a single
+# game for a quick run.
+JOGOS="${VC_VERSION:-blue gold}"
+# An explicit host list means the caller is asking about those hosts, so the
+# games narrow to the ones those hosts actually live on -- otherwise
+# `hosts.sh potato_voxel` would fail Gold for having nothing to measure there.
+if [ -n "${*:-}" ] && [ -z "${VC_VERSION:-}" ]; then
+  JOGOS="$(for h in $ALVOS; do host_jogo "$h"; done | sort -u | tr '\n' ' ')"
+fi
+
+FMT='%-26s %-6s %-10s %-9s %-7s %-7s %s\n'
 FALHAS=0
 echo
-printf '%-24s %-10s %-9s %-7s %-7s %s\n' HOST VERSION ATTACHED DRAW ATLAS NOTE
-printf '%-24s %-10s %-9s %-7s %-7s %s\n' ------------------------ ---------- --------- ------- ------- ----
+# shellcheck disable=SC2059
+printf "$FMT" HOST GAME VERSION ATTACHED DRAW ATLAS NOTE
+printf "$FMT" -------------------------- ------ ---------- --------- ------- ------- ----
 
-for h in $ALVOS; do
-  seleciona "$h" || { echo "could not select $h"; FALHAS=$((FALHAS + 1)); continue; }
-  pkill -x love 2>/dev/null
-  for _ in $(seq 1 20); do pgrep -x love >/dev/null 2>&1 || break; sleep 0.5; done
-  rm -f "$SAVE/vc_hosts.txt"
-  LOG="$TMP/$h.log"
-  POKEPORT_VERSION="$VERSAO" POKEPORT_DRIVER="$DRIVER" "$LOVE" "$REPO" \
-    > "$LOG" 2>&1 &
-  PID=$!
-  for _ in $(seq 1 "${VC_TIMEOUT:-90}"); do
-    pgrep -x love >/dev/null 2>&1 || break
-    sleep 1
+for jogo in $JOGOS; do
+  APLICAVEIS=0
+  for h in $ALVOS; do
+    HJOGO="$(host_jogo "$h")"
+    if [ -z "$HJOGO" ]; then
+      printf "$FMT" "$h" "$jogo" "?" FAILED "-" "-" "not in HOSTS: no game declared for it"
+      FALHAS=$((FALHAS + 1))
+      continue
+    fi
+    # NOT APPLICABLE IS NOT A FAILURE. This host's lineage does not load on
+    # this game at all, so there is no attach to measure and nothing to report
+    # against the mod.
+    if [ "$HJOGO" != "$jogo" ]; then
+      printf "$FMT" "$h" "$jogo" "-" "n/a" "-" "-" "runs on $HJOGO, not this game"
+      continue
+    fi
+    APLICAVEIS=$((APLICAVEIS + 1))
+
+    seleciona "$h" "$jogo" || { echo "could not select $h"; FALHAS=$((FALHAS + 1)); continue; }
+    pkill -x love 2>/dev/null
+    for _ in $(seq 1 20); do pgrep -x love >/dev/null 2>&1 || break; sleep 0.5; done
+    rm -f "$SAVE/vc_hosts.txt"
+    LOG="$TMP/$h.$jogo.log"
+    POKEPORT_VERSION="$jogo" POKEPORT_DRIVER="$DRIVER" "$LOVE" "$REPO" \
+      > "$LOG" 2>&1 &
+    PID=$!
+    for _ in $(seq 1 "${VC_TIMEOUT:-90}"); do
+      pgrep -x love >/dev/null 2>&1 || break
+      sleep 1
+    done
+    kill -9 "$PID" 2>/dev/null
+    pkill -x love 2>/dev/null
+
+    SAIDA="$SAVE/vc_hosts.txt"
+    if [ ! -f "$SAIDA" ]; then
+      printf "$FMT" "$h" "$jogo" "?" "NO RUN" "-" "-" "the probe wrote nothing; see $LOG"
+      FALHAS=$((FALHAS + 1))
+      continue
+    fi
+    LINHA="$(grep '^ATTACH ' "$SAIDA" | head -1)"
+    HOSTVER="$(grep "^HOST $h " "$SAIDA" | sed -n 's/.*version=\([^ ]*\).*/\1/p')"
+    ATTACHED="$(printf '%s' "$LINHA" | sed -n 's/.*patched=\([^ ]*\).*/\1/p')"
+    DRAW="$(printf '%s' "$LINHA" | sed -n 's/.*draw=\([^ ]*\).*/\1/p')"
+    ATLAS="$(printf '%s' "$LINHA" | sed -n 's/.*atlas=\([^ ]*\).*/\1/p')"
+    NOTA="$(grep '^ATTACH why=' "$SAIDA" | sed 's/^ATTACH why=//' | head -1)"
+    # A mod that never survived the loader cannot report a host, and "no
+    # attach" would blame the host for it. Say which one it was.
+    MODSTATE="$(grep '^MOD  voxel_characters ' "$SAIDA" | sed -n 's/.*state=\([^ ]*\).*/\1/p')"
+    if [ -n "$MODSTATE" ] && [ "$MODSTATE" != "loaded" ]; then
+      NOTA="voxel_characters state=$MODSTATE"
+    fi
+    if [ "$ATTACHED" = "true" ]; then
+      printf "$FMT" "$h" "$jogo" "${HOSTVER:-?}" OK "${DRAW:--}" "${ATLAS:--}" ""
+    else
+      printf "$FMT" "$h" "$jogo" "${HOSTVER:-?}" FAILED "${DRAW:--}" "${ATLAS:--}" "${NOTA:-no attach}"
+      FALHAS=$((FALHAS + 1))
+    fi
   done
-  kill -9 "$PID" 2>/dev/null
-  pkill -x love 2>/dev/null
 
-  SAIDA="$SAVE/vc_hosts.txt"
-  if [ ! -f "$SAIDA" ]; then
-    printf '%-24s %-10s %-9s %-7s %-7s %s\n' "$h" "?" "NO RUN" "-" "-" "the probe wrote nothing; see $LOG"
-    FALHAS=$((FALHAS + 1))
-    continue
-  fi
-  LINHA="$(grep '^ATTACH ' "$SAIDA" | head -1)"
-  HOSTVER="$(grep "^HOST $h " "$SAIDA" | sed -n 's/.*version=\([^ ]*\).*/\1/p')"
-  ATTACHED="$(printf '%s' "$LINHA" | sed -n 's/.*patched=\([^ ]*\).*/\1/p')"
-  DRAW="$(printf '%s' "$LINHA" | sed -n 's/.*draw=\([^ ]*\).*/\1/p')"
-  ATLAS="$(printf '%s' "$LINHA" | sed -n 's/.*atlas=\([^ ]*\).*/\1/p')"
-  NOTA="$(grep '^ATTACH why=' "$SAIDA" | sed 's/^ATTACH why=//' | head -1)"
-  if [ "$ATTACHED" = "true" ]; then
-    printf '%-24s %-10s %-9s %-7s %-7s %s\n' "$h" "${HOSTVER:-?}" OK "${DRAW:--}" "${ATLAS:--}" ""
-  else
-    printf '%-24s %-10s %-9s %-7s %-7s %s\n' "$h" "${HOSTVER:-?}" FAILED "${DRAW:--}" "${ATLAS:--}" "${NOTA:-no attach}"
+  # A GAME WITH NOTHING TO MEASURE IS RED, NOT GREEN. An empty column means
+  # this run said nothing about that game, and a gate that reports silence as
+  # success is worse than no gate: dropping a host from HOSTS, or uninstalling
+  # it, would otherwise turn its column green by emptying it.
+  if [ "$APLICAVEIS" -eq 0 ]; then
+    printf "$FMT" "(none)" "$jogo" "-" FAILED "-" "-" "no installed host runs on $jogo; nothing was measured"
     FALHAS=$((FALHAS + 1))
   fi
 done
 
 echo
 if [ "$FALHAS" -gt 0 ]; then
-  echo "HOST MATRIX FAILED: $FALHAS host(s) did not attach"
+  echo "HOST MATRIX FAILED: $FALHAS row(s) did not attach"
   exit 1
 fi
 echo "HOST MATRIX OK"

@@ -318,7 +318,7 @@ luajit mods/voxel_characters/tools/hd_equivalence.lua       HD SPRITE must paint
 bash mods/voxel_characters/tools/render/check.sh            the offline ruler, checking itself
 bash mods/voxel_characters/tools/ingame/run.sh <dir>        drives the real game, screenshots
 bash mods/voxel_characters/tools/ingame/clip.sh <dir> <k=v> side by side video of any option
-bash mods/voxel_characters/tools/ingame/hosts.sh            boots the game against EVERY voxel host installed
+bash mods/voxel_characters/tools/ingame/hosts.sh            boots EVERY voxel host installed, on Blue and Gold
 bash mods/voxel_characters/tools/release_check.sh           asks the GAME whether a release is installable
 ```
 

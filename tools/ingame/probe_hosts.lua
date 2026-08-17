@@ -45,17 +45,30 @@ return function(game)
     -- WHICH VOXEL HOST WAS ACTUALLY ENABLED, from the engine's own view and
     -- not from the save file: `options.mods` is the flag, but a mod can be
     -- present-and-failed, and that distinction is the whole point here.
+    -- The Gen 2 lineage is in here for the same reason the Gen 1 ones are: a
+    -- host this mod claims to attach to has to be booted against, and
+    -- STADIUM2_OVERWORLD_MODELS only ever loads on a Gen 2 game. hosts.sh
+    -- decides WHICH game each host is asked about; this list only decides
+    -- whose version gets reported.
     local hosts = { potato_voxel = true, BATTLE_ART_VOXEL_FORK = true,
-      DRAMALESS_SHAPE = true, DRAMATIC_SHAPE = true }
+      DRAMALESS_SHAPE = true, DRAMATIC_SHAPE = true,
+      STADIUM2_OVERWORLD_MODELS = true }
     for _, m in ipairs(status.available or {}) do
       if hosts[m.id] then
-        diz("HOST %s version=%s state=%s error=%s", m.id, tostring(m.version),
-          tostring(m.state), tostring(m.error))
+        -- `note` carries the loader's own reason when a mod was left out for
+        -- something that is not its fault -- above all the per-game gate, which
+        -- is exactly the case the matrix must not read as a failure.
+        diz("HOST %s version=%s state=%s error=%s note=%s", m.id,
+          tostring(m.version), tostring(m.state), tostring(m.error),
+          tostring(m.note))
       end
       if m.id == "voxel_characters" then
-        diz("MOD  %s version=%s api=%s state=%s error=%s", m.id,
-          tostring(m.version), tostring(m.api), tostring(m.state),
-          tostring(m.error))
+        -- gen2Forced says the player's TRY HERE ANYWAY override is what got us
+        -- onto this game, rather than a claim in our own manifest. On Gold that
+        -- is expected today: the claim is what this matrix exists to earn.
+        diz("MOD  %s version=%s api=%s state=%s error=%s forced=%s note=%s",
+          m.id, tostring(m.version), tostring(m.api), tostring(m.state),
+          tostring(m.error), tostring(m.gen2Forced), tostring(m.note))
       end
     end
     for _, e in ipairs(status.errors or {}) do
