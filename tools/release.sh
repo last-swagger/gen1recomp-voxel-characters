@@ -102,6 +102,55 @@ if ! bash "$AQUI/mutantes.sh" > "$SAIDA.mutantes.log" 2>&1; then
 fi
 tail -1 "$SAIDA.mutantes.log" | sed 's/^/  /'
 
+# ------------------------------------------------------------- 2c. the Gen 2 gates
+# THE PUBLIC PROMISE, MADE ENFORCEABLE. 1.8.1's notes say every release is
+# booted against each voxel host before it ships. Until this step existed that
+# sentence was kept by somebody remembering: both Gen 2 gates sit outside
+# bateria.sh on purpose (its in-game step is the slow one and only one LOVE runs
+# at a time, so a Gold boot is added wall-clock rather than overlapped), and the
+# battery was this script's only gate. Outside the battery therefore meant
+# outside the release, which is how 1.8.0 shipped listing PotatoVoxel as
+# supported having never once attached to it.
+#
+# Here is where that cost is affordable: once per release instead of every run.
+#
+#   hosts.sh   every installed voxel host, on both games: does the mod attach?
+#   gold.sh    Gen 2 specifically: can the harness land the player and drive it
+#              with the mod attached, which is what makes any Gen 2 claim
+#              measurable rather than hoped.
+#
+# ONLY GOLD FOR THE WALK GATE, not both games. gold.sh runs on Blue too and that
+# is how its Gen 1 half was proved, but probe_walk.lua already drives the same
+# adapter on Blue on every battery run. Repeating it here would buy a second
+# copy of a green check and charge a game boot for it.
+#
+# EXIT CODE IS ENOUGH HERE, unlike the battery's step 9, which has to count
+# PASSED as well because it reads drivers directly. Both of these scripts
+# already do that counting themselves and refuse a silent run: gold.sh answers
+# NO VERDICT when nothing printed, and hosts.sh fails a game with zero
+# applicable hosts. Re-counting their output here would be a second, weaker copy
+# of a check they already make.
+passo "2c. os gates de Gen 2"
+for g in hosts gold; do
+  if ! bash "$AQUI/ingame/$g.sh" > "$SAIDA.$g.log" 2>&1; then
+    tail -15 "$SAIDA.$g.log"
+    falha "o gate $g.sh reprovou. Log completo em $SAIDA.$g.log"
+  fi
+  # THE VERDICT IS NOT THE LAST LINE, which is what this was first written as.
+  # Both scripts restore the player's options.lua on the way out and print the
+  # sha they verified it against, so `tail -1` reports the restore and never the
+  # verdict. That is the same defect step 2 above already carries a comment
+  # about: a summary that reads plausibly while showing the wrong thing.
+  #
+  # And an empty match is a failure, not a blank line. A gate that exits 0
+  # having printed no verdict has not passed, it has not answered -- the
+  # distinction this project keeps relearning.
+  VEREDITO=$(grep -E '^(HOST MATRIX|WALK GATE) .*\bOK\b' "$SAIDA.$g.log" | tail -1)
+  [ -n "$VEREDITO" ] || falha "$g.sh saiu verde sem imprimir veredito, o que
+  nao e um pass e sim uma falta de resposta. Log completo em $SAIDA.$g.log"
+  echo "  $VEREDITO"
+done
+
 # ----------------------------------------------------------- 3. the changelog
 # The body comes from CHANGELOG.md and nowhere else. Writing release notes by
 # hand at publish time is how a release ends up saying something the changelog
