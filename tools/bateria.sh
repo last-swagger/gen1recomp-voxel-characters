@@ -236,20 +236,16 @@ if [ "$MODO" = "tudo" ]; then
   #   bash tools/ingame/hosts.sh        # attaches, on every host and both games
   #   bash tools/ingame/gold.sh         # lands and walks, with the mod attached
   #
-  # AND THE GAP THAT LEAVES, written down rather than discovered later. Nothing
-  # enforces either of them: release.sh's only gate is this battery (release.sh
-  # :69), so leaving them out here leaves them out of the release too. Checked
-  # 2026-08-18 -- this is the state, not a plan.
+  # THE RELEASE RUNS THEM, so out of here is not out of everything. They are
+  # release.sh step 2c, which is where the cost is affordable: once per release
+  # instead of on every run of this. Leaving them out of BOTH is what the gap
+  # used to be, and it mattered because 1.8.1's notes promise publicly that
+  # every release is booted against each voxel host before it ships -- a
+  # promise whose only gate, until 2026-08-18, was somebody remembering.
   #
-  # That matters more than it looks. 1.8.1's notes promise publicly that every
-  # release is booted against each voxel host before it ships, and hosts.sh is
-  # the gate written to make that promise true. Today the promise is kept by
-  # somebody remembering, which is the exact shape of the bug this project
-  # corrected in public in 1.8.1: listed a host it had never attached to.
-  #
-  # The cheap fix is release.sh rather than here -- it runs once per release,
-  # so the cost lands where it is affordable and never in the daily loop. Left
-  # undone deliberately: it is Kim's call, not a thing to slip in.
+  # So if a Gen 2 gate ever moves or gets renamed, release.sh has to learn it
+  # too. Two places, on purpose: the daily loop stays cheap and the promise
+  # still has something standing behind it.
   for d in probe_life menu probe_hd probe_walk probe_draw probe_fp probe_grid; do
     SAIDA=$(POKEPORT_VERSION=blue POKEPORT_DRIVER="$MOD/tools/ingame/$d.lua" \
             bash "$MOD/tools/love.sh" . 2>&1)
