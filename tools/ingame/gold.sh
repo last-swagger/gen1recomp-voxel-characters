@@ -52,6 +52,14 @@
 # today. Widening the manifest instead would make this gate pass by assertion:
 # the claim that the mod runs on Gold is the thing being measured, so it cannot
 # also be the input.
+#
+# NOT IN tools/bateria.sh, and nothing else runs it either. Kim's call,
+# 2026-08-18, on cost: the in-game step is already the slow one and only one
+# LOVE runs at a time, so a Gold boot is wall-clock added rather than
+# overlapped. release.sh gates on the battery alone, so this gate and hosts.sh
+# are both kept by somebody remembering. The reasoning, and what it would take
+# to close it, is written where the question gets asked -- tools/bateria.sh,
+# above the in-game loop.
 set -u
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$AQUI/../../../.." && pwd)"

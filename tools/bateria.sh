@@ -223,6 +223,33 @@ if [ "$MODO" = "tudo" ]; then
   # So: zero FAILED is not enough. There must also be at least one PASSED, or
   # the driver produced no verdict at all and the correct answer is "no
   # measurement", not "pass".
+  # THE TWO GEN 2 GATES ARE DELIBERATELY NOT IN THIS LOOP -- hosts.sh, which
+  # proves the mod attaches on Gold, and ingame/gold.sh, which proves the
+  # harness can drive it. Kim's call, 2026-08-18, and the reason is cost: this
+  # step is already the slow one, and Gen 2 cannot be overlapped with Gen 1 to
+  # hide it. Only one LOVE runs at a time on a machine (tools_bin.sh holds the
+  # lock, see the header), so every Gold boot is wall-clock added on top of the
+  # seven below, not beside them.
+  #
+  # Run them by hand while working on Gen 2:
+  #
+  #   bash tools/ingame/hosts.sh        # attaches, on every host and both games
+  #   bash tools/ingame/gold.sh         # lands and walks, with the mod attached
+  #
+  # AND THE GAP THAT LEAVES, written down rather than discovered later. Nothing
+  # enforces either of them: release.sh's only gate is this battery (release.sh
+  # :69), so leaving them out here leaves them out of the release too. Checked
+  # 2026-08-18 -- this is the state, not a plan.
+  #
+  # That matters more than it looks. 1.8.1's notes promise publicly that every
+  # release is booted against each voxel host before it ships, and hosts.sh is
+  # the gate written to make that promise true. Today the promise is kept by
+  # somebody remembering, which is the exact shape of the bug this project
+  # corrected in public in 1.8.1: listed a host it had never attached to.
+  #
+  # The cheap fix is release.sh rather than here -- it runs once per release,
+  # so the cost lands where it is affordable and never in the daily loop. Left
+  # undone deliberately: it is Kim's call, not a thing to slip in.
   for d in probe_life menu probe_hd probe_walk probe_draw probe_fp probe_grid; do
     SAIDA=$(POKEPORT_VERSION=blue POKEPORT_DRIVER="$MOD/tools/ingame/$d.lua" \
             bash "$MOD/tools/love.sh" . 2>&1)
