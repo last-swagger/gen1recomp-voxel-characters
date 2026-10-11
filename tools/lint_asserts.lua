@@ -116,7 +116,8 @@ end
 local alvos = {}
 for i = 1, #arg do alvos[#alvos + 1] = arg[i] end
 if #alvos == 0 then
-  alvos[1] = "mods/voxel_characters/tests/voxel_chars_test.lua"
+  local pastaScript = arg[0]:match("^(.*[/])") or ""
+  alvos[1] = pastaScript .. "../tests/voxel_chars_test.lua"
 end
 
 local total = 0

@@ -47,15 +47,18 @@
 # script says so loudly rather than leaving it and exiting green.
 
 set -u
-AQUI="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(cd "$AQUI/../../../.." && pwd)"
+AQUI="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$(dirname "$0")")"
+MOD="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$AQUI/../..")"
+REPO="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${VC_ENGINE_ROOT:-$MOD/../..}")"
 SAVE="$HOME/Library/Application Support/LOVE/pokemon-love2d"
 OPTIONS="$SAVE/options.lua"
-. "$(cd "$AQUI/.." && pwd)/tools_bin.sh"
+. "$MOD/tools/tools_bin.sh"
 
-DRIVER="$REPO/mods/voxel_characters/tools/ingame/probe_hosts.lua"
+DRIVER="$MOD/tools/ingame/probe_hosts.lua"
 [ -f "$DRIVER" ] || { echo "driver not found: $DRIVER"; exit 1; }
 [ -f "$OPTIONS" ] || { echo "no options.lua at $OPTIONS"; exit 1; }
+LUAJIT="$(command -v luajit || true)"
+[ -n "$LUAJIT" ] || { echo "luajit not found; cannot verify the imported cache"; exit 1; }
 
 # THE LOVE LOCK, taken before anything else. This script opens with
 # `pkill -x love` once per row, so without it a matrix run silently kills a
@@ -149,6 +152,19 @@ JOGOS="${VC_VERSION:-blue gold}"
 if [ -n "${*:-}" ] && [ -z "${VC_VERSION:-}" ]; then
   JOGOS="$(for h in $ALVOS; do host_jogo "$h"; done | sort -u | tr '\n' ' ')"
 fi
+
+# A completion marker alone can belong to an older engine and miss outputs
+# the current runtime needs. Detect that before LOVE opens the interactive
+# importer and the probe silently waits until timeout.
+for jogo in $JOGOS; do
+  APLICAVEL=0
+  for h in $ALVOS; do
+    [ "$(host_jogo "$h")" = "$jogo" ] && APLICAVEL=1
+  done
+  if [ "$APLICAVEL" -eq 1 ]; then
+    env -C "$REPO" "$LUAJIT" "$AQUI/cache_ready.lua" "$jogo" "$SAVE" || exit 1
+  fi
+done
 
 FMT='%-26s %-6s %-10s %-9s %-7s %-7s %s\n'
 FALHAS=0

@@ -56,16 +56,19 @@ local HOSTS = {
     -- person and no third person, deliberately, as too heavy for the devices it
     -- targets. FIRST PERSON therefore has nothing to attach to on this host,
     -- which our capability probe already handles -- the row does not appear.
+    game = "gen1",
     id = "potato_voxel",
     name = "PotatoVoxel",
     supported = ">=1.4.0 <2.0.0",
   },
   {
+    game = "gen1",
     id = "BATTLE_ART_VOXEL_FORK",
     name = "Battle Art Voxel Fork",
     supported = ">=1.7.0 <2.0.0",
   },
   {
+    game = "gen1",
     id = "DRAMALESS_SHAPE",
     name = "Dramaless Shape Voxel Mod",
     -- 2.x included because 2.0.1 was MEASURED against this mod on
@@ -82,6 +85,7 @@ local HOSTS = {
     supported = ">=1.5.0 <3.0.0",
   },
   {
+    game = "gen1",
     id = "DRAMATIC_SHAPE",
     name = "Dramatic Shape",
     supported = ">=1.5.0 <2.0.0",
@@ -93,6 +97,7 @@ local HOSTS = {
     -- (SpriteBillboards.mesh, Voxel3D) plus VoxelState, VoxelGrid and
     -- TerrainAtlas.forSprite; it has no ImageCache, which stopped being
     -- required in 1.8.1 exactly because three of five lineages lack one.
+    game = "gen2",
     id = "STADIUM2_OVERWORLD_MODELS",
     name = "Stadium 2 Overworld Models",
     supported = ">=0.2.0 <1.0.0",

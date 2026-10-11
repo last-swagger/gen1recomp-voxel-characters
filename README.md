@@ -98,10 +98,11 @@ everything lives behind it. From the overworld, **backslash** opens it
 directly. It does nothing anywhere else, because a menu pushed on top of a
 battle or a dialog is how a shortcut like that corrupts a save.
 
-With [Modern UI](https://github.com/) installed the screen wears that mod's
-design, and gains a `WHAT EACH ONE DOES` row that explains every option in
-game. That row is hidden without Modern UI: the explanations are full
-sentences, and the native 160x144 renderer would run them off the edge.
+With [Modern UI](https://github.com/piftee/gen1recomp-modern-ui-suite)
+installed, the screen uses that mod's design and gains a `WHAT EACH ONE DOES`
+row that explains every option in game. That row is hidden without Modern UI:
+the explanations are full sentences, and the native 160x144 renderer would run
+them off the edge.
 
 There are 23 rows under `OPTIONS`, all of them inside `CHARACTERS`. The first
 two are read only, and the next two are buttons rather than settings.
@@ -310,19 +311,29 @@ whose API was perfectly intact.
 
 ## Tests
 
-```
-bash  mods/voxel_characters/tools/bateria.sh                the whole battery, in order
-bash  mods/voxel_characters/tools/bateria.sh --rapido       the half that needs no game
-luajit mods/voxel_characters/tests/voxel_chars_test.lua     the unit suite
-luajit mods/voxel_characters/tools/hd_equivalence.lua       HD SPRITE must paint the ROM's picture
-bash mods/voxel_characters/tools/render/check.sh            the offline ruler, checking itself
-bash mods/voxel_characters/tools/ingame/run.sh <dir>        drives the real game, screenshots
-bash mods/voxel_characters/tools/ingame/clip.sh <dir> <k=v> side by side video of any option
-bash mods/voxel_characters/tools/ingame/hosts.sh            boots EVERY voxel host installed, on Blue and Gold
-bash mods/voxel_characters/tools/release_check.sh           asks the GAME whether a release is installable
+Run these from the gen1recomp root:
+
+```sh
+bash mods/voxel_characters/tools/bateria.sh                 focused checks (default)
+bash mods/voxel_characters/tools/bateria.sh --rapido        all offline gates
+bash mods/voxel_characters/tools/bateria.sh --sem-jogo      offline gates and render checks
+bash mods/voxel_characters/tools/bateria.sh --tudo          full suite, including game probes
+bash mods/voxel_characters/tools/foco.sh host-manifest      host declarations only
+bash mods/voxel_characters/tools/foco.sh host potato_voxel  one host in Blue
+bash mods/voxel_characters/tools/foco.sh probe probe_grid   one in-game probe
 ```
 
-All from the gen1recomp root. The offline harness measures geometry in two
+Preparing a release runs the focused checks and writes a local package. Run
+`tools/release.sh <version> --qualificar` for all offline/render gates and the
+Gen 1 host matrix; `--profundo` adds the full game battery, mutation checks, and
+Gold gates. `--publicar` runs the standard qualification before publishing. Set
+`VC_ENGINE_ROOT` to validate against a different gen1recomp checkout. When that
+checkout is a detached source tree without this mod's working fixtures, set
+`VC_TEST_REPO_ROOT` to the full checkout that contains the test data and
+roadmap; gates use that tree for fixtures while modkit validation uses
+`VC_ENGINE_ROOT`.
+
+The offline harness measures geometry in two
 seconds against a mocked host. The in game tools boot the real game with nobody
 touching it and photograph or film the result, which is the only way to judge
 anything that happens over time.

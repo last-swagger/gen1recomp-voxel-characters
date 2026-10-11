@@ -1,74 +1,121 @@
-# Files that stay in the repo and out of the distributed package.
-# Exact relative paths, one per line. modkit matches literally, no globs.
-
-# The render harness and the sheet composer. These are development tools: they
-# run by hand on a machine that has already imported its own ROM, they load
-# main.lua under a stub of the host API, and they read the player's generated
-# sprite cache to build geometry from real art. That last part is why they
-# cannot ship: modkit's MK301 rejects any lua that names assets/generated,
-# and it is right to, because a distributed mod has no business pointing at
-# that tree. Nothing here is loaded by the mod at runtime.
-tools/render/main.lua
-tools/render/check.sh
-tools/render/conf.lua
-tools/render/README.md
-tools/render/compose/main.lua
-tools/render/compose/conf.lua
-
-# The suite. It requires engine modules through package.path, which reads as a
-# private require against the archive, and it is meaningless without the repo.
-tests/voxel_chars_test.lua
-
-# Field notes. Useful to contributors, noise to players.
+# Not player-facing documentation; keep operational and unpublished drafts out
+# of mod packages. The source files remain in the repository.
+docs/DISCLOSURE_DRAFT.md
+docs/EXECUTION_STATE.md
 docs/FIELD_REPORTS.md
-
-# Comparison renders for the release notes. Documentation, not mod content.
-docs/images/walk.png
-docs/images/faces.png
-docs/images/ground.png
-docs/images/blink.png
-docs/images/itemball.png
-docs/images/exposure.png
-
-# O gate in-game: um driver POKEPORT_DRIVER e o runner que o dispara. Roda o
-# jogo de verdade para fotografar o mod em varios angulos de camera, contra o
-# mundo real e na escala real de tela, que e o que o harness offline nao
-# consegue mostrar. Ferramenta de desenvolvimento, nao conteudo do mod.
+docs/HANDOFF.md
+docs/local/HANDOFF_PANE2.md
+docs/local/MONTAGEM_K2.md
+docs/local/PARA_A_KIM.md
+docs/ROADMAP.md
+docs/ROADMAP_ONE_SHOT_PROMPT_DRAFT.md
+docs/ROADMAP_V2.md
+docs/ROADMAP_V3.md
+docs/TRAPS.md
+docs/refs/remaster-explainer-gemini.png
+# Developer harnesses exercise engine caches and are not part of the mod.
+tests/voxel_chars_test.lua
 tools/ingame/driver.lua
-tools/ingame/run.sh
+tools/ingame/probe_wilds.lua
+tools/render/main.lua
 
-# A sonda do passo 1 do roadmap: envolve Voxel3D.draw no jogo rodando e mede se
-# a posicao por instancia chega limpa. So medicao, nao muda nada. Ferramenta.
-tools/ingame/probe_draw.lua
-
-# O gate numerico do canal de vida: mede em pixel, no jogo rodando, se a
-# respiracao chega na tela e se responde ao menu. Ferramenta, nao conteudo.
-tools/ingame/probe_life.lua
-
-# O escolhedor de pouso: valida a celula antes de largar o jogador nela, para o
-# gate nao fotografar ninguem em cima de placa ou de mesa. Ferramenta.
-tools/ingame/pouso.lua
-
-# O gravador de clipe: mp4 e gif lado a lado de uma opcao ligada e desligada.
-# Foto nao julga movimento; estes tres arquivos existem para isso. Ferramenta.
+# Testes, ferramentas de desenvolvimento e documentos internos nunca vão no pacote.
+tools/.DS_Store
+tools/__pycache__/host_manifest_gate.cpython-314.pyc
+tools/__pycache__/measure_regions.cpython-314.pyc
+tools/alpha_gate.py
+tools/audio_gate.sh
+tools/authored_gate.lua
+tools/bateria.sh
+tools/en_us_scope.txt
+tools/en_us_sweep.lua
+tools/execution_state_gate.lua
+tools/foco.sh
+tools/folga_locais.sh
+tools/fx_sfx.lua
+tools/fx_sfx_gate.sh
+tools/hd_equivalence.lua
+tools/hooks/pre-commit
+tools/host_manifest_gate.py
+tools/ingame/cache_ready.lua
 tools/ingame/clip.lua
 tools/ingame/clip.sh
-
-# O gate do menu de verdade e o conferidor de release. Ferramentas.
+tools/ingame/erro.lua
+tools/ingame/gold.sh
+tools/ingame/hosts.sh
 tools/ingame/menu.lua
+tools/ingame/monta.sh
+tools/ingame/planos.lua
+tools/ingame/pouso.lua
+tools/ingame/probe_draw.lua
+tools/ingame/probe_fp.lua
+tools/ingame/probe_grid.lua
+tools/ingame/probe_hd.lua
+tools/ingame/probe_hosts.lua
+tools/ingame/probe_life.lua
+tools/ingame/probe_walk.lua
+tools/ingame/probe_world.lua
+tools/ingame/run.sh
+tools/ingame/seleciona.py
+tools/ingame/trailer.lua
+tools/ingame/trailer.sh
+tools/ingame/world.lua
+tools/instala_hooks.sh
+tools/juiz/ajusta.lua
+tools/juiz/calibra.sh
+tools/juiz/dados/NOTAS_DO_CRITICO.md
+tools/juiz/dados/confianca_r3.txt
+tools/juiz/dados/escolhas.txt
+tools/juiz/dados/gabarito_r1.txt
+tools/juiz/dados/gabarito_r2.txt
+tools/juiz/dados/gabarito_r3.txt
+tools/juiz/dados/modelo.txt
+tools/juiz/dados/veredito_r1.txt
+tools/juiz/dados/veredito_r2.txt
+tools/juiz/dados/veredito_r3.txt
+tools/juiz/gera.sh
+tools/juiz/juiz.sh
+tools/juiz/reason_gate.lua
+tools/juiz/reason_gate.sh
+tools/juiz/rodada.sh
+tools/lint_asserts.lua
+tools/love.sh
+tools/measure_regions.py
+tools/mutantes.sh
+tools/mutantes.txt
+tools/options_documented.lua
+tools/output_contract.lua
+tools/preset_gate.lua
+tools/randomiza.lua
+tools/randomiza_gate.lua
+tools/release.sh
 tools/release_check.sh
-
-# Mais renders de comparacao para as notas de release.
-docs/images/walk-offset.png
-docs/images/blink-walk.png
-
-# O roadmap da proxima direcao. Documentacao de projeto, nao conteudo do mod.
-docs/ROADMAP.md
-
-# O handoff da sessao. Documentacao de processo, nao conteudo do mod.
-docs/HANDOFF.md
-
-# O gate do BLINK DETECT contra Wilds of Kanto: mede, no jogo rodando, se um
-# sheet sem entrada em EYE_MARKS pisca. Precisa daquele mod instalado, entao
-# nao entra na bateria. Ferramenta de desenvolvimento, nao conteudo do mod.
-tools/ingame/probe_wilds.lua
+tools/render/README.md
+tools/render/ao_proto.lua
+tools/render/card.sh
+tools/render/cards/shading.card
+tools/render/check.sh
+tools/render/compose/conf.lua
+tools/render/compose/main.lua
+tools/render/conf.lua
+tools/render/features.lua
+tools/render/host_matrix.lua
+tools/render/lab.lua
+tools/render/preset_card.sh
+tools/render/reason.lua
+tools/render/zfight_gate.sh
+tools/runner/Dockerfile
+tools/runner/README.md
+tools/runner/deltas.txt
+tools/runner/measure_delta.sh
+tools/runner/runner.sh
+tools/runner/window_probe/conf.lua
+tools/runner/window_probe/main.lua
+tools/sala_de_teste.sh
+tools/so_comentarios.lua
+tools/so_comentarios.sh
+tools/so_comentarios_test.lua
+tools/tools_bin.sh
+tools/verdict_gate.sh
+Calibracao.command
+Laboratorio.command

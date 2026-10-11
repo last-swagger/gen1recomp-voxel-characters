@@ -1,91 +1,36 @@
 #!/bin/bash
 # Runs the whole battery, in the order that makes a failure mean something.
 #
-#   bash mods/voxel_characters/tools/bateria.sh            everything
-#   bash mods/voxel_characters/tools/bateria.sh --rapido   offline only, no LOVE
-#   bash mods/voxel_characters/tools/bateria.sh --sem-jogo  offline + ruler
+#   bash mods/voxel_characters/tools/bateria.sh                 foco (padrão)
+#   bash mods/voxel_characters/tools/bateria.sh --rapido        todos os gates offline
+#   bash mods/voxel_characters/tools/bateria.sh --sem-jogo      offline + renderização
+#   bash mods/voxel_characters/tools/bateria.sh --tudo          inclui os probes no jogo
 #
-# WHY THE ORDER IS PART OF THE TOOL. The battery is seven commands and running
-# them in the wrong order wastes an hour reading the wrong failure:
-#
-#   1. the offline suite first, because it is four seconds and it is the only
-#      thing that tells you the maths is right;
-#   2. the assertion linter, because a green suite that asserts nothing has
-#      happened here twice and it looks exactly like a green suite;
-#   3. chunk-local headroom, because exceeding it is a COMPILE error, so the
-#      symptom is not a broken feature, it is the mod failing to load for
-#      everyone;
-#   4. the option docs, because an option a player cannot find in the README is
-#      an option that did not ship, and release.sh builds the release body from
-#      CHANGELOG.md. Four options once landed on this branch documented
-#      nowhere. It runs in --rapido on purpose, so the pre-commit hook catches
-#      it while the option is still being written;
-#   5. the controlled runner's selftest, which needs no display and no docker.
-#      It only proves the RUNNER fails when it should; it does not run anything
-#      visual and it does not replace any gate below;
-#   6. the durable execution state, because a long autonomous run that loses its
-#      own state file is a run that starts over. Reads the required sections out
-#      of the roadmap rather than from a list here;
-#   7b. the audio gate's selftest, the instrument before what it judges. There is no audio in the mod yet, so this
-#      verifies the INSTRUMENT and nothing about the product: it exists before
-#      the sound does, which is the same order the ruler came in. Skipped with a
-#      reason if ffmpeg is missing, rather than turning an optional dependency
-#      into a red battery;
-#   7c. the FX demo's two sounds, regenerated and measured through that gate. A
-#      committed WAV can only be checked once, by whoever listened to it; a
-#      generator can be re-derived and re-measured on every run;
-#   7d. the reason field on a choice, checked against the RECORDED choices and
-#      through the real judge tools. 106 choices were collected before the field
-#      existed and they have to keep parsing exactly as they do today; a format
-#      that needs its old records migrated is a format that loses them;
-#   7e. the battery's own verdict lines, which are an interface and not prose:
-#      the pre-commit hook summarises them and release.sh prints them into a
-#      release rehearsal. Both patterns are lifted from those files and run
-#      against what `verdict` really prints. It found release.sh printing 5 of
-#      11 gates on its first run;
-#   7f. the strings the display-backed gates grep for. Renaming one side of
-#      those pairs does not turn a gate red, it turns it GREEN AND EMPTY, and
-#      the only end-to-end proof is a full battery on a machine with a screen.
-#      This is the cheap static half that runs on every commit;
-#   7g. the authored layer, whose risk is identity rather than engineering. A
-#      mod that quietly starts drawing its own pixels while its README says it
-#      derives everything from your ROM has broken something a gate cannot
-#      repair, so the first slice ships none and this holds it to that;
-#   7h. the authored regions, re-measured off the real sprite. Bounds written
-#      by hand go stale silently: the sprite is the source of truth and a
-#      number in a data file is only a copy of it. Decodes the PNG itself, so
-#      it needs no display;
-#   7i. the character preset format. Every preset in the space round-trips, and
-#      no colour outside the art's measured three-tone ramp is expressible: the
-#      creator cannot manufacture a tone the game has never shown;
-#   7j. the lab randomiser, which proposes preset candidates for the judge.
-#      Reproducible from a seed, never from the clock, because a set that
-#      cannot be regenerated cannot be re-examined after it fails;
-#   7k. the alpha channel, which must be fully in or fully out. A voxel builder
-#      extrudes from the opaque region, so a half-transparent pixel becomes a
-#      face that is drawn and see-through, or one kept on one side and skipped
-#      on the other, and the artifact shows up in geometry far from its cause.
-#      Already true today, and true by accident rather than by contract;
-#   7l. HD equivalence, which is the only gate that can see a constant in the
-#      wrong unit. HD SPRITE feeds the builders a 64 px cell and scales the
-#      result back down, so anything expressed in SHEET PIXELS quietly does a
-#      quarter of its job instead of failing. Five such constants were found in
-#      one audit after four had already been found one at a time by people
-#      looking at a screen. Builds the art twice, in memory, and requires the
-#      enlargement to paint the same picture;
-#   8. THE RULER, before any measurement is trusted. Ten defects in one session
-#      were the harness posing as a defect in the mod. This is the rule that
-#      keeps being forgotten, which is why it is a step and not a habit;
-#   9. the in-game gates, which are slow and need the game, and are only worth
-#      running once everything above is green.
-#
-# Only one LOVE runs at a time on a machine (tools_bin.sh holds a lock), so
-# steps 4 and 5 are serial by construction, not by choice.
+# Perfis para rodar só o que a mudança precisa:
+# --foco: suite lógica, lint de assertions, limite de locais, validação estrita,
+#         hosts declarados e conteúdo distribuído.
+# --rapido: todos os gates offline; não abre o jogo nem executa a régua.
+# --sem-jogo: gates offline e régua de renderização.
+# --tudo: gates offline, régua e probes dentro do jogo.
+# Use --foco no dia a dia; escolha explicitamente os perfis mais caros.
 set -u
-AQUI="$(cd "$(dirname "$0")" && pwd)"
-MOD="$(cd "$AQUI/.." && pwd)"
-RAIZ="$(cd "$MOD/../.." && pwd)"
-MODO="${1:-tudo}"
+if [ "$#" -gt 1 ]; then
+  echo "Uso: bateria.sh [--foco|--rapido|--sem-jogo|--tudo]" >&2
+  exit 2
+fi
+AQUI="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$(dirname "$0")")"
+MOD="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$AQUI/..")"
+RAIZ="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${VC_ENGINE_ROOT:-$MOD/../..}")"
+TEST_ROOT="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${VC_TEST_REPO_ROOT:-$RAIZ}")"
+MODO="${1:---foco}"
+
+case "$MODO" in
+  --foco|--rapido|--sem-jogo|--tudo) ;;
+  *)
+    echo "Uso: bateria.sh [--foco|--rapido|--sem-jogo|--tudo]" >&2
+    exit 2
+    ;;
+esac
 
 LUAJIT=$(command -v luajit || echo /usr/local/bin/luajit)
 VERMELHA=0
@@ -97,7 +42,7 @@ verdict() {  # $1 = nome, $2 = codigo de saida
   else printf "   %-44s FAILED\n" "$1"; VERMELHA=1; fi
 }
 
-cd "$RAIZ" || exit 1
+cd "$TEST_ROOT" || exit 1
 
 passo "1. offline: the maths"
 "$LUAJIT" "$MOD/tests/voxel_chars_test.lua" 2>&1 | tail -1
@@ -112,12 +57,33 @@ bash "$MOD/tools/folga_locais.sh" 2>&1 | tail -2
 verdict "folga_locais" "${PIPESTATUS[0]}"
 
 passo "4. packaging: does the game accept the mod?"
-python3 "$RAIZ/tools/modkit.py" validate "$MOD" 2>&1 | tail -1
+if [ "$MODO" = "--foco" ]; then
+  python3 "$RAIZ/tools/modkit.py" validate "$MOD" --strict 2>&1 | tail -3
+else
+  python3 "$RAIZ/tools/modkit.py" validate "$MOD" 2>&1 | tail -1
+fi
 verdict "modkit" "${PIPESTATUS[0]}"
+
+passo "4b. supported hosts are ordered before the mod"
+python3 "$MOD/tools/host_manifest_gate.py" 2>&1 | tail -4
+verdict "host_manifest" "${PIPESTATUS[0]}"
 
 passo "5. option docs: can a player find every option?"
 "$LUAJIT" "$MOD/tools/options_documented.lua" 2>&1 | tail -10
 verdict "options_documented" "${PIPESTATUS[0]}"
+
+if [ "$MODO" = "--foco" ]; then
+  passo "6. lint do conteúdo distribuído"
+  python3 "$RAIZ/tools/modkit.py" lint "$MOD" 2>&1 | tail -3
+  verdict "modkit lint" "${PIPESTATUS[0]}"
+  echo
+  if [ "$VERMELHA" -eq 0 ]; then
+    echo "FOCUSED BATTERY OK"
+  else
+    echo "FOCUSED BATTERY RED"
+  fi
+  exit "$VERMELHA"
+fi
 
 # The runner's own selftest, not a visual run. It proves the controlled runner
 # reports a problem when there is one (no verdict, no artifact, unusable
@@ -211,7 +177,7 @@ else
   verdict "zfight" "${PIPESTATUS[0]}"
 fi
 
-if [ "$MODO" = "tudo" ]; then
+if [ "$MODO" = "--tudo" ]; then
   passo "9. in-game gates (slow, needs the game)"
   # THE VERDICT IS COUNTED FROM BOTH SIDES, and that is the whole design of
   # this step. Every driver prints one `NAME PASSED` or `NAME FAILED` per

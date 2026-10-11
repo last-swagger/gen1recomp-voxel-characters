@@ -16,10 +16,13 @@
 # assembles nothing and exits non-zero when any shot failed. A trailer is
 # published; a bad one is worse than none.
 set -u
-REPO="$(cd "$(dirname "$0")/../../../.." && pwd)"
-SAVE="$HOME/Library/Application Support/LOVE/pokemon-love2d"
-. "$(cd "$(dirname "$0")/.." && pwd)/tools_bin.sh"
-DRIVER="$REPO/mods/voxel_characters/tools/ingame/trailer.lua"
+AQUI="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$(dirname "$0")")"
+MOD="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$AQUI/../..")"
+REPO="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${VC_ENGINE_ROOT:-$MOD/../..}")"
+IDENTIDADE="${POKEPORT_IDENTITY:-pokemon-love2d}"
+SAVE="${VC_SAVE_ROOT:-$HOME/Library/Application Support/LOVE/$IDENTIDADE}"
+. "$MOD/tools/tools_bin.sh"
+DRIVER="$MOD/tools/ingame/trailer.lua"
 
 SAIDA="${1:?uso: trailer.sh <pasta-de-saida>}"
 [ -n "$FFMPEG" ] || { echo "ffmpeg not found"; exit 1; }
@@ -37,13 +40,18 @@ if [ -z "$VERSAO" ]; then
   for v in blue red yellow; do versao_pronta "$v" && { VERSAO="$v"; break; }; done
 fi
 [ -n "$VERSAO" ] || { echo "no version ready"; exit 1; }
+[ -d "$SAVE" ] || { echo "save identity not found: $SAVE"; exit 1; }
+RESTO="$(find "$SAVE" -maxdepth 1 -name 'vc_trailer_*.png' -print -quit 2>/dev/null)"
+[ -z "$RESTO" ] || { echo "stale trailer frames exist in $SAVE; move them before recording"; exit 1; }
+[ ! -e "$SAIDA" ] || [ -d "$SAIDA" ] || { echo "output path is not a directory: $SAIDA"; exit 1; }
+mkdir -p "$SAIDA" || { echo "could not create output directory: $SAIDA"; exit 1; }
+VAZIA="$(find "$SAIDA" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)"
+[ -z "$VAZIA" ] || { echo "output directory must be empty: $SAIDA"; exit 1; }
 
 vc_trava_pega "trailer.sh" || exit 1
 pkill -x love 2>/dev/null
 for _ in $(seq 1 20); do pgrep -x love >/dev/null 2>&1 || break; sleep 0.5; done
 
-rm -rf "$SAIDA" && mkdir -p "$SAIDA"
-find "$SAVE" -maxdepth 1 -name 'vc_trailer_*.png' -delete 2>/dev/null
 LOG="$SAIDA/trailer.log"
 
 cd "$REPO" || exit 1

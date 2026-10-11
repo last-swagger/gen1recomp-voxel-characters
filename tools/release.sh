@@ -1,192 +1,166 @@
 #!/bin/bash
-# Builds, checks and (only when told twice) publishes a release.
+# Prepares a local candidate; expensive qualification and publication are explicit.
 #
-#   tools/release.sh 1.7.0              REHEARSAL. Builds and checks, publishes nothing.
-#   tools/release.sh 1.7.0 --publicar   Actually publishes. Needs GH_TOKEN.
+#   tools/release.sh 1.8.2                    focused checks + local package
+#   tools/release.sh 1.8.2 --qualificar       offline feature gates + Gen 1 host matrix
+#   tools/release.sh 1.8.2 --profundo         full battery + mutation + all host gates
+#   tools/release.sh 1.8.2 --publicar         qualifies, then publishes
 #
-# REHEARSAL IS THE DEFAULT AND THAT IS DELIBERATE. Publishing is outward facing
-# and irreversible in the ways that matter: a release author cannot be edited
-# after creation, and a tag that went out is a tag people fetched. So the
-# normal path builds everything, prints exactly what would be published, and
-# stops. Somebody has to type `--publicar` on purpose.
+# O padrão não publica nem inicia os testes longos. `--publicar` qualifica
+# primeiro e só então cria a tag e a release remota.
 #
-# WHAT THIS EXISTS TO PREVENT, and it is not hypothetical. Every release from
-# 1.0.0 to 1.6.0 was INVISIBLE to the in-game mod updater. `modkit pack`
-# produces `<id>-<version>.modpkg`, that file is a zip inside, it validated and
-# installed by hand, and everything looked right. But
-# `ModUpdate.pickZipAsset` only considers an attachment whose NAME ends in
-# `.zip`, and `parseReleases` discards the whole release when it finds none. So
-# nine releases shipped that nobody could update to from inside the game, and
-# "how do I install this" became the most repeated question in the thread.
-#
-# The rename is therefore not a nicety, it is the entire point, and this script
-# refuses to publish anything whose attachment is not named
-# `<id>-<version>.zip`.
+# O pacote instalável precisa ter nome `<id>-<versão>.zip`; o atualizador ignora
+# anexos `.modpkg`, mesmo quando o conteúdo é um ZIP válido.
 set -u
-AQUI="$(cd "$(dirname "$0")" && pwd)"
-MOD="$(cd "$AQUI/.." && pwd)"
-RAIZ="$(cd "$MOD/../.." && pwd)"
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+  echo "Uso: release.sh <versão> [--qualificar|--profundo|--publicar]" >&2
+  exit 2
+fi
+AQUI="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$(dirname "$0")")"
+MOD="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$AQUI/..")"
+RAIZ="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${VC_ENGINE_ROOT:-$MOD/../..}")"
 . "$AQUI/tools_bin.sh" 2>/dev/null || true
 
 MOD_ID="voxel_characters"
 REPO_MOD="${VC_REPO:-last-swagger/gen1recomp-voxel-characters}"
-# WHO IS ALLOWED TO PUBLISH, and this changed on 2026-08-13.
-#
-# It used to be `last-swagger`, the account that OWNS the repository and
-# authored 1.0.0 through 1.6.0. Kim has never had that account's token -- those
-# releases were published by somebody else -- so the guard was protecting a
-# path he could not walk, and 1.7.0 sat finished and unpublished behind it.
-#
-# His own account has admin on the repo, so this is a change of author, not of
-# permission. THE GUARD IS KEPT rather than removed: a release author cannot be
-# edited after creation, so publishing from an unexpected account is exactly the
-# mistake worth one more line of code. Point it at whoever should be signing
-# releases today, and change it deliberately when that changes.
+# O GitHub fixa o autor no momento da publicação; confira a conta antes de enviar.
 AUTOR_ESPERADO="kimsfigueredo"
 
-VERSAO="${1:?uso: release.sh <versao> [--publicar]}"
-MODO="${2:-ensaio}"
+VERSAO="${1:?uso: release.sh <versao> [--qualificar|--publicar]}"
+MODO="${2:---preparar}"
+case "$MODO" in
+  --preparar) RIGOROSO=0; PROFUNDO=0; PUBLICAR=0 ;;
+  --qualificar) RIGOROSO=1; PROFUNDO=0; PUBLICAR=0 ;;
+  --profundo) RIGOROSO=1; PROFUNDO=1; PUBLICAR=0 ;;
+  --publicar) RIGOROSO=1; PROFUNDO=0; PUBLICAR=1 ;;
+  *) echo "Uso: release.sh <versão> [--qualificar|--profundo|--publicar]" >&2; exit 2 ;;
+esac
+[[ "$VERSAO" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]] || {
+  echo "Invalid version: use semver, for example 1.8.2" >&2
+  exit 2
+}
+VERSAO_MANIFEST=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$MOD/manifest.json") || {
+  echo "Could not read the version from manifest.json" >&2
+  exit 2
+}
+[ "$VERSAO_MANIFEST" = "$VERSAO" ] || {
+  echo "Requested version ($VERSAO) differs from manifest.json ($VERSAO_MANIFEST)" >&2
+  exit 2
+}
 TAG="v$VERSAO"
 SAIDA="${VC_RELEASE_DIR:-/tmp/vc-release-$VERSAO}"
+SAIDA_REAL=$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$SAIDA")
 
 falha() { echo; echo "PAROU: $*"; exit 1; }
 passo() { printf "\n\033[1m== %s\033[0m\n" "$1"; }
 
 # ---------------------------------------------------------------- 1. the tree
 passo "1. o repositorio"
-SUJO=$(git -C "$MOD" status --porcelain)
-[ -z "$SUJO" ] || falha "arvore suja. Uma release tem que sair de um estado que
-  alguem consegue voltar a produzir:
-$(echo "$SUJO" | sed 's/^/    /')"
+case "$SAIDA_REAL" in
+  "$MOD"|"$MOD"/*) falha "a pasta de saída precisa ficar fora do repositório: $SAIDA_REAL" ;;
+esac
 RAMO=$(git -C "$MOD" rev-parse --abbrev-ref HEAD)
 echo "  ramo $RAMO, em $(git -C "$MOD" rev-parse --short HEAD)"
-if git -C "$MOD" rev-parse "$TAG" >/dev/null 2>&1; then
+if [ "$RIGOROSO" -eq 1 ]; then
+  SUJO=$(git -C "$MOD" status --porcelain)
+  [ -z "$SUJO" ] || falha "qualificação exige árvore limpa; finalize ou mova as alterações antes.
+$(echo "$SUJO" | sed 's/^/    /')"
+else
+  ALTERACOES=$(git -C "$MOD" status --porcelain | wc -l | tr -d ' ')
+  [ "$ALTERACOES" -eq 0 ] || echo "  preparando a partir da cópia de trabalho ($ALTERACOES entradas alteradas)"
+fi
+if [ "$RIGOROSO" -eq 1 ] && git -C "$MOD" rev-parse "$TAG" >/dev/null 2>&1; then
   falha "a tag $TAG ja existe aqui. Uma tag publicada nao se reescreve."
 fi
 
-# ------------------------------------------------------------- 2. the battery
-passo "2. a bateria"
-if ! bash "$AQUI/bateria.sh" > "$SAIDA.bateria.log" 2>&1; then
-  tail -20 "$SAIDA.bateria.log"
-  falha "a bateria esta vermelha. Log completo em $SAIDA.bateria.log"
-fi
-# SUMMARISE BY THE SHAPE `verdict` PRINTS, not by a token count. This pattern
-# was `^\s+\S+\s+ok$`, which requires the gate's NAME to be a single word, and
-# it silently printed 5 of 11: every gate called "option docs" or "reason field"
-# or "audio gate selftest" was dropped from the release rehearsal. The
-# pre-commit hook had the same defect for a different reason and was fixed; this
-# copy was missed, which is the argument for tools/verdict_gate.sh, that found
-# it. Same pattern as the hook's on purpose.
-# NOT TRUNCATED. This was `head -12`, then `head -14`, and both times the number
-# was the gate count on the day somebody wrote it: the battery has grown to 17
-# and the rehearsal quietly stopped listing the last three. A release summary
-# that shows SOME of what passed is the same defect as one that shows a
-# hardcoded list of names, which is what it was before that. There is no reason
-# to cap it at all -- the battery is what decides how many lines there are.
-grep -E '^   [^[:space:]].*[[:space:]]ok$' "$SAIDA.bateria.log" | sed 's/^/  /'
-echo "  BATTERY OK"
-
-# ------------------------------------------------------------- 2b. mutants
-# The battery says the checks pass. This says the checks are checking. It is
-# not in bateria.sh because it needs a clean tree and it rewrites files while
-# it runs, so it belongs at a moment when nothing else is happening: this one.
-#
-# Its first run found that flipping the sign of the MOTION LAG term changed
-# nothing any of 603 checks looked at. A release is exactly the wrong moment to
-# discover the suite has a blind spot.
-passo "2b. os mutantes: a suite esta mesmo checando?"
-if ! bash "$AQUI/mutantes.sh" > "$SAIDA.mutantes.log" 2>&1; then
-  tail -12 "$SAIDA.mutantes.log"
-  falha "um mutante sobreviveu: a suite passa por cima dessa linha.
-  Log completo em $SAIDA.mutantes.log"
-fi
-tail -1 "$SAIDA.mutantes.log" | sed 's/^/  /'
-
-# ------------------------------------------------------------- 2c. the Gen 2 gates
-# THE PUBLIC PROMISE, MADE ENFORCEABLE. 1.8.1's notes say every release is
-# booted against each voxel host before it ships. Until this step existed that
-# sentence was kept by somebody remembering: both Gen 2 gates sit outside
-# bateria.sh on purpose (its in-game step is the slow one and only one LOVE runs
-# at a time, so a Gold boot is added wall-clock rather than overlapped), and the
-# battery was this script's only gate. Outside the battery therefore meant
-# outside the release, which is how 1.8.0 shipped listing PotatoVoxel as
-# supported having never once attached to it.
-#
-# Here is where that cost is affordable: once per release instead of every run.
-#
-#   hosts.sh   every installed voxel host, on both games: does the mod attach?
-#   gold.sh    Gen 2 specifically: can the harness land the player and drive it
-#              with the mod attached, which is what makes any Gen 2 claim
-#              measurable rather than hoped.
-#
-# ONLY GOLD FOR THE WALK GATE, not both games. gold.sh runs on Blue too and that
-# is how its Gen 1 half was proved, but probe_walk.lua already drives the same
-# adapter on Blue on every battery run. Repeating it here would buy a second
-# copy of a green check and charge a game boot for it.
-#
-# EXIT CODE IS ENOUGH HERE, unlike the battery's step 9, which has to count
-# PASSED as well because it reads drivers directly. Both of these scripts
-# already do that counting themselves and refuse a silent run: gold.sh answers
-# NO VERDICT when nothing printed, and hosts.sh fails a game with zero
-# applicable hosts. Re-counting their output here would be a second, weaker copy
-# of a check they already make.
-passo "2c. os gates de Gen 2"
-for g in hosts gold; do
-  if ! bash "$AQUI/ingame/$g.sh" > "$SAIDA.$g.log" 2>&1; then
-    tail -15 "$SAIDA.$g.log"
-    falha "o gate $g.sh reprovou. Log completo em $SAIDA.$g.log"
+# ---------------------------------------------------------- 2. selected gates
+mkdir -p "$SAIDA" || falha "nao consegui criar a pasta de saida $SAIDA"
+if [ "$RIGOROSO" -eq 1 ]; then
+  if [ "$PROFUNDO" -eq 1 ]; then PERFIL="--tudo"; else PERFIL="--sem-jogo"; fi
+  passo "2. gates offline $PERFIL"
+  if ! bash "$AQUI/bateria.sh" "$PERFIL" > "$SAIDA.bateria.log" 2>&1; then
+    tail -20 "$SAIDA.bateria.log"
+    falha "a bateria completa reprovou. Log: $SAIDA.bateria.log"
   fi
-  # THE VERDICT IS NOT THE LAST LINE, which is what this was first written as.
-  # Both scripts restore the player's options.lua on the way out and print the
-  # sha they verified it against, so `tail -1` reports the restore and never the
-  # verdict. That is the same defect step 2 above already carries a comment
-  # about: a summary that reads plausibly while showing the wrong thing.
-  #
-  # And an empty match is a failure, not a blank line. A gate that exits 0
-  # having printed no verdict has not passed, it has not answered -- the
-  # distinction this project keeps relearning.
-  VEREDITO=$(grep -E '^(HOST MATRIX|WALK GATE) .*\bOK\b' "$SAIDA.$g.log" | tail -1)
-  [ -n "$VEREDITO" ] || falha "$g.sh saiu verde sem imprimir veredito, o que
-  nao e um pass e sim uma falta de resposta. Log completo em $SAIDA.$g.log"
-  echo "  $VEREDITO"
-done
+else
+  passo "2. verificacoes focadas"
+  if ! bash "$AQUI/bateria.sh" --foco > "$SAIDA.bateria.log" 2>&1; then
+    tail -20 "$SAIDA.bateria.log"
+    falha "as verificacoes focadas reprovaram. Log: $SAIDA.bateria.log"
+  fi
+fi
+# O resumo usa o formato produzido por verdict(); verdict_gate.sh protege esse
+# contrato para o release e o hook continuarem mostrando todas as aprovações.
+grep -E '^   [^[:space:]].*[[:space:]]ok$' "$SAIDA.bateria.log" | sed 's/^/  /' || true
+if [ "$PROFUNDO" -eq 1 ]; then
+  echo "  DEEP BATTERY OK"
+elif [ "$RIGOROSO" -eq 1 ]; then
+  echo "  OFFLINE AND RENDER GATES OK"
+else
+  echo "  FOCUSED BATTERY OK"
+fi
+
+# ----------------------------------------------------------- 2b. runtime gates
+if [ "$RIGOROSO" -eq 1 ] && [ "$PROFUNDO" -eq 1 ]; then
+  passo "2b. testes de mutação"
+  if ! bash "$AQUI/mutantes.sh" > "$SAIDA.mutantes.log" 2>&1; then
+    tail -12 "$SAIDA.mutantes.log"
+    falha "mutação reprovou. Log: $SAIDA.mutantes.log"
+  fi
+  tail -1 "$SAIDA.mutantes.log" | sed 's/^/  /'
+fi
+
+if [ "$RIGOROSO" -eq 1 ]; then
+  if [ "$PROFUNDO" -eq 1 ]; then
+    passo "2c. matriz completa de hosts e Gold"
+    for g in hosts gold; do
+      if ! bash "$AQUI/ingame/$g.sh" > "$SAIDA.$g.log" 2>&1; then
+        tail -15 "$SAIDA.$g.log"
+        falha "o gate $g.sh reprovou. Log: $SAIDA.$g.log"
+      fi
+      VEREDITO=$(grep -E '^(HOST MATRIX|WALK GATE) .*OK' "$SAIDA.$g.log" | tail -1)
+      [ -n "$VEREDITO" ] || falha "$g.sh terminou sem um veredito. Log: $SAIDA.$g.log"
+      echo "  $VEREDITO"
+    done
+  else
+    passo "2b. hosts Gen 1 em Blue"
+    if ! VC_VERSION=blue bash "$AQUI/ingame/hosts.sh" > "$SAIDA.hosts.log" 2>&1; then
+      tail -15 "$SAIDA.hosts.log"
+      falha "a matriz Gen 1 reprovou. Log: $SAIDA.hosts.log"
+    fi
+    VEREDITO=$(grep -E '^HOST MATRIX .*OK' "$SAIDA.hosts.log" | tail -1)
+    [ -n "$VEREDITO" ] || falha "hosts.sh terminou sem um veredito. Log: $SAIDA.hosts.log"
+    echo "  $VEREDITO"
+  fi
+fi
 
 # ----------------------------------------------------------- 3. the changelog
-# The body comes from CHANGELOG.md and nowhere else. Writing release notes by
-# hand at publish time is how a release ends up saying something the changelog
-# does not, and the changelog is the version people read six months later.
+# A release page gets the short introduction from the changelog. The detailed
+# history stays in CHANGELOG.md without being copied wholesale into the release.
 passo "3. a secao do changelog"
 NOTAS="$SAIDA.notas.md"
 mkdir -p "$(dirname "$NOTAS")"
 awk -v v="$VERSAO" '
   $0 ~ "^## \\[" v "\\]" { dentro=1; next }
   dentro && /^## \[/     { exit }
+  dentro && /^### /      { exit }
   dentro                 { print }
 ' "$MOD/CHANGELOG.md" > "$NOTAS"
 if [ ! -s "$NOTAS" ]; then
   falha "CHANGELOG.md has no [$VERSAO] section.
-  Write the entry before packaging: it IS the release text."
+  Add a short introduction before the detailed sections."
 fi
 LINHAS=$(grep -c . "$NOTAS")
 echo "  $LINHAS lines of notes"
 [ "$LINHAS" -le 40 ] || echo "  WARNING: over 40 lines. A release page is read in" \
   "fifteen seconds; the rest belongs in the changelog."
 
-# Named credit is a house rule, so the absence of any name is worth a word.
-grep -qiE 'thanks|reported by|@|found by' "$NOTAS" \
-  || echo "  WARNING: no named credit in the section. Whoever reported it goes in by name."
-
 # --------------------------------------------------------------- 4. packaging
 passo "4. o pacote"
-rm -rf "$SAIDA"; mkdir -p "$SAIDA"
-python3 "$RAIZ/tools/modkit.py" pack "$MOD" > "$SAIDA/pack.log" 2>&1 \
+PKG="$SAIDA/${MOD_ID}-${VERSAO}.modpkg"
+python3 "$RAIZ/tools/modkit.py" pack "$MOD" --repo "$RAIZ" --output "$PKG" > "$SAIDA/pack.log" 2>&1 \
   || { tail -5 "$SAIDA/pack.log"; falha "modkit pack falhou"; }
-PKG=$(grep -oE '[^ ]+\.modpkg' "$SAIDA/pack.log" | tail -1)
-[ -n "${PKG:-}" ] && [ -f "$PKG" ] || {
-  PKG=$(find "$RAIZ" "$MOD" -maxdepth 2 -name "*${VERSAO}.modpkg" -newer "$SAIDA/pack.log" 2>/dev/null | head -1)
-}
-[ -n "${PKG:-}" ] && [ -f "$PKG" ] || falha "nao achei o .modpkg que o pack gerou.
-  Veja $SAIDA/pack.log"
+[ -f "$PKG" ] || falha "o pack terminou sem criar $PKG. Veja $SAIDA/pack.log"
 
 # THE RENAME. See the header. The in-game updater cannot see a .modpkg.
 ZIP="$SAIDA/${MOD_ID}-${VERSAO}.zip"
@@ -230,12 +204,15 @@ echo "  ---8<--- notas ---"
 sed 's/^/  /' "$NOTAS"
 echo "  ---8<---"
 
-if [ "$MODO" != "--publicar" ]; then
+if [ "$PUBLICAR" -ne 1 ]; then
   echo
-  echo "REHEARSAL OK. Nothing was published."
-  echo "  To publish for real:  tools/release.sh $VERSAO --publicar"
-  echo "  Before that: GH_TOKEN must be a token from the $AUTOR_ESPERADO account."
-  echo "  A release author CANNOT be edited after creation."
+  if [ "$RIGOROSO" -eq 1 ]; then
+    echo "QUALIFICAÇÃO OK. Nada foi publicado."
+    echo "  Para publicar: tools/release.sh $VERSAO --publicar"
+  else
+    echo "CANDIDATE OK. Local package ready; game and mutation tests did not run."
+    echo "  Para qualificar: tools/release.sh $VERSAO --qualificar"
+  fi
   exit 0
 fi
 

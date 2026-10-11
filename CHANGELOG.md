@@ -6,7 +6,12 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
-## [Unreleased]
+## [1.8.2]
+
+Compatibility and release metadata correction. This release keeps the verified
+game support limited to Gen 1, records PotatoVoxel as an optional host dependency
+so the loader can order it correctly, and adds focused checks that can run
+without booting the game.
 
 ### Fixed
 
