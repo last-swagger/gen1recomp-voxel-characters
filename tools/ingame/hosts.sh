@@ -200,6 +200,24 @@ for jogo in $JOGOS; do
     POKEPORT_VERSION="$jogo" POKEPORT_DRIVER="$DRIVER" "$LOVE" "$REPO" \
       > "$LOG" 2>&1 &
     PID=$!
+    # LOVE_BIN may be a wrapper that becomes the LOVE process with `exec`.
+    # Give that handoff time before deciding that no LOVE process started.
+    INICIADO=0
+    for _ in $(seq 1 50); do
+      if pgrep -x love >/dev/null 2>&1; then
+        INICIADO=1
+        break
+      fi
+      kill -0 "$PID" 2>/dev/null || break
+      sleep 0.1
+    done
+    if [ "$INICIADO" -eq 0 ]; then
+      kill -9 "$PID" 2>/dev/null
+      printf "$FMT" "$h" "$jogo" "?" "NO RUN" "-" "-" \
+        "LOVE did not start; see $LOG"
+      FALHAS=$((FALHAS + 1))
+      continue
+    fi
     for _ in $(seq 1 "${VC_TIMEOUT:-90}"); do
       pgrep -x love >/dev/null 2>&1 || break
       sleep 1

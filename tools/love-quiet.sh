@@ -29,8 +29,7 @@ fi
   exit 1
 }
 
-"$REAL_LOVE" "$@" &
-LOVE_PID=$!
+LOVE_PID=$$
 oculta() {
   /usr/bin/osascript -e '
 on run argv
@@ -42,15 +41,17 @@ on run argv
 end run' "$LOVE_PID" >/dev/null 2>&1
 }
 (
+  # The host matrix needs the probe to advance before hiding its window.
+  if [[ "${POKEPORT_DRIVER:-}" == *probe_hosts.lua ]]; then
+    HOST_REPORT="$HOME/Library/Application Support/LOVE/pokemon-love2d/vc_hosts.txt"
+    for _ in $(seq 1 30); do
+      [ -f "$HOST_REPORT" ] && break
+      sleep 0.1
+    done
+  fi
   while kill -0 "$LOVE_PID" 2>/dev/null; do
     oculta
     sleep 0.2
   done
 ) &
-HIDER_PID=$!
-
-wait "$LOVE_PID"
-RESULT=$?
-kill "$HIDER_PID" 2>/dev/null || true
-wait "$HIDER_PID" 2>/dev/null || true
-exit "$RESULT"
+exec "$REAL_LOVE" "$@"
