@@ -28,6 +28,7 @@ own, because it works by extending a voxel mod that is already running.
    - **PotatoVoxel** by ShaneMcGovernIE
    - **Battle Art Voxel Fork** by absol89
    - **Dramaless Shape Voxel Mod** by artyrambles
+   - **Terrarium** by BrenoBertucci (beta; runtime measured on Gen 1 Blue)
 
    Only ONE at a time.
 
@@ -343,8 +344,10 @@ anything that happens over time.
 This mod exists because the Dramatic Shape Voxel Mod lineage exports a namespace
 we can call into at runtime. **DramaticShape** wrote the original.
 **ShaneMcGovernIE** maintains PotatoVoxel, **absol89** the Battle Art Voxel
-Fork and **artyrambles** the Dramaless Shape Voxel Mod. All are accepted as
-equal hosts.
+Fork, **artyrambles** the Dramaless Shape Voxel Mod, and **BrenoBertucci**
+Terrarium (beta). Terrarium 1.40.0-beta was measured attaching and drawing on
+Gen 1 Blue. It remains a beta host, and its `FIRST PERSON` capability is not
+available to this mod. Use only one voxel renderer at a time.
 
 Built on [gen1recomp](https://github.com/bryanthaboi/gen1recomp) by
 **bryanthaboi**.

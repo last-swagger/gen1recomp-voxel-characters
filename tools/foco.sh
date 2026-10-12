@@ -11,7 +11,7 @@ LUAJIT="$(command -v luajit || echo /usr/local/bin/luajit)"
 uso() {
   echo "Usage: bash mods/voxel_characters/tools/foco.sh unit|host-manifest|probe <name>|host <id>"
   echo "Probes: probe_life menu probe_hd probe_walk probe_draw probe_fp probe_grid"
-  echo "Hosts: potato_voxel BATTLE_ART_VOXEL_FORK DRAMALESS_SHAPE DRAMATIC_SHAPE"
+  echo "Hosts: potato_voxel BATTLE_ART_VOXEL_FORK DRAMALESS_SHAPE DRAMATIC_SHAPE TERRARIUM"
 }
 
 MODO="${1:-}"
@@ -49,7 +49,7 @@ case "$MODO" in
   host)
     ID="${2:-}"
     case "$ID" in
-      potato_voxel|BATTLE_ART_VOXEL_FORK|DRAMALESS_SHAPE|DRAMATIC_SHAPE) ;;
+      potato_voxel|BATTLE_ART_VOXEL_FORK|DRAMALESS_SHAPE|DRAMATIC_SHAPE|TERRARIUM) ;;
       *) uso; exit 2 ;;
     esac
     env -C "$RAIZ" bash "$MOD/tools/ingame/hosts.sh" "$ID"

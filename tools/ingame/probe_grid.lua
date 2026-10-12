@@ -197,7 +197,7 @@ return function(game)
   -- counts as ENABLED, and this machine's save has three of the four in that
   -- state while naming only one.
   local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE",
-                  "potato_voxel" }
+                  "TERRARIUM", "potato_voxel" }
   local anexado
   pcall(function()
     anexado = game.mods.exports.voxel_characters.hostReport().host

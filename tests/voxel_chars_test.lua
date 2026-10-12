@@ -972,7 +972,8 @@ do
   check(mod._logs.warn[1]
         and mod._logs.warn[1]:find("BATTLE_ART_VOXEL_FORK", 1, true)
         and mod._logs.warn[1]:find("DRAMALESS_SHAPE", 1, true)
-        and mod._logs.warn[1]:find("DRAMATIC_SHAPE", 1, true),
+        and mod._logs.warn[1]:find("DRAMATIC_SHAPE", 1, true)
+        and mod._logs.warn[1]:find("TERRARIUM", 1, true),
         "sem host avisa quais ids foram procurados")
 end
 
@@ -1285,6 +1286,18 @@ do
   check(mod._logs.info[1]
         and mod._logs.info[1]:find("Dramaless Shape Voxel Mod 1.6.2.ST", 1, true),
         "host DRAMALESS_SHAPE encontrado e logado")
+end
+
+do
+  local pixels = {}
+  pixels[0] = 1
+  local handle, modules, original = makeVoxelHandle("1.40.0-beta", pixels, 16, 16,
+    nil, nil, nil, nil, "TERRARIUM")
+  local mod = loadWith(makeMod(handle))
+  check(modules.SpriteBillboards.mesh ~= original, "host TERRARIUM e aceito")
+  check(mod._logs.info[1]
+        and mod._logs.info[1]:find("Terrarium 1.40.0-beta", 1, true),
+        "host TERRARIUM encontrado e logado")
 end
 
 do

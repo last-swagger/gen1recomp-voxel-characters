@@ -1,7 +1,7 @@
 -- Voxel Characters: characters as pixel slabs, without invading the Voxel Mod.
 --
--- Dramatic Shape draws characters as flat cards. That is a deliberate choice
--- of its own; this mod only swaps the public function that is already
+-- The supported voxel hosts draw characters as flat cards. That is a deliberate
+-- choice of theirs; this mod only swaps the public function that is already
 -- captured by field (`SpriteBillboards.mesh`) once the player picks a
 -- thickness. The shadow and the ghost stay on the original alias.
 --
@@ -89,6 +89,16 @@ local HOSTS = {
     id = "DRAMATIC_SHAPE",
     name = "Dramatic Shape",
     supported = ">=1.5.0 <2.0.0",
+  },
+  {
+    -- Terrarium is a Gen 1 fork of Dramatic Shape. Its current release exports
+    -- the same two mutable modules this mod needs: SpriteBillboards.mesh and
+    -- Voxel3D.draw. Measured attaching and drawing against 1.40.0-beta on
+    -- Gen 1 Blue on 2026-10-12; first-person remains unavailable.
+    game = "gen1",
+    id = "TERRARIUM",
+    name = "Terrarium",
+    supported = ">=1.40.0-beta <2.0.0",
   },
   {
     -- The Gen 2 lineage (randyadr/Gen2-3D-Sprites), and the only host here
@@ -5669,7 +5679,7 @@ end
 --   * STADIUM2_OVERWORLD_MODELS (randyadr, the Gen-2 lineage) has no
 --     ImageCache either.
 --
--- Three of the five known lineages, rejected over a cache. The required
+-- Three of the six known lineages, rejected over a cache. The required
 -- list is now only what the mod genuinely cannot do without: the geometry
 -- it replaces (SpriteBillboards.mesh) and the draw it rides (Voxel3D).
 local function probeHost(handle)

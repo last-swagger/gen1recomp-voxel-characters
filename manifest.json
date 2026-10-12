@@ -1,7 +1,7 @@
 {
   "id": "voxel_characters",
   "name": "Voxel Characters",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "api": 2,
   "games": ["gen1"],
   "entry": "main.lua",
@@ -14,13 +14,14 @@
     "potato_voxel",
     "BATTLE_ART_VOXEL_FORK",
     "DRAMALESS_SHAPE",
-    "DRAMATIC_SHAPE"
+    "DRAMATIC_SHAPE",
+    "TERRARIUM"
   ],
   "conflicts": [],
   "permissions": [
     "engine_internals"
   ],
   "affects_link": false,
-  "description": "Builds overworld characters a real body out of their own pixels, and gives it breath, sway and weight. Needs a Dramatic Shape lineage running.",
+  "description": "Builds overworld characters a real body out of their own pixels, and gives it breath, sway and weight. Needs a supported voxel host running.",
   "github": "last-swagger/gen1recomp-voxel-characters"
 }

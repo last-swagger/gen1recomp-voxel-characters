@@ -100,11 +100,12 @@ trap 'restaura; vc_trava_solta' EXIT INT TERM
 #
 # STADIUM2_OVERWORLD_MODELS is randyadr's Gen 2 lineage and its own manifest
 # says games: ["gen2"], so Gold is the only place it can be asked the question.
-# The four Gen 1 lineages are the reverse.
+# The five Gen 1 lineages are the reverse.
 HOSTS="potato_voxel:blue
 BATTLE_ART_VOXEL_FORK:blue
 DRAMALESS_SHAPE:blue
 DRAMATIC_SHAPE:blue
+TERRARIUM:blue
 STADIUM2_OVERWORLD_MODELS:gold"
 
 hosts_ids() { printf '%s\n' "$HOSTS" | cut -d: -f1; }

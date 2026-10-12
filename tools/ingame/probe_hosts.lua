@@ -51,7 +51,7 @@ return function(game)
     -- decides WHICH game each host is asked about; this list only decides
     -- whose version gets reported.
     local hosts = { potato_voxel = true, BATTLE_ART_VOXEL_FORK = true,
-      DRAMALESS_SHAPE = true, DRAMATIC_SHAPE = true,
+      DRAMALESS_SHAPE = true, DRAMATIC_SHAPE = true, TERRARIUM = true,
       STADIUM2_OVERWORLD_MODELS = true }
     for _, m in ipairs(status.available or {}) do
       if hosts[m.id] then

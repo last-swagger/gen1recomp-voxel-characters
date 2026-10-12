@@ -6,6 +6,16 @@ This project is built with the community that plays it. Anyone who reported a
 bug, asked a question that exposed one, or pointed at a reference that changed
 the direction is named in the entry their contribution landed in.
 
+## [1.8.3]
+
+### Added
+
+- Added Terrarium as a supported Gen 1 voxel host and optional dependency. The
+  real-game gate measured attachment, character drawing, and terrain atlas
+  patching on Terrarium 1.40.0-beta with Gen 1 Blue. Terrarium is still beta;
+  its First Person capability is unavailable to this mod.
+- Added Terrarium to the host selection, diagnostics, and in-game probe tools.
+
 ## [1.8.2]
 
 Compatibility and release metadata correction. This release keeps the verified

@@ -551,7 +551,7 @@ return function(game)
     local V
     -- potato_voxel last; see the note in probe_draw.lua.
     for _, id in ipairs({ "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE",
-                          "DRAMATIC_SHAPE", "potato_voxel" }) do
+                          "DRAMATIC_SHAPE", "TERRARIUM", "potato_voxel" }) do
       local e = game.mods and game.mods.exports and game.mods.exports[id]
       if e and e.lib then V = e.lib break end
     end

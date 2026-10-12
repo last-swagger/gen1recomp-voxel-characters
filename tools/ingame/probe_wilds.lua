@@ -107,7 +107,7 @@ return function(game)
   nota("=== BLINK DETECT over Wilds of Kanto ===")
 
   local HOSTS = { "BATTLE_ART_VOXEL_FORK", "DRAMALESS_SHAPE", "DRAMATIC_SHAPE",
-                  "potato_voxel" }
+                  "TERRARIUM", "potato_voxel" }
   local V
   for _, id in ipairs(HOSTS) do
     local exports = game.mods and game.mods.exports and game.mods.exports[id]
