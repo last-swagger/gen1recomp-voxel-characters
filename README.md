@@ -334,6 +334,11 @@ checkout is a detached source tree without this mod's working fixtures, set
 roadmap; gates use that tree for fixtures while modkit validation uses
 `VC_ENGINE_ROOT`.
 
+On macOS, set `LOVE_BIN` to this mod's `tools/love-quiet.sh` when running the
+release or in-game gates. It hides each test's own LOVE process while keeping
+the gate output available to the runner. `VC_LOVE_REAL_BIN` can point to the
+installed LOVE executable if it is not on `PATH`.
+
 The offline harness measures geometry in two
 seconds against a mocked host. The in game tools boot the real game with nobody
 touching it and photograph or film the result, which is the only way to judge

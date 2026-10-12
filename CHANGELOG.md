@@ -10,6 +10,7 @@ the direction is named in the entry their contribution landed in.
 
 Adds measured support for Terrarium 1.40.0-beta on Gen 1 Blue, including
 character drawing and terrain atlas patching. First Person remains unavailable.
+Adds an optional macOS launcher that hides test windows during qualification.
 
 ### Added
 
@@ -18,6 +19,8 @@ character drawing and terrain atlas patching. First Person remains unavailable.
   patching on Terrarium 1.40.0-beta with Gen 1 Blue. Terrarium is still beta;
   its First Person capability is unavailable to this mod.
 - Added Terrarium to the host selection, diagnostics, and in-game probe tools.
+- Added `tools/love-quiet.sh` so macOS qualification can hide test windows
+  without losing the output consumed by the gates.
 
 ## [1.8.2]
 
