@@ -8,6 +8,9 @@ the direction is named in the entry their contribution landed in.
 
 ## [1.8.3]
 
+Adds measured support for Terrarium 1.40.0-beta on Gen 1 Blue, including
+character drawing and terrain atlas patching. First Person remains unavailable.
+
 ### Added
 
 - Added Terrarium as a supported Gen 1 voxel host and optional dependency. The
