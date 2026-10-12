@@ -31,23 +31,26 @@ fi
 
 "$REAL_LOVE" "$@" &
 LOVE_PID=$!
-/usr/bin/osascript -e '
+oculta() {
+  /usr/bin/osascript -e '
 on run argv
   set targetPid to (item 1 of argv) as integer
   tell application "System Events"
-    repeat 100 times
-      try
-        set targetProcess to first application process whose unix id is targetPid
-        set visible of targetProcess to false
-        return
-      end try
-      delay 0.05
-    end repeat
+    set targetProcess to first application process whose unix id is targetPid
+    set visible of targetProcess to false
   end tell
-end run' "$LOVE_PID" >/dev/null 2>&1 &
+end run' "$LOVE_PID" >/dev/null 2>&1
+}
+(
+  while kill -0 "$LOVE_PID" 2>/dev/null; do
+    oculta
+    sleep 0.2
+  done
+) &
 HIDER_PID=$!
 
 wait "$LOVE_PID"
 RESULT=$?
+kill "$HIDER_PID" 2>/dev/null || true
 wait "$HIDER_PID" 2>/dev/null || true
 exit "$RESULT"

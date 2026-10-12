@@ -18,7 +18,9 @@
 acha() {  # $1 = name on PATH, rest = candidate absolute paths
   local nome="$1"; shift
   local c
-  for c in "$(command -v "$nome" 2>/dev/null)" "$@"; do
+  # Explicit overrides must win over PATH so a quiet test launcher or a
+  # machine-specific binary can actually be selected by the caller.
+  for c in "$@" "$(command -v "$nome" 2>/dev/null)"; do
     [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; return 0; }
   done
   return 1
